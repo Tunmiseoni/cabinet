@@ -42,7 +42,7 @@ pause
 exit /b
 
 :detect
-for %%d in ("%APPDATA%\Fightcade" "%USERPROFILE%\Fightcade" "%LOCALAPPDATA%\Fightcade" "C:\Fightcade" "%USERPROFILE%\Fightcade2") do (
+for %%d in ("%APPDATA%\Fightcade" "%USERPROFILE%\Fightcade" "%LOCALAPPDATA%\Fightcade" "C:\Fightcade" "%USERPROFILE%\Fightcade2" "%USERPROFILE%\Documents\GGs\Fightcade") do (
   if exist "%%~d\emulator\fbneo\fcadefbneo.exe" set "FC_DIR=%%~d"
 )
 exit /b

@@ -4,7 +4,7 @@ Guidance for agents working in this repository.
 
 ## About this project
 
-Research and tooling for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet, bypassing ISP CGNAT with the emulator's `quark:direct` mode. The plan (see [`docs/04-design.md`](docs/04-design.md)) is a cross-platform Tauri app named **cabinet**, providing a lobby, king-of-the-hill queue, room discovery over the tailnet, per-player win/loss/draw tracking, and low-bandwidth input-relay spectating. Stack: Tauri v2 (Rust backend) + Vite web frontend.
+Research and tooling for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet, bypassing ISP CGNAT with the emulator's `quark:direct` mode. The plan (see [`docs/04-design.md`](docs/04-design.md)) is a cross-platform Tauri app named **cabinet**, providing a lobby, king-of-the-hill queue, room discovery over the tailnet, per-player win/loss/draw tracking, and low-bandwidth input-relay spectating. Stack: Tauri v2 (Rust backend) + Vite/React/Tailwind/shadcn frontend. **Phase 1 (macOS launcher + connection health) is implemented**; Phases 0/0b, 2–4 are not.
 
 ## Important: the user uses speech-to-text
 
@@ -32,8 +32,10 @@ State what you intend to do, why, and how to undo it, then wait for confirmation
 ## Repository layout
 
 - `docs/` — investigation and design. `01`–`03` are the historical troubleshooting record; `04-design.md` is the current spec.
-- `scripts/` — platform launchers (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`, `fcade-lan-windows-firewall.bat`).
-- No build system yet; the scripts are currently the working implementation.
+- `frontend/` — Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias `@/*` -> `frontend/src/*`).
+- `src-tauri/` — Rust backend (`config`, `tailscale`, `roms`, `launcher`, `session`, `commands`).
+- `scripts/` — helper scripts (`dev.sh`, `build.sh`, `test.sh`, `clean.sh`) plus the reference per-OS launchers (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`, `fcade-lan-windows-firewall.bat`).
+- The Tauri app is the implementation; the shell launchers remain the reference behavior.
 
 ## Environment facts (observed)
 
@@ -58,16 +60,26 @@ Rust via the official installer (not Homebrew's keg-only `rustup`, which conflic
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
-cargo install tauri-cli --version '^2'
 ```
 
-Node/npm (already present via nvm) is needed for the Vite frontend only. Per-OS system dependencies: see the Prerequisites subsection in [`docs/04-design.md`](docs/04-design.md).
+Node/npm (already present via nvm) runs the Vite frontend. The Tauri CLI is a root `package.json` devDependency (`@tauri-apps/cli`), **not** a global `cargo install`.
+
+```sh
+npm install                      # root: Tauri CLI
+npm install --prefix frontend    # frontend: React/Vite/Tailwind/shadcn
+npm run tauri dev                # Vite on :1420 + Rust backend
+```
+
+Project layout: `frontend/` (Vite + React + TS + Tailwind v4 + shadcn/ui; alias `@/*` -> `frontend/src/*`) and `src-tauri/` (Rust backend). Per-OS system dependencies: see the Prerequisites subsection in [`docs/04-design.md`](docs/04-design.md).
 
 ## Testing
 
-- There is no automated test suite. The platform launchers are the current verification surface.
-- Direct-connect can be tested on a single machine over loopback (two player instances, plus a spectator once available).
+- There is no automated test suite yet. The platform launchers remain the reference implementation; the Tauri app (v1) is built to reproduce them.
+- Frontend typecheck/build: `npm run build` (root, delegates to `frontend/`). Rust checks: `cargo test` and `cargo clippy --all-targets` in `src-tauri/`.
+- Rust unit tests cover the Tailscale parsers, ROM scan, and launcher spec/ports. Opt-in live tests require local hardware: `cargo test -- --ignored --nocapture` (Tailscale status/ping, ROM dir, real emulator launch and loopback pair — the latter opens Wine windows).
+- Direct-connect can be tested on a single machine over loopback: the app's **Dev pair** button (or `launch_dev_pair`), or two player instances. No `WINEPREFIX` isolation is needed — two Wine instances in the shared FightCade prefix coexist.
 - For manual end-to-end tests, at least two peers must be online on the tailnet.
+- Helper scripts: `scripts/test.sh` runs the full local gate (frontend build + `cargo test` + clippy); `scripts/dev.sh` runs the app; `scripts/clean.sh` removes regenerables (`--deps`, `--wine`).
 
 ## Git
 
