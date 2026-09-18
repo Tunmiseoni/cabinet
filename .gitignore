@@ -1,0 +1,32 @@
+# Rust / Tauri build output
+target/
+src-tauri/target/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+
+# Logs
+*.log
+
+# Environment / local secrets
+.env
+.env.*
+*.local
+
+# Never commit ROMs or emulator binaries
+*.zip
+*.exe
+*.dll
+*.wine32/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json
