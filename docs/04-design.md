@@ -10,7 +10,7 @@ Supersedes the "chosen route" framing in [`03-implementation-plan.md`](03-implem
 - The proposed app is a **coordination layer**, not a FightCade clone. FightCade's server, `fcade` helper, and spectator relay are all closed; there is nothing to fork.
 - The one genuinely hard feature is **input-relay spectating** (watch without video bandwidth). FightCade's spectator is server-brokered over a closed TCP protocol and is unreachable from `quark:direct`. **RetroArch netplay** provides the same low-bandwidth, input-based spectating natively, cross-platform, with no Wine or patched binaries.
 - Decision: run a **one-day RetroArch spectator spike first**. If its netplay feels acceptable at <100 ms, make RetroArch the primary path and skip the risky `ggponet.dll` reverse-engineering entirely. Otherwise fall back to a time-boxed FightCade shim, then to "defer spectate".
-- Features in scope: cross-platform Tauri lobby, **king of the hill**, room discovery over the tailnet, **per-player win/loss/draw tracking**.
+- Features in scope: cross-platform Tauri lobby, **king of the hill**, room discovery over the tailnet, **per-player win/loss/draw tracking**, and **connection-health display (per-peer ping, direct-vs-relay)**.
 - Stack: **Tauri v2 (Rust backend) + Vite web frontend** (see §3 and §6).
 
 ## 1. How FightCade works (established from the installed 2.1.45 client)
@@ -68,6 +68,8 @@ Tradeoff: FightCade uses dedicated UDP/GGPO and is generally regarded as better 
 - **Spectator acceptance bar: 2 concurrent spectators** (4-person group: 2 play, 2 watch).
 - **Match definition: best-of-N.** Winner comes from the overlay `winner.txt` if it proves to work in direct mode; otherwise emulator-exit + a manual "I won" button, with disputes resolved by the room host.
 - **Score tracking: per-player wins/losses/draws**, persisted by the room host (see §5).
+- **Connection health is a first-class lobby feature.** Tailnet-level signals first (`tailscale status --json` + `tailscale ping`: RTT, direct-vs-relay, tx/rx) — no emulator cooperation needed. Fine-grained GGPO stats (ping, queue lengths, frames-behind) only later, via the shim path if ever. Complementary: recommend `bShowFPS 2` (ping+jitter on-screen overlay) for direct matches.
+- **Gated proposals: emotes + opt-in voice.** Lobby/match reactions and mic/audio (default off, explicit per-session opt-in) are **not** in scope until a **/grill-me session** stress-tests them. Voice especially must answer "why not Discord?" before it enters the roadmap.
 - **Development harness:** abstract "launch an emulator instance" so dev can use isolated/native instances instead of three Wine instances sharing one `WINEPREFIX`.
 - **Shim constraints (if used):** pin FightCade 2.1.45, disable auto-update, run Linux from a writable copy of `fbneo/`, and re-sign the macOS `.app` after replacing `ggponet.dll`.
 - **Docs:** this file is the spec; `01`–`03` are amended for the direct-path finding and kept as history; `AGENTS.md` records conventions and setup.
@@ -80,6 +82,7 @@ cabinet
 ├─ frontend/           -> Vite web UI (lobby, ladder, scoreboard, spectator list)
 └─ src-tauri/          -> Rust backend
    ├─ peer registry    -> `tailscale status --json` (stable 100.x / MagicDNS)
+   ├─ nethealth        -> per-peer RTT/path polling (`tailscale status --json` + `tailscale ping`); lobby badges + pre-match gate
    ├─ room discovery   -> fixed UDP port probe across tailnet peers
    ├─ ROM index        -> scan the configured emulator's ROM dir
    ├─ session launcher -> port of scripts/fcade-lan-{macos,linux,windows}
@@ -89,6 +92,10 @@ cabinet
 ```
 
 Launcher abstraction covers: macOS Wine (`wine32on64` + `.wine32`), Linux Flatpak (`com.fightcade.Fightcade`) or native, Windows native, and a native/isolated mode for development.
+
+Connection health (`nethealth`) polls `tailscale status --json` for per-peer `Online`, `CurAddr`/`Relay`, `Active`, `TxBytes`/`RxBytes`, and runs `tailscale ping --c N <peer>` for RTT plus the `via direct …` vs `via DERP(…)` path. The lobby shows one badge per peer (RTT in ms + path); launching warns when the path is relayed or RTT is above threshold. In-match the wrapper re-pings periodically — coarse by design, since per-frame GGPO stats live inside the closed emulator (visible on-screen via `bShowFPS 2`, ping+jitter). Fine-grained GGPO stats (queue lengths, frames-behind) arrive only with the shim path, if ever; on the RetroArch path the tailnet-level signals are the wrapper's display.
+
+Gated extras (no build order until grilled): `reactions` (lobby/match emotes rendered by the wrapper overlay — never injected into the emulator) and `voice` (opt-in mic/audio, default off, per-session consent with a visible live indicator). Both ride the tailnet; neither blocks Phases 1–3.
 
 ## 5. King of the Hill and score tracking
 
@@ -114,10 +121,11 @@ Per-player ledger:
 |---|---|---|
 | 0 | RetroArch spectator spike: host + 1 client + 2 spectators over Tailscale; measure feel and bandwidth | Feel acceptable at <100 ms? |
 | 0b | If not: FightCade `ggponet.dll` shim spike (static RE of `quark:stream` arg semantics, then a minimal shim) | Hard time-box; if the `quark:stream` middle token is a server session id, stop |
-| 1 | Tauri launcher: peer registry, ROM index, side/role, spawn/teardown, Wine/Flatpak/native | Replaces scripts with equivalent behavior |
-| 2 | Room + KotH + score ledger; auto-launch next pair; result detection | 4-person session end-to-end |
-| 3 | Spectate integration via the Phase 0 outcome; else documented as deferred | 2 concurrent spectators |
+| 1 | Tauri launcher: peer registry, ROM index, side/role, spawn/teardown, Wine/Flatpak/native; **lobby connection health** (per-peer ping + direct/relay badge, pre-match warn on relay/high RTT) | Replaces scripts with equivalent behavior; unhealthy peer flagged before launch |
+| 2 | Room + KotH + score ledger; auto-launch next pair; result detection; periodic re-ping of match peers during the session | 4-person session end-to-end |
+| 3 | Spectate integration via the Phase 0 outcome; else documented as deferred; show spectator link quality with the same nethealth signals | 2 concurrent spectators |
 | 4 | Docs + packaging | Reproducible on all four machines |
+| Gated | Emotes + opt-in voice (mic/audio default off, per-session consent) | Admitted to the roadmap only after a /grill-me session |
 
 ### Prerequisites (do once per machine)
 
@@ -148,6 +156,9 @@ Cross-compiling Tauri across OSes is painful; each of the four machines builds i
 - Is RetroArch FBNeo netplay feel acceptable for fighting games at <100 ms?
 - Multi-spectator fan-out ceiling and whether each spectator needs its own inbound UDP port / firewall rule.
 - What exactly constitutes a "draw" signal from the emulator, if any.
+- Connection-health UX: poll cadence for `tailscale status --json` / `tailscale ping` (lobby idle vs. in-match), RTT warn threshold (group plays direct at <100 ms — warn above ~150 ms?), and Windows/macOS CLI output parity for parsing.
+- Can the wrapper detect mid-match degradation, or only pre-match? (GGPO stats need the shim; tailnet re-ping mid-match is coarse.)
+- Emotes/voice gate: what survives /grill-me? Open: emote surface (lobby-only vs. in-match overlay), voice transport (WebRTC over tailnet vs. "just use Discord"), push-to-talk vs. open mic, per-session consent UX.
 - macOS: signature/quarantine handling after replacing `ggponet.dll`; behavior when FightCade auto-updates.
 - RetroArch path: ROM/core parity and content-CRC matching across the four machines, and whether FBNeo core serialization is enabled.
 
@@ -159,6 +170,8 @@ Cross-compiling Tauri across OSes is painful; each of the four machines builds i
 - The 8 GB M1 dev harness (Chrome + editor + multiple emulator instances) may swap; use native/isolated instances.
 - Room-host authority means the ladder pauses if the host leaves; acceptable per "anybody can host".
 - Tailscale ACLs + per-OS firewall rules are prerequisites for discovery/spectating.
+- `tailscale status --json` format is version-dependent (Tailscale warns it may change between releases); pin a minimum Tailscale version and parse defensively.
+- Voice is a subsystem, not a feature (device selection, echo, consent UX); mic defaults off with a visible live indicator is mandatory. Scope risk stays until the /grill-me gate is passed.
 - Tailscale Personal free tier allows up to 6 users (unlimited devices) — the 4-person group is within limits.
 
 ### Publication checklist (repo is private for now)
