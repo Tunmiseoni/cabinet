@@ -104,33 +104,18 @@ jobs:
         if: matrix.platform == 'macos-latest'
         run: |
           set -euo pipefail
-          APP="$(find src-tauri/target -type d -name 'The Cabinet.app' -path '*release/bundle/macos*' | head -n1)"
-          if [ -z "$APP" ]; then
-            echo "::error::could not find the bundled .app"
-            exit 1
-          fi
-          echo "checking $APP"
-          test -d "$APP/Contents/_CodeSignature" || {
-            echo "::error::$APP has no _CodeSignature (bundle was not signed)"
-            exit 1
-          }
-          codesign --verify --deep --strict --verbose=2 "$APP"
-
-      - name: Verify macOS DMG contents
-        if: matrix.platform == 'macos-latest'
-        run: |
-          set -euo pipefail
           DMG="$(find src-tauri/target -name '*.dmg' -path '*release/bundle*' | head -n1)"
           if [ -z "$DMG" ]; then
             echo "::error::could not find the built .dmg"
             exit 1
           fi
+          echo "checking $DMG"
           MOUNT="$(mktemp -d)"
           hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT"
           trap 'hdiutil detach "$MOUNT" >/dev/null' EXIT
           APP="$MOUNT/The Cabinet.app"
           test -d "$APP/Contents/_CodeSignature" || {
-            echo "::error::$APP inside the DMG has no _CodeSignature"
+            echo "::error::$APP has no _CodeSignature (bundle was not signed)"
             exit 1
           }
           codesign --verify --deep --strict --verbose=2 "$APP"
