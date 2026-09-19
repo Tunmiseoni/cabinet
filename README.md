@@ -50,6 +50,7 @@ Run and build with the helper scripts (each sources the Rust env and installs de
 | `scripts/dev.sh` | Run the app in development (Vite on `:1420` + Rust backend) |
 | `scripts/build.sh` | Produce a production bundle for the current OS |
 | `scripts/setup-linux.sh` | Linux one-shot: install system/Rust/JS deps, then build (`--dev` to run) |
+| `scripts/uninstall-linux.sh` | Reverse a Linux source build: remove the repo dir, the deps it installed, and the Rust toolchain it added (dry-run by default; `--apply` to act) |
 | `scripts/test.sh` | Frontend typecheck/build, `cargo test`, `cargo clippy -D warnings` |
 | `scripts/clean.sh` | Remove build artifacts (`--deps` also removes `node_modules`; `--wine` stops stray Wine/emulator processes) |
 
@@ -77,6 +78,24 @@ FBNeo inside its sandbox; a native/Wine install is used as a fallback, and the
 ROM directory is auto-detected. If detection fails, set the FightCade directory
 in Settings. Ensure Tailscale is running and ports `47810/47811` (UDP/TCP) are
 allowed through the local firewall.
+
+#### Switching a Linux source build to a release
+
+Once released installers are available, the source build's toolchain is no
+longer needed. `scripts/uninstall-linux.sh` removes only what the build
+installed (it reconstructs that from `/var/log/pacman.log`, and leaves Rust
+alone if it predates the run). It never touches the FightCade Flatpak.
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/Tunmiseoni/the-cabinet/main/scripts/uninstall-linux.sh
+bash uninstall-linux.sh              # dry run: report what would go
+bash uninstall-linux.sh --apply      # remove repo dir, added deps, Rust
+bash uninstall-linux.sh --apply --install-appimage   # ...and install the release
+```
+
+On Arch/CachyOS the release `.deb` does not apply — use the `.AppImage`. If
+FUSE2 is missing, install `fuse2` or run the AppImage with
+`--appimage-extract-and-run`.
 
 ## Repository layout
 

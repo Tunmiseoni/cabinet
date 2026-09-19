@@ -45,7 +45,7 @@ State what you intend to do, why, and how to undo it, then wait for confirmation
 - `docs/` — investigation and design. `01`–`03` are the historical troubleshooting record; `04-design.md` is the current spec.
 - `frontend/` — Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias `@/*` -> `frontend/src/*`).
 - `src-tauri/` — Rust backend (`config`, `tailscale`, `roms`, `launcher`, `session`, `commands`).
-- `scripts/` — helper scripts (`dev.sh`, `build.sh`, `test.sh`, `clean.sh`) plus the reference per-OS launchers (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`, `fcade-lan-windows-firewall.bat`).
+- `scripts/` — helper scripts (`dev.sh`, `build.sh`, `test.sh`, `clean.sh`, `setup-linux.sh`, `uninstall-linux.sh`) plus the reference per-OS launchers (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`, `fcade-lan-windows-firewall.bat`).
 - The Tauri app is the implementation; the shell launchers remain the reference behavior.
 
 ## Environment facts (observed)
