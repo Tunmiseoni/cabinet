@@ -4,7 +4,7 @@ Guidance for agents working in this repository.
 
 ## About this project
 
-Research and tooling for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet, bypassing ISP CGNAT with the emulator's `quark:direct` mode. The plan (see [`docs/04-design.md`](docs/04-design.md)) is a cross-platform Tauri app named **cabinet**, providing a lobby, king-of-the-hill queue, room discovery over the tailnet, per-player win/loss/draw tracking, and low-bandwidth input-relay spectating. Stack: Tauri v2 (Rust backend) + Vite/React/Tailwind/shadcn frontend. **Phase 1 (macOS + Linux launchers, connection health, result watcher, local score ledger) and Phase 2.1–2.6 (rooms/KotH backend + UI, shared ledger, overlay auto-report, mid-match re-ping) are implemented.** The next blocker is **delivery/packaging** (getting builds/updates onto the other machines conveniently); all live multi-machine testing (Phase 2.7) is deferred until that is solved. Phase 0/0b, 3, 4 remain.
+Research and tooling for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet, bypassing ISP CGNAT with the emulator's `quark:direct` mode. The plan (see [`docs/04-design.md`](docs/04-design.md)) is a cross-platform Tauri app named **cabinet**, providing a lobby, king-of-the-hill queue, room discovery over the tailnet, per-player win/loss/draw tracking, and low-bandwidth input-relay spectating. Stack: Tauri v2 (Rust backend) + Vite/React/Tailwind/shadcn frontend. **Phase 1 (macOS + Linux launchers, connection health, result watcher, local score ledger) and Phase 2.1–2.6 (rooms/KotH backend + UI, shared ledger, overlay auto-report, mid-match re-ping) are implemented.** The next step is **distribution**: GitHub Actions builds a per-OS matrix and publishes installers to **GitHub Releases**, with the repo going **public after the publication scrub** (see `docs/04-design.md` §3/§7). That pipeline — plus the **Windows launcher adapter** — unblocks Phase 2.7 (4-person live test). Phase 0/0b, 3, 4 remain.
 
 ## Important: the user uses speech-to-text
 
@@ -83,6 +83,7 @@ Project layout: `frontend/` (Vite + React + TS + Tailwind v4 + shadcn/ui; alias 
 
 ## Git
 
-- The repository is intended to be initialized as **`cabinet`** and kept **private** initially. Do not initialize, commit, or push until the user explicitly asks.
+- The repository is **`Tunmiseoni/cabinet`**, **private for now** and going **public after the publication scrub** (see `docs/04-design.md` §3/§8). Do not change its visibility without the user's explicit request.
+- **Distribution is GitHub Actions → GitHub Releases** (`docs/04-design.md` §3/§7). Build workflows belong in `.github/workflows/`. Any signing/updater keys or tokens go in **GitHub Secrets, never in the repo**.
 - Before making the repo public, follow the Publication checklist in [`docs/04-design.md`](docs/04-design.md) (tailnet IPs, public IPs, LAN IPs, account handles must be scrubbed from history).
-- When committing later: commit `Cargo.lock` (this is an application, not a library); never commit `target/`, `node_modules/`, emulator binaries, ROMs, or `.env*`.
+- When committing: commit `Cargo.lock` (this is an application, not a library); never commit `target/`, `node_modules/`, emulator binaries, ROMs, or `.env*`.

@@ -16,7 +16,7 @@ The network problem this solves, and the full design, are documented in [`docs/0
 - **Rooms (Phase 2)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the host-persisted shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Results are auto-reported from the emulator overlay, with manual "I won"/"I lost" buttons as fallback; the match peer's RTT/path is re-pinged during play.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
 
-**Priorities.** The next blocker is a convenient way to get builds onto the other machines and push updates iteratively (`docs/04-design.md` §7); the 4-person live test (Phase 2.7) and further multi-machine testing are deferred until that is solved. After delivery: spectating (Phase 3, gated on a RetroArch spike) and the Windows launcher adapter.
+**Priorities.** The next step is **distribution**: GitHub Actions builds a per-OS matrix and publishes installers to **GitHub Releases**, and the repo will be made **public after the publication scrub** (`docs/04-design.md` §8) so friends can download releases anonymously. That pipeline, plus the **Windows launcher adapter** (required for the Windows friend), unblocks the 4-person live test (Phase 2.7). After that: spectating (Phase 3, gated on a RetroArch spike). See `docs/04-design.md` §7 for the open items.
 
 ## Quickstart
 
@@ -80,5 +80,5 @@ The shell launchers in `scripts/` (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `
 
 ## Notes
 
-- The repository is **private** for now. Before making it public, follow the publication checklist in [`docs/04-design.md`](docs/04-design.md) — tailnet/public/LAN addresses and account handles must be scrubbed from git history.
+- The repository is **private now and will be made public** to enable anonymous GitHub Releases. Before flipping visibility, follow the publication checklist in [`docs/04-design.md`](docs/04-design.md) — tailnet/public/LAN addresses and account handles must be scrubbed from git history.
 - Never commit `target/`, `node_modules/`, emulator binaries, ROMs, or `.env*`.
