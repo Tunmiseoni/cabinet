@@ -10,13 +10,13 @@ The network problem this solves, and the full design, are documented in [`docs/0
 
 - Peer registry and per-peer **connection health** — RTT, `direct` vs `DERP (relay)`, with a pre-match warning when a peer is relayed or above the latency threshold.
 - ROM index from the configured emulator's ROM directory.
-- **Launcher** for macOS FightCade (bundled Wine) with spawn/stop and process-exit detection.
+- **Launcher** for macOS FightCade (bundled Wine) and **Linux FightCade** (Flatpak `com.fightcade.Fightcade`, or a native/Wine install) with spawn/stop and process-exit detection.
 - **Match-result detection** — polls the emulator's `fbneo/fightcade/` overlay files (`winner.txt`, scores, characters) during and after a session and surfaces the result in the launcher card. Requires `bVidSaveOverlayFiles 1` in the FightCade FBNeo config.
 - **Lifetime scores** — a local per-opponent win/loss ledger (plus overall totals, win rate, and streaks), persisted to the app config dir. Game counts come from overlay score increments; loopback Dev-pair games are excluded. Resettable from Settings.
 - **Rooms (Phase 2, in progress)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Result reporting is manual ("I won"/"I lost") for now; host-persisted ledger and overlay auto-report are next.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
 
-Still to come: host-persisted shared ledger and overlay auto-report (rest of Phase 2), spectating (Phase 3, gated on a RetroArch spike), packaging (Phase 4). Linux/Windows launcher adapters are not implemented yet — non-macOS builds return an error.
+Still to come: host-persisted shared ledger and overlay auto-report (rest of Phase 2), spectating (Phase 3, gated on a RetroArch spike), Windows launcher adapter, packaging (Phase 4).
 
 ## Quickstart
 
@@ -44,6 +44,32 @@ Opt-in tests that touch real hardware (Tailscale, ROM dir, emulator launch) are 
 ```sh
 (cd src-tauri && cargo test -- --ignored --nocapture)
 ```
+
+### Linux (CachyOS) friend — build and run
+
+Tauri does not cross-compile cleanly, so build on the Linux machine. Install the
+system dependencies once (Arch/CachyOS names):
+
+```sh
+sudo pacman -S --needed base-devel webkit2gtk-4.1 libxdo openssl \
+  libayatana-appindicator librsvg nodejs npm flatpak
+```
+
+Then, from the repo root:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+npm install
+npm install --prefix frontend
+./scripts/build.sh        # or ./scripts/dev.sh to run without bundling
+```
+
+The bundle is written under `src-tauri/target/release/bundle/`. The app detects
+the FightCade Flatpak (`com.fightcade.Fightcade`) automatically and launches
+FBNeo inside its sandbox; a native/Wine install is used as a fallback, and the
+ROM directory is auto-detected. If detection fails, set the FightCade directory
+in Settings.
 
 ## Repository layout
 

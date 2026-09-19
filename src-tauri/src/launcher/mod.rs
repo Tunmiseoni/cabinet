@@ -1,6 +1,8 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
+#[allow(dead_code)]
+pub mod linux;
 pub mod macos;
 
 #[derive(Debug, Clone, Serialize)]
