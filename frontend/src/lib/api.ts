@@ -80,6 +80,50 @@ export interface DiscoveredRoom extends RoomAdvert {
   ip: string;
 }
 
+export interface RoomPlayer {
+  nodeId: string;
+  handle: string;
+  ip: string;
+}
+
+export interface MatchSlot {
+  nodeId: string;
+  handle: string;
+  ip: string;
+  side: number;
+}
+
+export interface CurrentMatch {
+  matchId: string;
+  p1: MatchSlot;
+  p2: MatchSlot;
+  startedAtMs: number;
+}
+
+export interface LedgerEntry {
+  handle: string;
+  wins: number;
+  losses: number;
+  draws: number;
+  games: number;
+}
+
+export type RoomPhase = "lobby" | "playing";
+
+export interface RoomState {
+  roomId: string;
+  host: RoomPlayer;
+  rom: string;
+  revision: number;
+  phase: RoomPhase;
+  champion: RoomPlayer | null;
+  challenger: RoomPlayer | null;
+  queue: RoomPlayer[];
+  currentMatch: CurrentMatch | null;
+  ledger: Record<string, LedgerEntry>;
+  matchSeq: number;
+}
+
 export interface OverlayStatus {
   enabled: boolean;
   iniPath: string;
@@ -148,6 +192,8 @@ export const MATCH_EVENT = "match-state-changed";
 
 export const SCORES_EVENT = "scores-changed";
 
+export const ROOM_EVENT = "room-state-changed";
+
 export const getConfig = () => invoke<Config>("get_config");
 
 export const setConfig = (config: Config) =>
@@ -182,3 +228,25 @@ export const launchDevPair = (rom: string) =>
 export const stopMatch = () => invoke<MatchState>("stop_match");
 
 export const matchStatus = () => invoke<MatchState>("match_status");
+
+export const hostRoom = (rom: string, secret: string | null) =>
+  invoke<RoomState>("host_room", { rom, secret });
+
+export const joinRoom = (
+  ip: string,
+  roomId: string,
+  secret: string | null,
+) => invoke<RoomState>("join_room", { ip, roomId, secret });
+
+export const leaveRoom = () => invoke<void>("leave_room");
+
+export const roomEnqueue = () => invoke<void>("room_enqueue");
+
+export const roomLeaveQueue = () => invoke<void>("room_leave_queue");
+
+export const reportRoomResult = (matchId: string, won: boolean) =>
+  invoke<void>("report_room_result", { matchId, won });
+
+export const roomState = () => invoke<RoomState | null>("room_state");
+
+export const roomSecret = () => invoke<string | null>("room_secret");

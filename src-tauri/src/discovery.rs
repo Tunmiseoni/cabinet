@@ -131,6 +131,7 @@ impl Advertiser {
         })
     }
 
+    #[allow(dead_code)]
     pub fn local_addr(&self) -> io::Result<std::net::SocketAddr> {
         self.socket.local_addr()
     }

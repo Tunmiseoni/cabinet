@@ -18,10 +18,6 @@ impl Player {
             ip: ip.into(),
         }
     }
-
-    pub fn key(&self) -> &str {
-        &self.node_id
-    }
 }
 
 impl From<&Peer> for Player {
@@ -77,12 +73,6 @@ mod tests {
             self_peer: Some(peer()),
             peers: Vec::new(),
         }
-    }
-
-    #[test]
-    fn key_is_node_id_not_handle() {
-        let player = Player::new("n123", "Tunmise", "100.x.x.x");
-        assert_eq!(player.key(), "n123");
     }
 
     #[test]

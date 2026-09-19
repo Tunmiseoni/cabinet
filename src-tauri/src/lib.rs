@@ -1,17 +1,14 @@
 mod commands;
 mod config;
-#[allow(dead_code)]
 mod control;
-#[allow(dead_code)]
 mod discovery;
 mod launcher;
-#[allow(dead_code)]
 mod player;
 mod results;
-#[allow(dead_code)]
 mod room;
 mod roms;
 mod scores;
+mod service;
 mod session;
 mod tailscale;
 
@@ -20,6 +17,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(session::Session::default())
+        .manage(service::RoomService::default())
         .setup(|app| {
             use tauri::Manager;
             let dir = app.path().app_config_dir()?;
@@ -42,6 +40,14 @@ pub fn run() {
             commands::launch_dev_pair,
             commands::stop_match,
             commands::match_status,
+            commands::host_room,
+            commands::join_room,
+            commands::leave_room,
+            commands::room_enqueue,
+            commands::room_leave_queue,
+            commands::report_room_result,
+            commands::room_state,
+            commands::room_secret,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

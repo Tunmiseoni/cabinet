@@ -6,31 +6,45 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { LaunchCard } from "@/components/LaunchCard";
 import { LifetimeCard } from "@/components/LifetimeCard";
 import { PeersCard } from "@/components/PeersCard";
+import { RoomCard } from "@/components/RoomCard";
+import { RoomsCard } from "@/components/RoomsCard";
 import { RomsCard } from "@/components/RomsCard";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import {
   getConfig,
   getScores,
+  hostRoom,
+  joinRoom,
   launcherInfo,
   launchDevPair,
   launchMatch,
+  leaveRoom,
   listPeers,
+  listRooms,
   listRoms,
   matchStatus,
   overlayStatus,
   peersHealth,
+  reportRoomResult,
   resetScores,
+  roomEnqueue,
+  roomLeaveQueue,
+  roomSecret,
+  roomState,
   setConfig as saveConfig,
   stopMatch,
   type Config,
+  type DiscoveredRoom,
   type InstallInfo,
   type MatchState,
   type OverlayStatus,
   type PeerHealth,
+  type RoomState,
   type RomIndex,
   type ScoreSnapshot,
   type Tailnet,
   MATCH_EVENT,
+  ROOM_EVENT,
   SCORES_EVENT,
 } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
@@ -44,6 +58,11 @@ function App() {
   const [launcher, setLauncher] = useState<InstallInfo | null>(null);
   const [overlay, setOverlay] = useState<OverlayStatus | null>(null);
   const [scores, setScores] = useState<ScoreSnapshot | null>(null);
+  const [rooms, setRooms] = useState<DiscoveredRoom[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
+  const [room, setRoom] = useState<RoomState | null>(null);
+  const [roomSecretValue, setRoomSecretValue] = useState<string | null>(null);
+  const [roomBusy, setRoomBusy] = useState(false);
   const [match, setMatch] = useState<MatchState | null>(null);
   const [launchBusy, setLaunchBusy] = useState(false);
   const [peersLoading, setPeersLoading] = useState(true);
@@ -117,6 +136,18 @@ function App() {
     }
   }, []);
 
+  const refreshRooms = useCallback(async () => {
+    setRoomsLoading(true);
+    try {
+      setRooms(await listRooms());
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
+    } finally {
+      setRoomsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     getConfig()
       .then(setConfig)
@@ -125,10 +156,23 @@ function App() {
     refreshRoms();
     refreshLauncher();
     refreshScores();
+    refreshRooms();
+    roomState()
+      .then(setRoom)
+      .catch(() => undefined);
+    roomSecret()
+      .then(setRoomSecretValue)
+      .catch(() => undefined);
     matchStatus()
       .then(setMatch)
       .catch(() => undefined);
-  }, [refreshPeers, refreshRoms, refreshLauncher, refreshScores]);
+  }, [
+    refreshPeers,
+    refreshRoms,
+    refreshLauncher,
+    refreshScores,
+    refreshRooms,
+  ]);
 
   useEffect(() => {
     const unlisten = listen<MatchState>(MATCH_EVENT, (event) =>
@@ -149,10 +193,29 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const unlisten = listen<RoomState | null>(ROOM_EVENT, (event) => {
+      setRoom(event.payload);
+      if (event.payload) {
+        roomSecret()
+          .then(setRoomSecretValue)
+          .catch(() => undefined);
+      } else {
+        setRoomSecretValue(null);
+      }
+    });
+    return () => {
+      unlisten.then((dispose) => dispose());
+    };
+  }, []);
+
+  useEffect(() => {
     const seconds = config?.pollIntervalSecs ?? 10;
-    const timer = setInterval(refreshPeers, Math.max(2, seconds) * 1000);
+    const timer = setInterval(() => {
+      refreshPeers();
+      refreshRooms();
+    }, Math.max(2, seconds) * 1000);
     return () => clearInterval(timer);
-  }, [config?.pollIntervalSecs, refreshPeers]);
+  }, [config?.pollIntervalSecs, refreshPeers, refreshRooms]);
 
   async function handleSaveConfig(next: Config) {
     try {
@@ -216,6 +279,86 @@ function App() {
     }
   }
 
+  async function handleHostRoom(rom: string, secret: string | null) {
+    setRoomBusy(true);
+    try {
+      const state = await hostRoom(rom, secret);
+      setRoom(state);
+      setRoomSecretValue(await roomSecret());
+      await refreshRooms();
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
+    } finally {
+      setRoomBusy(false);
+    }
+  }
+
+  async function handleJoinRoom(target: DiscoveredRoom, secret: string | null) {
+    setRoomBusy(true);
+    try {
+      setRoom(await joinRoom(target.ip, target.roomId, secret));
+      setRoomSecretValue(null);
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
+    } finally {
+      setRoomBusy(false);
+    }
+  }
+
+  async function handleLeaveRoom() {
+    setRoomBusy(true);
+    try {
+      await leaveRoom();
+      setRoom(null);
+      setRoomSecretValue(null);
+      await refreshRooms();
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
+    } finally {
+      setRoomBusy(false);
+    }
+  }
+
+  async function handleRoomEnqueue() {
+    setRoomBusy(true);
+    try {
+      await roomEnqueue();
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
+    } finally {
+      setRoomBusy(false);
+    }
+  }
+
+  async function handleRoomLeaveQueue() {
+    setRoomBusy(true);
+    try {
+      await roomLeaveQueue();
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
+    } finally {
+      setRoomBusy(false);
+    }
+  }
+
+  async function handleReportRoomResult(won: boolean) {
+    if (!room?.currentMatch) return;
+    setRoomBusy(true);
+    try {
+      await reportRoomResult(room.currentMatch.matchId, won);
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
+    } finally {
+      setRoomBusy(false);
+    }
+  }
+
   const warnings = (tailnet?.peers ?? [])
     .filter((peer) => peer.online)
     .map((peer) => healthWarning(peer.hostname, health[peer.ip], rttWarnMs))
@@ -241,6 +384,7 @@ function App() {
                 refreshRoms();
                 refreshLauncher();
                 refreshScores();
+                refreshRooms();
               }}
             >
               <RefreshCw className="size-4" />
@@ -305,6 +449,31 @@ function App() {
           />
           <RomsCard romIndex={romIndex} loading={romsLoading} error={romsError} />
         </div>
+
+        {room && (
+          <RoomCard
+            room={room}
+            selfNodeId={tailnet?.selfPeer?.nodeId ?? null}
+            secret={roomSecretValue}
+            busy={roomBusy}
+            onEnqueue={handleRoomEnqueue}
+            onLeaveQueue={handleRoomLeaveQueue}
+            onLeave={handleLeaveRoom}
+            onReport={handleReportRoomResult}
+          />
+        )}
+
+        <RoomsCard
+          rooms={rooms}
+          loading={roomsLoading}
+          error={null}
+          inRoom={room !== null}
+          romIndex={romIndex}
+          tailnet={tailnet}
+          onRefresh={refreshRooms}
+          onHost={handleHostRoom}
+          onJoin={handleJoinRoom}
+        />
 
         <LifetimeCard scores={scores} tailnet={tailnet} overlay={overlay} />
 

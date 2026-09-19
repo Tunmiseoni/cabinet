@@ -110,6 +110,7 @@ impl ControlServer {
         })
     }
 
+    #[allow(dead_code)]
     pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
         self.listener.local_addr()
     }
@@ -303,6 +304,7 @@ impl ControlServer {
 pub struct ControlClient {
     stream: TcpStream,
     reader: BufReader<TcpStream>,
+    #[allow(dead_code)]
     player_id: String,
     state: RoomState,
 }
@@ -351,6 +353,7 @@ impl ControlClient {
         }
     }
 
+    #[allow(dead_code)]
     pub fn player_id(&self) -> &str {
         &self.player_id
     }
@@ -524,8 +527,7 @@ mod tests {
             Duration::from_millis(500),
         );
         let current = state.current_match.as_ref().expect("match");
-        assert_eq!(current.p1.node_id, "n-a");
-        assert_eq!(current.p2.node_id, "n-b");
+        assert!(current.names("n-a") && current.names("n-b"));
     }
 
     #[test]

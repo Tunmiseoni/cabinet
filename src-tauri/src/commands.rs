@@ -3,8 +3,10 @@ use crate::discovery::{self, DiscoveredRoom};
 use crate::launcher::macos::{MacosLauncher, DEFAULT_APP_DIR};
 use crate::launcher::{InstallInfo, Launcher, MatchConfig};
 use crate::results::{self, OverlayStatus};
+use crate::room::RoomState;
 use crate::roms::{self, RomIndex};
 use crate::scores::{ScoreBoard, Snapshot};
+use crate::service::RoomService;
 use crate::session::{self, MatchState, Plan};
 use crate::tailscale::{self, PeerHealth, Tailnet};
 use serde::Deserialize;
@@ -12,7 +14,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
-fn config_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+pub(crate) fn config_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = app
         .path()
         .app_config_dir()
@@ -79,7 +81,7 @@ pub fn list_rooms(app: AppHandle) -> Result<Vec<DiscoveredRoom>, String> {
     ))
 }
 
-fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
     if !cfg!(target_os = "macos") {
         return Err("this build only ships the macOS launcher so far".into());
     }
@@ -173,4 +175,57 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String
         },
     ];
     session::launch_many(&app, &plans, true, "127.0.0.1 (P1↔P2)".to_string())
+}
+
+#[tauri::command]
+pub fn host_room(
+    app: AppHandle,
+    rom: String,
+    secret: Option<String>,
+) -> Result<RoomState, String> {
+    RoomService::host(&app, rom, secret)
+}
+
+#[tauri::command]
+pub fn join_room(
+    app: AppHandle,
+    ip: String,
+    room_id: String,
+    secret: Option<String>,
+) -> Result<RoomState, String> {
+    RoomService::join(&app, ip, room_id, secret)
+}
+
+#[tauri::command]
+pub fn leave_room(app: AppHandle) -> Result<(), String> {
+    RoomService::leave(&app)
+}
+
+#[tauri::command]
+pub fn room_enqueue(app: AppHandle) -> Result<(), String> {
+    RoomService::enqueue(&app)
+}
+
+#[tauri::command]
+pub fn room_leave_queue(app: AppHandle) -> Result<(), String> {
+    RoomService::leave_queue(&app)
+}
+
+#[tauri::command]
+pub fn report_room_result(
+    app: AppHandle,
+    match_id: String,
+    won: bool,
+) -> Result<(), String> {
+    RoomService::report_result(&app, match_id, won)
+}
+
+#[tauri::command]
+pub fn room_state(app: AppHandle) -> Option<RoomState> {
+    app.state::<RoomService>().state()
+}
+
+#[tauri::command]
+pub fn room_secret(app: AppHandle) -> Option<String> {
+    app.state::<RoomService>().secret()
 }

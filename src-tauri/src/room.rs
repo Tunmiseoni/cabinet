@@ -248,6 +248,7 @@ impl RoomState {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn report_draw(&mut self, match_id: &str, now_ms: u64) -> Result<(), RoomError> {
         let current = self.current_match.clone().ok_or(RoomError::NoActiveMatch)?;
         if current.match_id != match_id {
