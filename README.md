@@ -36,6 +36,7 @@ Run and build with the helper scripts (each sources the Rust env and installs de
 |---|---|
 | `scripts/dev.sh` | Run the app in development (Vite on `:1420` + Rust backend) |
 | `scripts/build.sh` | Produce a production bundle for the current OS |
+| `scripts/setup-linux.sh` | Linux one-shot: install system/Rust/JS deps, then build (`--dev` to run) |
 | `scripts/test.sh` | Frontend typecheck/build, `cargo test`, `cargo clippy -D warnings` |
 | `scripts/clean.sh` | Remove build artifacts (`--deps` also removes `node_modules`; `--wine` stops stray Wine/emulator processes) |
 
@@ -47,29 +48,22 @@ Opt-in tests that touch real hardware (Tailscale, ROM dir, emulator launch) are 
 
 ### Linux (CachyOS) friend — build and run
 
-Tauri does not cross-compile cleanly, so build on the Linux machine. Install the
-system dependencies once (Arch/CachyOS names):
+Tauri does not cross-compile cleanly, so build on the Linux machine. The helper
+script installs the Tauri system dependencies, the Rust toolchain, and JS deps,
+then builds:
 
 ```sh
-sudo pacman -S --needed base-devel webkit2gtk-4.1 libxdo openssl \
-  libayatana-appindicator librsvg nodejs npm flatpak
-```
-
-Then, from the repo root:
-
-```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-npm install
-npm install --prefix frontend
-./scripts/build.sh        # or ./scripts/dev.sh to run without bundling
+git clone <repo> cabinet && cd cabinet   # or copy the folder over
+./scripts/setup-linux.sh                 # deps + production bundle
+./scripts/setup-linux.sh --dev           # deps + run in dev mode
 ```
 
 The bundle is written under `src-tauri/target/release/bundle/`. The app detects
 the FightCade Flatpak (`com.fightcade.Fightcade`) automatically and launches
 FBNeo inside its sandbox; a native/Wine install is used as a fallback, and the
 ROM directory is auto-detected. If detection fails, set the FightCade directory
-in Settings.
+in Settings. Ensure Tailscale is running and ports `47810/47811` (UDP/TCP) are
+allowed through the local firewall.
 
 ## Repository layout
 
