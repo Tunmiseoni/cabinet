@@ -1,7 +1,7 @@
 # Design: cabinet — Tailnet FightCade lobby app (launcher + KotH + spectating)
 
 Status: Phase 1 (macOS + Linux launchers, connection health, result watcher, local score ledger) and Phase 2.1–2.6 (rooms/KotH, shared ledger, overlay auto-report, mid-match re-ping) are implemented as a Tauri v2 app. Phase 2.7 (4-person live test) is pending the GitHub Actions/Releases pipeline and the Windows launcher adapter; spectating (Phase 3) and packaging (Phase 4) remain. See the progress note in §6.
-Project name: **cabinet**. Git repository: **private now, public after the §8 publication scrub** — public release assets give the friends anonymous downloads and remove the private-repo Actions minute cap.
+Project name: **cabinet**. Git repository: **public** (`Tunmiseoni/cabinet`) — history scrubbed on 2026-09-19 (see §8), so release assets download anonymously and the private-repo Actions minute cap no longer applies.
 Supersedes the "chosen route" framing in [`03-implementation-plan.md`](03-implementation-plan.md); the troubleshooting record (`01`–`03`) stays as history.
 
 ## TL;DR
@@ -53,7 +53,7 @@ Tradeoff: FightCade uses dedicated UDP/GGPO and is generally regarded as better 
 
 ## 3. Decisions
 
-- **App name: `cabinet`.** Git repository to be initialized under this name, **private** initially.
+- **App name: `cabinet`.** Git repository: **public** at `Tunmiseoni/cabinet` since the 2026-09-19 history scrub (§8).
 - **Stack: Tauri v2 + Vite.** Rust backend for process/socket/tailnet work; the UI is a Vite-built web frontend rendered in the OS webview. Frontend stack is **React + TypeScript + Tailwind CSS v4 + shadcn/ui** (vanilla HTML/CSS/JS was the initial sketch; React + shadcn was chosen for a cleaner lobby UI). Node/npm is used only for the frontend build and the Tauri CLI, not the backend.
 - **Rust toolchain via `rustup`** (not Homebrew's keg-only `rustup`, which conflicts with the `rust` formula). See §6 Prerequisites.
 - **Architecture: coordination layer, not a FightCade clone.** Reuse `quark:direct` and the existing scripts; the app orchestrates.
@@ -79,7 +79,7 @@ Tradeoff: FightCade uses dedicated UDP/GGPO and is generally regarded as better 
 - **Shim constraints (if used):** pin FightCade 2.1.45, disable auto-update, run Linux from a writable copy of `fbneo/`, and re-sign the macOS `.app` after replacing `ggponet.dll`.
 - **Docs:** this file is the spec; `01`–`03` are amended for the direct-path finding and kept as history; `AGENTS.md` records conventions and setup.
 - **Distribution: GitHub Actions builds a per-OS matrix and publishes installers to GitHub Releases.** Each OS builds its own binary (Tauri does not cross-compile cleanly); friends download the release artifact and run it, without cloning the repo or installing a toolchain. Manual re-download replaces a `tauri-plugin-updater` feed for now (4 people); an updater can layer on later. The **Windows launcher adapter is a prerequisite for Phase 2.7**, since the Windows friend must be able to play.
-- **Repository visibility: private now, public after the §8 publication scrub.** A public repo makes release-asset downloads anonymous (no GitHub account/collaborator access for the friends) and removes the private-repo Actions minute cap. The scrub (`git filter-repo`/BFG over all history) and the visibility flip are a separate, explicitly-confirmed session; until then the repo stays private and only macOS/Linux are distributable.
+- **Repository visibility: public, after the §8 publication scrub (completed 2026-09-19).** A public repo makes release-asset downloads anonymous (no GitHub account/collaborator access for the friends) and removes the private-repo Actions minute cap. The history rewrite (`git-filter-repo` over all commits) and the visibility flip were done together on 2026-09-19; the scrub replaced the real addresses/handles with the placeholders recorded in §8.
 
 ## 4. Architecture
 
@@ -188,7 +188,7 @@ The host advances the ladder only on a result, so a client that misses a state m
 | 1 | Tauri launcher: peer registry, ROM index, side/role, spawn/teardown, Wine/Flatpak/native; **lobby connection health** (per-peer ping + direct/relay badge, pre-match warn on relay/high RTT) | Replaces scripts with equivalent behavior; unhealthy peer flagged before launch |
 | 2 | Room + KotH + score ledger; auto-launch next pair; result detection; periodic re-ping of match peers during the session. Sub-steps: **2.1** `player`/`room` state machine (pure, tested) → **2.2** UDP discovery → **2.3** TCP control → **2.4** authority-pull orchestration → **2.5** host-persisted shared ledger → **2.6** mid-match re-ping → **2.7** 4-person test (2.1–2.6 done; **2.7 pending the Actions/Releases pipeline + Windows adapter**) | 4-person session end-to-end (pending) |
 | 3 | Spectate integration via the Phase 0 outcome; else documented as deferred; show spectator link quality with the same nethealth signals | 2 concurrent spectators |
-| **Delivery** | GitHub Actions per-OS build matrix publishing installers to GitHub Releases; repo public after the §8 scrub so downloads are anonymous (see §3 and §7) — promoted ahead of further live testing | Friend machines install and re-download released builds without cloning or rebuilding |
+| **Delivery** | GitHub Actions per-OS build matrix publishing installers to GitHub Releases; repo public (history scrubbed 2026-09-19, §8) so downloads are anonymous (see §3 and §7) — promoted ahead of further live testing | Friend machines install and re-download released builds without cloning or rebuilding |
 | 4 | Docs + packaging | Reproducible on all four machines |
 | Gated | Emotes + opt-in voice + input recording / match history for replays | Admitted to the roadmap only after a /grill-me session |
 
@@ -240,7 +240,7 @@ Cross-compiling Tauri across OSes is painful; each of the four machines builds i
 - Emotes/voice gate: what survives /grill-me? Open: emote surface (lobby-only vs. in-match overlay), voice transport (WebRTC over tailnet vs. "just use Discord"), push-to-talk vs. open mic, per-session consent UX.
 - Input recording / match history gate: what survives /grill-me? Open: reuse emulator replay files (FightCade `.fr` / `quark:replay`, RetroArch replay) vs. capture raw inputs; where recordings live and who holds them (room host vs. per-player); determinism/version pinning (core + ROM CRC) so replays stay playable; storage growth and retention; recording consent and visibility (does the lobby show a "recording" indicator?).
 - macOS: signature/quarantine handling after replacing `ggponet.dll`; behavior when FightCade auto-updates.
-- **Builds/distribution (resolved 2026-09-19).** Chosen route: **GitHub Actions per-OS build matrix → GitHub Releases** (see §3). Each OS builds its own binary; friends download the release installer instead of cloning, installing OS/Rust/JS deps, and building natively — the path that derailed the first Linux attempt with stale package DBs / missing toolchains. The repo goes **public after the §8 publication scrub**, so release-asset downloads are anonymous (no GitHub account or collaborator access needed) and private-repo Actions minute caps no longer apply. The update mechanism is manual re-download for now; `tauri-plugin-updater` over a signed feed remains a possible later layer. Remaining open items: **when** to run the scrub and visibility flip (a separate, explicitly-confirmed session), and landing the **Windows launcher adapter**, which is a Phase 2.7 prerequisite.
+- **Builds/distribution (resolved 2026-09-19).** Chosen route: **GitHub Actions per-OS build matrix → GitHub Releases** (see §3). Each OS builds its own binary; friends download the release installer instead of cloning, installing OS/Rust/JS deps, and building natively — the path that derailed the first Linux attempt with stale package DBs / missing toolchains. The repo was made **public** after the §8 publication scrub (completed 2026-09-19), so release-asset downloads are anonymous (no GitHub account or collaborator access needed) and private-repo Actions minute caps no longer apply. The update mechanism is manual re-download for now; `tauri-plugin-updater` over a signed feed remains a possible later layer. The remaining prerequisite is landing the **Windows launcher adapter**, which is a Phase 2.7 prerequisite.
 - RetroArch path: ROM/core parity and content-CRC matching across the four machines, and whether FBNeo core serialization is enabled.
 
 ## 8. Risks and tradeoffs
@@ -256,17 +256,19 @@ Cross-compiling Tauri across OSes is painful; each of the four machines builds i
 - Input recordings are only replayable against the exact core + ROM build; a core/ROM update silently invalidates history. Storage and retention are unbounded unless capped, and recordings capture player behavior (consent/visibility needed). Scope risk stays until the /grill-me gate is passed.
 - Tailscale Personal free tier allows up to 6 users (unlimited devices) — the 4-person group is within limits.
 
-### Publication checklist (repo is private for now)
+### Publication scrub (completed 2026-09-19)
 
-Before making `cabinet` public, scrub the following from **all files and from git history** (deleting them in a later commit is not enough — use `git filter-repo` or BFG before any public push):
+The repository was made public on 2026-09-19 after a full-history scrub. The real values below were replaced with placeholders in **all files and in git history** (via `git-filter-repo`, with commit authors rewritten to the GitHub noreply identity), and the GitHub repository was deleted and recreated so no pre-scrub objects survive:
 
-- Tailscale addresses/hostnames: `100.64.0.10`, `100.64.0.11`, `100.64.0.12`, `mac-host`, `cachyos-host`
-- Public IPs: `203.0.113.10`, `203.0.113.11`
+- Tailscale addresses/hostnames: three `100.64.0.x` addresses, `mac-host`, `cachyos-host`, `windows-host`
+- Tailnet MagicDNS suffix: `example-tailnet.ts.net`
+- Public IPs: `203.0.113.10`, `203.0.113.11`, and the first public traceroute hop `203.0.113.12`
+- ISP private hops: `10.0.0.2`–`10.0.0.4`
 - LAN IPs and router: `192.168.1.100`, `192.168.1.101`, `192.168.1.1`
 - Account handles: `me@`, `friend@`
-- ROM short names, if considered sensitive
+- ROM short names: kept (`sfiii3nr1` is a public MAME identifier)
 
-Preventive measures for the first commit: add `*.local` and `.env*` to `.gitignore`, and prefer placeholders such as `100.x.x.x` in documentation going forward.
+Going forward, prefer placeholders such as `100.x.x.x` in documentation, and keep `*.local` and `.env*` in `.gitignore`.
 
 ## 9. Reference links
 
