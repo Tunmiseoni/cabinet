@@ -6,7 +6,7 @@ The network problem this solves, and the full design, are documented in [`docs/0
 
 ## Status
 
-**Phase 1 (macOS-first) is implemented.** Current app:
+**Phase 1 (macOS + Linux launchers, connection health, result watcher, local score ledger) and Phase 2.1–2.6 (rooms/KotH, shared ledger, overlay auto-report, mid-match re-ping) are implemented.** Current app:
 
 - Peer registry and per-peer **connection health** — RTT, `direct` vs `DERP (relay)`, with a pre-match warning when a peer is relayed or above the latency threshold.
 - ROM index from the configured emulator's ROM directory.
@@ -53,7 +53,7 @@ script installs the Tauri system dependencies, the Rust toolchain, and JS deps,
 then builds:
 
 ```sh
-git clone <repo> cabinet && cd cabinet   # or copy the folder over
+git clone https://github.com/Tunmiseoni/cabinet.git && cd cabinet   # or copy the folder over
 ./scripts/setup-linux.sh                 # deps + production bundle
 ./scripts/setup-linux.sh --dev           # deps + run in dev mode
 ```
@@ -71,7 +71,7 @@ allowed through the local firewall.
 cabinet/
 ├─ frontend/     Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias @/* -> frontend/src/*)
 ├─ src-tauri/    Rust backend (Tauri v2)
-│  └─ src/       config, tailscale, roms, launcher, session, commands
+│  └─ src/       config, tailscale, roms, launcher, session, results, scores, player, discovery, control, room, service, commands
 ├─ scripts/      helper scripts + the original per-OS FightCade launchers
 └─ docs/         investigation record (01–03) and current spec (04)
 ```
