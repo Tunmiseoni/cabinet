@@ -1,4 +1,4 @@
-# cabinet
+# The Cabinet
 
 A cross-platform desktop lobby for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet. It drives the emulator's built-in `quark:direct` mode, so matches connect peer-to-peer and bypass ISP CGNAT entirely — no FightCade matchmaking, no port forwarding, no paid VPN.
 
@@ -18,11 +18,11 @@ The network problem this solves, and the full design, are documented in [`docs/0
 
 ## Download
 
-Installers are published to [GitHub Releases](https://github.com/Tunmiseoni/cabinet/releases): a `.dmg` for Apple Silicon macOS, a `-setup.exe` (NSIS) for Windows, and `.AppImage`/`.deb` for Linux. No GitHub account is needed.
+Installers are published to [GitHub Releases](https://github.com/Tunmiseoni/the-cabinet/releases): a `.dmg` for Apple Silicon macOS, a `-setup.exe` (NSIS) for Windows, and `.AppImage`/`.deb` for Linux. No GitHub account is needed.
 
 The builds are **unsigned**:
 
-- **macOS** — Gatekeeper will block the first launch. Right-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/cabinet.app`.
+- **macOS** — Gatekeeper will block the first launch. Right-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine "/Applications/The Cabinet.app"`.
 - **Windows** — SmartScreen may warn; choose **More info → Run anyway**.
 
 On Windows, run `scripts/fcade-lan-windows-firewall.bat` once (elevated) to allow inbound UDP for the emulator.
@@ -66,7 +66,7 @@ script installs the Tauri system dependencies, the Rust toolchain, and JS deps,
 then builds:
 
 ```sh
-git clone https://github.com/Tunmiseoni/cabinet.git && cd cabinet   # or copy the folder over
+git clone https://github.com/Tunmiseoni/the-cabinet.git && cd the-cabinet   # or copy the folder over
 ./scripts/setup-linux.sh                 # deps + production bundle
 ./scripts/setup-linux.sh --dev           # deps + run in dev mode
 ```
@@ -81,7 +81,7 @@ allowed through the local firewall.
 ## Repository layout
 
 ```
-cabinet/
+the-cabinet/
 ├─ frontend/     Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias @/* -> frontend/src/*)
 ├─ src-tauri/    Rust backend (Tauri v2)
 │  └─ src/       config, tailscale, roms, launcher, session, results, scores, player, discovery, control, room, service, commands
@@ -93,5 +93,5 @@ The shell launchers in `scripts/` (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `
 
 ## Notes
 
-- The repository is **public** at [`Tunmiseoni/cabinet`](https://github.com/Tunmiseoni/cabinet) to enable anonymous GitHub Releases. Its full history was scrubbed of tailnet/public/LAN addresses and account handles on 2026-09-19 (see `docs/04-design.md` §8), so the docs use placeholders.
+- The repository is **public** at [`Tunmiseoni/the-cabinet`](https://github.com/Tunmiseoni/the-cabinet) to enable anonymous GitHub Releases. Its full history was scrubbed of tailnet/public/LAN addresses and account handles on 2026-09-19 (see `docs/04-design.md` §8), so the docs use placeholders.
 - Never commit `target/`, `node_modules/`, emulator binaries, ROMs, or `.env*`.

@@ -4,7 +4,18 @@ Guidance for agents working in this repository.
 
 ## About this project
 
-Research and tooling for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet, bypassing ISP CGNAT with the emulator's `quark:direct` mode. The plan (see [`docs/04-design.md`](docs/04-design.md)) is a cross-platform Tauri app named **cabinet**, providing a lobby, king-of-the-hill queue, room discovery over the tailnet, per-player win/loss/draw tracking, and low-bandwidth input-relay spectating. Stack: Tauri v2 (Rust backend) + Vite/React/Tailwind/shadcn frontend. **Phase 1 (macOS + Linux + Windows launchers, connection health, result watcher, local score ledger), Phase 2.1–2.6 (rooms/KotH backend + UI, shared ledger, overlay auto-report, mid-match re-ping), and the GitHub Actions → GitHub Releases distribution pipeline (with the Windows launcher adapter) are implemented.** Distribution uses `.github/workflows/ci.yml` (3-OS test/clippy gate) and `release.yml` (per-OS build → draft GitHub Release via `tauri-action`); tag `v*` to cut a release. The repo is **public** after the 2026-09-19 publication scrub (see `docs/04-design.md` §3/§8). That unblocks Phase 2.7 (4-person live test). Phase 0/0b, 3, 4 remain.
+Research and tooling for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet, bypassing ISP CGNAT with the emulator's `quark:direct` mode. The plan (see [`docs/04-design.md`](docs/04-design.md)) is a cross-platform Tauri app named **The Cabinet** (slug `the-cabinet`), providing a lobby, king-of-the-hill queue, room discovery over the tailnet, per-player win/loss/draw tracking, and low-bandwidth input-relay spectating. Stack: Tauri v2 (Rust backend) + Vite/React/Tailwind/shadcn frontend. **Phase 1 (macOS + Linux + Windows launchers, connection health, result watcher, local score ledger), Phase 2.1–2.6 (rooms/KotH backend + UI, shared ledger, overlay auto-report, mid-match re-ping), and the GitHub Actions → GitHub Releases distribution pipeline (with the Windows launcher adapter) are implemented.** Distribution uses `.github/workflows/ci.yml` (3-OS test/clippy gate) and `release.yml` (per-OS build → draft GitHub Release via `tauri-action`); tag `v*` to cut a release. The repo is **public** after the 2026-09-19 publication scrub (see `docs/04-design.md` §3/§8). That unblocks Phase 2.7 (4-person live test). Phase 0/0b, 3, 4 remain.
+
+## Important: this repository is public
+
+**`Tunmiseoni/the-cabinet` is a public GitHub repository** (since 2026-09-19, after a full-history scrub; see `docs/04-design.md` §3/§8). Everything committed, including full history, is world-readable. Before writing or committing anything, check it for leaks:
+
+- No secrets or credentials of any kind (tokens, API keys, signing/updater keys, passwords). Put those in **GitHub Secrets, never in the repo**.
+- No real network identifiers: tailnet IPs/hostnames, public IPs, LAN IPs, router/admin addresses, MagicDNS names, or account handles. Use placeholders instead (`100.x.x.x`, `192.0.2.x`, `203.0.113.x`, `example-tailnet.ts.net`).
+- No ROMs, emulator binaries, `.env*`, or local machine paths/config with personal data.
+- Code and docs are fine — `sfiii3nr1` and other public MAME identifiers are kept.
+
+Secret scanning and push protection are enabled on GitHub, so a detected secret will be blocked on push (and if one ever lands, rotate it immediately — scrubbing history is not enough). Do not change repository visibility without the user's explicit request.
 
 ## Important: the user uses speech-to-text
 
@@ -83,7 +94,7 @@ Project layout: `frontend/` (Vite + React + TS + Tailwind v4 + shadcn/ui; alias 
 
 ## Git
 
-- The repository is **`Tunmiseoni/cabinet`**, **public** since 2026-09-19; its full history was scrubbed of tailnet/public/LAN addresses and account handles (see `docs/04-design.md` §8, the completed Publication scrub). Do not change its visibility without the user's explicit request.
+- The repository is **`Tunmiseoni/the-cabinet`**, **public** since 2026-09-19 (see "this repository is public" above). Its full history was scrubbed of tailnet/public/LAN addresses and account handles (see `docs/04-design.md` §8, the completed Publication scrub).
 - **Distribution is GitHub Actions → GitHub Releases** (`docs/04-design.md` §3/§7). Build workflows belong in `.github/workflows/`. Any signing/updater keys or tokens go in **GitHub Secrets, never in the repo**.
-- The repo is already public; keep the scrub intact. Do not reintroduce real addresses/handles — prefer placeholders such as `100.x.x.x` (see `docs/04-design.md` §8).
+- Keep the scrub intact. Do not reintroduce real addresses/handles — prefer placeholders (see `docs/04-design.md` §8).
 - When committing: commit `Cargo.lock` (this is an application, not a library); never commit `target/`, `node_modules/`, emulator binaries, ROMs, or `.env*`.

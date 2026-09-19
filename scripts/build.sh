@@ -1,5 +1,5 @@
 #!/bin/bash
-# build — produce a production cabinet bundle for the current OS.
+# build — produce a production The Cabinet bundle for the current OS.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

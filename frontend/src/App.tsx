@@ -369,7 +369,7 @@ function App() {
       <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-6">
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">cabinet</h1>
+            <h1 className="text-2xl font-bold tracking-tight">The Cabinet</h1>
             <p className="text-sm text-muted-foreground">
               Tailnet FightCade lobby
               {tailnet?.selfPeer?.ip ? ` · ${tailnet.selfPeer.ip}` : ""}

@@ -1,5 +1,5 @@
 #!/bin/bash
-# dev — run cabinet in development (Vite on :1420 + Rust backend).
+# dev — run The Cabinet in development (Vite on :1420 + Rust backend).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

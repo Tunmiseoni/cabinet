@@ -1,7 +1,7 @@
-# Design: cabinet — Tailnet FightCade lobby app (launcher + KotH + spectating)
+# Design: The Cabinet — Tailnet FightCade lobby app (launcher + KotH + spectating)
 
 Status: Phase 1 (macOS + Linux + Windows launchers, connection health, result watcher, local score ledger), Phase 2.1–2.6 (rooms/KotH, shared ledger, overlay auto-report, mid-match re-ping), and Delivery (GitHub Actions per-OS matrix → GitHub Releases) are implemented as a Tauri v2 app. Phase 2.7 (4-person live test) is now unblocked; spectating (Phase 3) and packaging (Phase 4) remain. See the progress note in §6.
-Project name: **cabinet**. Git repository: **public** (`Tunmiseoni/cabinet`) — history scrubbed on 2026-09-19 (see §8), so release assets download anonymously and the private-repo Actions minute cap no longer applies.
+Project name: **The Cabinet**. Git repository: **public** (`Tunmiseoni/the-cabinet`) — history scrubbed on 2026-09-19 (see §8), so release assets download anonymously and the private-repo Actions minute cap no longer applies.
 Supersedes the "chosen route" framing in [`03-implementation-plan.md`](03-implementation-plan.md); the troubleshooting record (`01`–`03`) stays as history.
 
 ## TL;DR
@@ -53,7 +53,7 @@ Tradeoff: FightCade uses dedicated UDP/GGPO and is generally regarded as better 
 
 ## 3. Decisions
 
-- **App name: `cabinet`.** Git repository: **public** at `Tunmiseoni/cabinet` since the 2026-09-19 history scrub (§8).
+- **App name: `The Cabinet`** (slug `the-cabinet`). Git repository: **public** at `Tunmiseoni/the-cabinet` since the 2026-09-19 history scrub (§8).
 - **Stack: Tauri v2 + Vite.** Rust backend for process/socket/tailnet work; the UI is a Vite-built web frontend rendered in the OS webview. Frontend stack is **React + TypeScript + Tailwind CSS v4 + shadcn/ui** (vanilla HTML/CSS/JS was the initial sketch; React + shadcn was chosen for a cleaner lobby UI). Node/npm is used only for the frontend build and the Tauri CLI, not the backend.
 - **Rust toolchain via `rustup`** (not Homebrew's keg-only `rustup`, which conflicts with the `rust` formula). See §6 Prerequisites.
 - **Architecture: coordination layer, not a FightCade clone.** Reuse `quark:direct` and the existing scripts; the app orchestrates.
@@ -84,7 +84,7 @@ Tradeoff: FightCade uses dedicated UDP/GGPO and is generally regarded as better 
 ## 4. Architecture
 
 ```
-cabinet
+the-cabinet
 ├─ frontend/           -> Vite + React + Tailwind v4 + shadcn/ui (lobby, room/KotH, ladder, scoreboard, spectator list)
 └─ src-tauri/          -> Rust backend
    ├─ peer registry    -> `tailscale status --json` (stable 100.x / MagicDNS / node id)

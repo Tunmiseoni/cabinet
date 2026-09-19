@@ -34,7 +34,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -50,7 +50,7 @@ jobs:
             build-essential \
             curl wget file patchelf
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
@@ -58,13 +58,13 @@ jobs:
             package-lock.json
             frontend/package-lock.json
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
       - name: Add macOS arm64 target
         if: matrix.platform == 'macos-latest'
         run: rustup target add aarch64-apple-darwin
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src-tauri -> target
           key: release-${{ matrix.platform }}
@@ -74,14 +74,14 @@ jobs:
           npm ci
           npm ci --prefix frontend
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: "cabinet ${{ github.event.inputs.tag || github.ref_name }}"
+          releaseName: "The Cabinet ${{ github.event.inputs.tag || github.ref_name }}"
           releaseBody: |
-            cabinet ${{ github.event.inputs.tag || github.ref_name }}
+            The Cabinet ${{ github.event.inputs.tag || github.ref_name }}
 
             Download the installer for your OS:
             - **macOS (Apple Silicon)**: `.dmg`
@@ -89,7 +89,7 @@ jobs:
             - **Linux**: `.AppImage` or `.deb`
 
             These builds are unsigned. On macOS, right-click the app and choose
-            Open, or run `xattr -dr com.apple.quarantine /Applications/cabinet.app`.
+            Open, or run `xattr -dr com.apple.quarantine "/Applications/The Cabinet.app"`.
             On Windows, choose "More info" -> "Run anyway" at the SmartScreen prompt.
           releaseDraft: true
           prerelease: false

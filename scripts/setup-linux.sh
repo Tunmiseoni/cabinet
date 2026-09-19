@@ -18,7 +18,7 @@ case "${1:-}" in
   *) echo "usage: $0 [--dev|--deps]" >&2; exit 2 ;;
 esac
 
-echo "==> cabinet Linux setup ($MODE)"
+echo "==> The Cabinet Linux setup ($MODE)"
 
 if command -v pacman >/dev/null 2>&1; then
   echo "==> installing system dependencies (sudo pacman)"
