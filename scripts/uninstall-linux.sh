@@ -259,6 +259,10 @@ else
         echo "    preserving $pkg (--keep)"
         continue
       fi
+      if command -v pacman >/dev/null 2>&1 && ! pacman -Q "$pkg" >/dev/null 2>&1; then
+        echo "    already removed: $pkg"
+        continue
+      fi
       CANDIDATES+=("$pkg")
     done
     echo "    candidates: ${CANDIDATES[*]:-none}"

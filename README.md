@@ -93,6 +93,12 @@ bash uninstall-linux.sh --apply      # remove repo dir, added deps, Rust
 bash uninstall-linux.sh --apply --install-appimage   # ...and install the release
 ```
 
+If the repo directory is already gone, the script cannot infer when the build
+ran; pass `--since <when>` (an ISObasic timestamp such as
+`2026-09-19T03:00:00+0100`) so it will remove the Rust toolchain too, or
+`--keep-rust` to leave Rust in place. Re-runs are safe: packages that are
+already gone are skipped.
+
 On Arch/CachyOS the release `.deb` does not apply — use the `.AppImage`. If
 FUSE2 is missing, install `fuse2` or run the AppImage with
 `--appimage-extract-and-run`.
