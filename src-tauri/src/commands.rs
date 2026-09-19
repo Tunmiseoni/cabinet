@@ -156,7 +156,7 @@ pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState
     }
     let config = MatchConfig::new(request.rom, request.peer_ip, request.side)?;
     let spec = launcher.spec(&config)?;
-    session::launch(&app, &spec, &config, request.dev)
+    session::launch(&app, &spec, &config, request.dev, !request.dev)
 }
 
 #[tauri::command]
@@ -189,7 +189,7 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String
             config: p2,
         },
     ];
-    session::launch_many(&app, &plans, true, "127.0.0.1 (P1↔P2)".to_string())
+    session::launch_many(&app, &plans, true, false, "127.0.0.1 (P1↔P2)".to_string())
 }
 
 #[tauri::command]

@@ -108,6 +108,7 @@ pub fn launch_many(
     app: &AppHandle,
     plans: &[Plan],
     dev: bool,
+    track_scores: bool,
     peer_display: String,
 ) -> Result<MatchState, String> {
     if plans.is_empty() {
@@ -169,7 +170,7 @@ pub fn launch_many(
     inner.running = running;
     inner.overlay_dir = overlay_dir;
     inner.last_result = MatchResult::default();
-    if dev {
+    if dev || !track_scores {
         inner.score_counter = None;
         inner.score_opponent = None;
     } else {
@@ -190,12 +191,13 @@ pub fn launch(
     spec: &LaunchSpec,
     config: &MatchConfig,
     dev: bool,
+    track_scores: bool,
 ) -> Result<MatchState, String> {
     let plans = vec![Plan {
         spec: spec.clone(),
         config: config.clone(),
     }];
-    launch_many(app, &plans, dev, config.peer_ip.clone())
+    launch_many(app, &plans, dev, track_scores, config.peer_ip.clone())
 }
 
 fn spawn_monitor(app: AppHandle, generation: u64) {

@@ -3,9 +3,13 @@ use crate::config::Config;
 use crate::control::{ClientMessage, Confidence, ControlClient, ControlServer, Outcome, Want};
 use crate::discovery::{Advertiser, RoomAdvert};
 use crate::player::{self, Player};
-use crate::room::{CurrentMatch, Phase, RoomState};
+use crate::results;
+use crate::room::{CurrentMatch, LedgerEntry, Phase, RoomState};
+use crate::scores::{Outcome as ScoreOutcome, ScoreCounter};
 use crate::session;
 use crate::tailscale;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
@@ -19,14 +23,23 @@ pub enum Role {
     Joined,
 }
 
+#[derive(Default)]
+struct MatchRuntime {
+    announced: Mutex<Option<String>>,
+    overlay_dir: Mutex<Option<PathBuf>>,
+    counter: Mutex<Option<ScoreCounter>>,
+}
+
 struct ActiveRoom {
     role: Role,
     self_player: Player,
     rom: String,
     client: Arc<Mutex<ControlClient>>,
     advertiser: Option<Arc<Advertiser>>,
-    announced: Arc<Mutex<Option<String>>>,
+    runtime: Arc<MatchRuntime>,
     secret: Option<String>,
+    ledger_path: Option<PathBuf>,
+    persisted_revision: Arc<Mutex<u64>>,
     generation: u64,
 }
 
@@ -92,21 +105,46 @@ fn resolve_self_player(app: &AppHandle) -> Result<Player, String> {
     player::self_player(&cfg, &tailnet).ok_or_else(|| "could not determine this machine's tailnet identity".to_string())
 }
 
+fn ledger_path(app: &AppHandle) -> Option<PathBuf> {
+    let config = commands::config_file(app).ok()?;
+    config.parent().map(|dir| dir.join("room-ledger.json"))
+}
+
+fn load_ledger_from(path: &Path) -> BTreeMap<String, LedgerEntry> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+fn load_ledger(app: &AppHandle) -> BTreeMap<String, LedgerEntry> {
+    ledger_path(app)
+        .map(|path| load_ledger_from(&path))
+        .unwrap_or_default()
+}
+
+fn save_ledger(path: &Path, ledger: &BTreeMap<String, LedgerEntry>) {
+    if let Ok(raw) = serde_json::to_string_pretty(ledger) {
+        let _ = std::fs::write(path, raw);
+    }
+}
+
 fn launch_room_match(
     app: &AppHandle,
     rom: &str,
     peer_ip: &str,
     side: u8,
-) -> Result<(), String> {
+) -> Result<PathBuf, String> {
     let cfg = Config::load(&commands::config_file(app)?);
     let launcher = commands::resolve_launcher(&cfg, false)?;
     let config = crate::launcher::MatchConfig::new(rom.to_string(), peer_ip.to_string(), side)?;
     let spec = launcher.spec(&config)?;
-    session::launch(app, &spec, &config, false)?;
-    Ok(())
+    let overlay_dir = results::overlay_dir(&spec.cwd);
+    session::launch(app, &spec, &config, false, false)?;
+    Ok(overlay_dir)
 }
 
-fn reconcile(app: &AppHandle, state: &RoomState, rom: &str, self_player: &Player, announced: &Mutex<Option<String>>) {
+fn reconcile(app: &AppHandle, state: &RoomState, rom: &str, self_player: &Player, runtime: &MatchRuntime) {
     let self_id = self_player.node_id.as_str();
     let desired = state
         .current_match
@@ -120,12 +158,20 @@ fn reconcile(app: &AppHandle, state: &RoomState, rom: &str, self_player: &Player
             }
         });
 
-    let mut announced = announced.lock().unwrap();
+    let mut announced = runtime.announced.lock().unwrap();
     match desired {
         Some((match_id, side, peer_ip)) => {
             if announced.as_deref() != Some(match_id.as_str()) {
-                if let Err(err) = launch_room_match(app, rom, &peer_ip, side) {
-                    eprintln!("room: failed to launch match: {err}");
+                match launch_room_match(app, rom, &peer_ip, side) {
+                    Ok(overlay_dir) => {
+                        *runtime.overlay_dir.lock().unwrap() = Some(overlay_dir);
+                        *runtime.counter.lock().unwrap() = Some(ScoreCounter::new(side));
+                    }
+                    Err(err) => {
+                        eprintln!("room: failed to launch match: {err}");
+                        *runtime.overlay_dir.lock().unwrap() = None;
+                        *runtime.counter.lock().unwrap() = None;
+                    }
                 }
                 *announced = Some(match_id);
             }
@@ -134,7 +180,45 @@ fn reconcile(app: &AppHandle, state: &RoomState, rom: &str, self_player: &Player
             if announced.is_some() {
                 let _ = session::stop(app);
                 *announced = None;
+                *runtime.overlay_dir.lock().unwrap() = None;
+                *runtime.counter.lock().unwrap() = None;
             }
+        }
+    }
+}
+
+fn auto_report(runtime: &MatchRuntime, client: &Mutex<ControlClient>) {
+    let match_id = match runtime.announced.lock().unwrap().clone() {
+        Some(match_id) => match_id,
+        None => return,
+    };
+    let overlay_dir = match runtime.overlay_dir.lock().unwrap().clone() {
+        Some(dir) => dir,
+        None => return,
+    };
+
+    let current = results::read(&overlay_dir);
+    let outcomes = {
+        let mut counter = runtime.counter.lock().unwrap();
+        match counter.as_mut() {
+            Some(counter) => counter.observe(current.p1_score, current.p2_score),
+            None => return,
+        }
+    };
+
+    for outcome in outcomes {
+        let control_outcome = match outcome {
+            ScoreOutcome::Win => Outcome::Win,
+            ScoreOutcome::Loss => Outcome::Loss,
+            ScoreOutcome::Draw => continue,
+        };
+        let sent = client.lock().unwrap().send(&ClientMessage::Result {
+            match_id: match_id.clone(),
+            outcome: control_outcome,
+            confidence: Confidence::Overlay,
+        });
+        if sent.is_err() {
+            break;
         }
     }
 }
@@ -175,7 +259,8 @@ impl RoomService {
 
         Self::teardown(app);
 
-        let room = RoomState::new(room_id.clone(), self_player.clone(), rom.trim());
+        let mut room = RoomState::new(room_id.clone(), self_player.clone(), rom.trim());
+        room.ledger = load_ledger(app);
         let server = ControlServer::bind(room, Some(secret.clone()), cfg.control_port)
             .map_err(|err| format!("cannot bind control port {}: {err}", cfg.control_port))?;
         let server = server.spawn();
@@ -213,8 +298,10 @@ impl RoomService {
                 rom: rom.trim().to_string(),
                 client: Arc::new(Mutex::new(client)),
                 advertiser: Some(advertiser),
-                announced: Arc::new(Mutex::new(None)),
+                runtime: Arc::new(MatchRuntime::default()),
                 secret: Some(secret.clone()),
+                ledger_path: ledger_path(app),
+                persisted_revision: Arc::new(Mutex::new(0)),
                 generation,
             });
         }
@@ -266,8 +353,10 @@ impl RoomService {
                 rom: state.rom.clone(),
                 client: Arc::new(Mutex::new(client)),
                 advertiser: None,
-                announced: Arc::new(Mutex::new(None)),
+                runtime: Arc::new(MatchRuntime::default()),
                 secret: None,
+                ledger_path: None,
+                persisted_revision: Arc::new(Mutex::new(0)),
                 generation,
             });
         }
@@ -347,7 +436,7 @@ impl RoomService {
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_millis(200));
 
-            let (client, rom, self_player, advertiser, announced, role) = {
+            let (client, rom, self_player, advertiser, runtime, role, ledger, persisted) = {
                 let service = app.state::<RoomService>();
                 let inner = service.inner.lock().unwrap();
                 match &inner.active {
@@ -356,8 +445,10 @@ impl RoomService {
                         active.rom.clone(),
                         active.self_player.clone(),
                         active.advertiser.clone(),
-                        Arc::clone(&active.announced),
+                        Arc::clone(&active.runtime),
                         active.role,
+                        active.ledger_path.clone(),
+                        Arc::clone(&active.persisted_revision),
                     ),
                     _ => break,
                 }
@@ -374,13 +465,60 @@ impl RoomService {
                         if let Some(advertiser) = &advertiser {
                             advertiser.set(Some(advert_for(&state, true)));
                         }
+                        if let Some(path) = &ledger {
+                            let mut revision = persisted.lock().unwrap();
+                            if state.revision != *revision {
+                                save_ledger(path, &state.ledger);
+                                *revision = state.revision;
+                            }
+                        }
                     }
-                    reconcile(&app, &state, &rom, &self_player, &announced);
+                    reconcile(&app, &state, &rom, &self_player, &runtime);
+                    auto_report(&runtime, &client);
                     Self::emit_state(&app, Some(&state));
                 }
                 Ok(None) => {}
                 Err(err) => eprintln!("room: control channel error: {err}"),
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(handle: &str, wins: u32, losses: u32) -> LedgerEntry {
+        LedgerEntry {
+            handle: handle.to_string(),
+            wins,
+            losses,
+            draws: 0,
+            games: wins + losses,
+        }
+    }
+
+    #[test]
+    fn ledger_round_trips_through_a_file() {
+        let path = std::env::temp_dir().join(format!(
+            "cabinet-room-ledger-{}.json",
+            std::process::id()
+        ));
+
+        let mut ledger = BTreeMap::new();
+        ledger.insert("n-a".to_string(), entry("Tunmise", 3, 1));
+        ledger.insert("n-b".to_string(), entry("Friend", 1, 3));
+
+        save_ledger(&path, &ledger);
+        let loaded = load_ledger_from(&path);
+        assert_eq!(loaded, ledger);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn missing_ledger_file_loads_empty() {
+        let path = std::env::temp_dir().join("cabinet-room-ledger-does-not-exist.json");
+        assert!(load_ledger_from(&path).is_empty());
     }
 }

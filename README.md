@@ -13,10 +13,10 @@ The network problem this solves, and the full design, are documented in [`docs/0
 - **Launcher** for macOS FightCade (bundled Wine) and **Linux FightCade** (Flatpak `com.fightcade.Fightcade`, or a native/Wine install) with spawn/stop and process-exit detection.
 - **Match-result detection** — polls the emulator's `fbneo/fightcade/` overlay files (`winner.txt`, scores, characters) during and after a session and surfaces the result in the launcher card. Requires `bVidSaveOverlayFiles 1` in the FightCade FBNeo config.
 - **Lifetime scores** — a local per-opponent win/loss ledger (plus overall totals, win rate, and streaks), persisted to the app config dir. Game counts come from overlay score increments; loopback Dev-pair games are excluded. Resettable from Settings.
-- **Rooms (Phase 2, in progress)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Result reporting is manual ("I won"/"I lost") for now; host-persisted ledger and overlay auto-report are next.
+- **Rooms (Phase 2, in progress)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the host-persisted shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Results are auto-reported from the emulator overlay, with manual "I won"/"I lost" buttons as fallback. Mid-match re-ping and the 4-person test remain.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
 
-Still to come: host-persisted shared ledger and overlay auto-report (rest of Phase 2), spectating (Phase 3, gated on a RetroArch spike), Windows launcher adapter, packaging (Phase 4).
+Still to come: mid-match re-ping and the 4-person room test (rest of Phase 2), spectating (Phase 3, gated on a RetroArch spike), Windows launcher adapter, packaging (Phase 4).
 
 ## Quickstart
 
