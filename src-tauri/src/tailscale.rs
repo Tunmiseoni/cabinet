@@ -178,8 +178,15 @@ fn find_on_path() -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
+fn cli_command(binary: &PathBuf) -> std::process::Command {
+    let mut command = process::command(binary);
+    #[cfg(target_os = "macos")]
+    command.env("TAILSCALE_BE_CLI", "1");
+    command
+}
+
 fn run(binary: &PathBuf, args: &[&str]) -> Result<String, String> {
-    let output = process::command(binary)
+    let output = cli_command(binary)
         .args(args)
         .output()
         .map_err(|err| format!("failed to run tailscale: {err}"))?;
@@ -250,7 +257,7 @@ pub fn parse_status(raw: &str) -> Result<Tailnet, String> {
 }
 
 pub fn ping(binary: &PathBuf, ip: &str) -> PeerHealth {
-    let output = process::command(binary)
+    let output = cli_command(binary)
         .args(["ping", "--c", "1", "--timeout", "2s", ip])
         .output();
 
@@ -365,6 +372,26 @@ fn extract_relay_code(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn forces_cli_mode_on_macos() {
+        let command = cli_command(&PathBuf::from("/fake/tailscale"));
+        let be_cli = command
+            .get_envs()
+            .find(|(key, _)| *key == "TAILSCALE_BE_CLI")
+            .and_then(|(_, value)| value);
+        assert_eq!(be_cli, Some(std::ffi::OsStr::new("1")));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn leaves_cli_mode_unset_off_macos() {
+        let command = cli_command(&PathBuf::from("/fake/tailscale"));
+        assert!(command
+            .get_envs()
+            .all(|(key, _)| key != "TAILSCALE_BE_CLI"));
+    }
 
     #[test]
     fn parses_direct_ping() {
