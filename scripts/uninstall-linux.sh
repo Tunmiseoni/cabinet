@@ -268,7 +268,7 @@ else
         echo "    will remove: ${REMOVE_PKGS[*]}"
         if command -v pacman >/dev/null 2>&1; then
           echo "    pacman preview:"
-          sudo pacman -Rns --print "${REMOVE_PKGS[@]}" 2>&1 | sed 's/^/      /' || true
+          pacman -Rs --print "${REMOVE_PKGS[@]}" 2>&1 | sed 's/^/      /' || true
         fi
         run sudo pacman -Rns --noconfirm "${REMOVE_PKGS[@]}"
       fi
