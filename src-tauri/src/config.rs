@@ -11,6 +11,7 @@ pub struct Config {
     pub rom_dir: Option<String>,
     pub tailscale_path: Option<String>,
     pub default_peer_ip: Option<String>,
+    pub discovery_port: u16,
     pub rtt_warn_ms: u32,
     pub poll_interval_secs: u32,
 }
@@ -23,6 +24,7 @@ impl Default for Config {
             rom_dir: None,
             tailscale_path: None,
             default_peer_ip: None,
+            discovery_port: crate::discovery::DEFAULT_PORT,
             rtt_warn_ms: 150,
             poll_interval_secs: 10,
         }

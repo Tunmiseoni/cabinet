@@ -6,6 +6,7 @@ export interface Config {
   romDir: string | null;
   tailscalePath: string | null;
   defaultPeerIp: string | null;
+  discoveryPort: number;
   rttWarnMs: number;
   pollIntervalSecs: number;
 }
@@ -61,6 +62,21 @@ export interface InstallInfo {
   label: string;
   installed: boolean;
   detail: string;
+}
+
+export interface RoomAdvert {
+  roomId: string;
+  host: string;
+  rom: string;
+  phase: string;
+  champion: string | null;
+  queue: number;
+  players: number;
+  secretRequired: boolean;
+}
+
+export interface DiscoveredRoom extends RoomAdvert {
+  ip: string;
 }
 
 export interface OverlayStatus {
@@ -145,6 +161,8 @@ export const peersHealth = (ips: string[]) =>
   invoke<PeerHealth[]>("peers_health", { ips });
 
 export const listRoms = () => invoke<RomIndex>("list_roms");
+
+export const listRooms = () => invoke<DiscoveredRoom[]>("list_rooms");
 
 export const launcherInfo = () => invoke<InstallInfo>("launcher_info");
 

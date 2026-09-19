@@ -27,6 +27,7 @@ interface FormState {
   romDir: string;
   tailscalePath: string;
   defaultPeerIp: string;
+  discoveryPort: string;
   rttWarnMs: string;
   pollIntervalSecs: string;
 }
@@ -38,6 +39,7 @@ function toForm(config: Config | null): FormState {
     romDir: config?.romDir ?? "",
     tailscalePath: config?.tailscalePath ?? "",
     defaultPeerIp: config?.defaultPeerIp ?? "",
+    discoveryPort: String(config?.discoveryPort ?? 47810),
     rttWarnMs: String(config?.rttWarnMs ?? 150),
     pollIntervalSecs: String(config?.pollIntervalSecs ?? 10),
   };
@@ -81,6 +83,7 @@ export function SettingsDialog({
         romDir: emptyToNull(form.romDir),
         tailscalePath: emptyToNull(form.tailscalePath),
         defaultPeerIp: emptyToNull(form.defaultPeerIp),
+        discoveryPort: Number(form.discoveryPort) || 47810,
         rttWarnMs: Number(form.rttWarnMs) || 150,
         pollIntervalSecs: Math.max(2, Number(form.pollIntervalSecs) || 10),
       });
@@ -148,16 +151,6 @@ export function SettingsDialog({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="rttWarnMs">Ping warning threshold (ms)</Label>
-              <Input
-                id="rttWarnMs"
-                type="number"
-                min={20}
-                value={form.rttWarnMs}
-                onChange={(event) => update("rttWarnMs")(event.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
               <Label htmlFor="pollIntervalSecs">Poll interval (s)</Label>
               <Input
                 id="pollIntervalSecs"
@@ -169,6 +162,27 @@ export function SettingsDialog({
                 }
               />
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="discoveryPort">Discovery port</Label>
+              <Input
+                id="discoveryPort"
+                type="number"
+                min={1}
+                max={65535}
+                value={form.discoveryPort}
+                onChange={(event) => update("discoveryPort")(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="rttWarnMs">Ping warning threshold (ms)</Label>
+            <Input
+              id="rttWarnMs"
+              type="number"
+              min={20}
+              value={form.rttWarnMs}
+              onChange={(event) => update("rttWarnMs")(event.target.value)}
+            />
           </div>
 
           <Separator />

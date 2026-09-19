@@ -1,4 +1,5 @@
 use crate::config::{self, Config};
+use crate::discovery::{self, DiscoveredRoom};
 use crate::launcher::macos::{MacosLauncher, DEFAULT_APP_DIR};
 use crate::launcher::{InstallInfo, Launcher, MatchConfig};
 use crate::results::{self, OverlayStatus};
@@ -8,6 +9,7 @@ use crate::session::{self, MatchState, Plan};
 use crate::tailscale::{self, PeerHealth, Tailnet};
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 fn config_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -57,6 +59,24 @@ pub fn peers_health(app: AppHandle, ips: Vec<String>) -> Result<Vec<PeerHealth>,
 pub fn list_roms(app: AppHandle) -> Result<RomIndex, String> {
     let cfg = Config::load(&config_file(&app)?);
     Ok(roms::index(&cfg))
+}
+
+#[tauri::command]
+pub fn list_rooms(app: AppHandle) -> Result<Vec<DiscoveredRoom>, String> {
+    let cfg = Config::load(&config_file(&app)?);
+    let binary = tailscale::resolve_binary(&cfg)?;
+    let tailnet = tailscale::status(&binary)?;
+    let ips: Vec<String> = tailnet
+        .peers
+        .iter()
+        .filter(|peer| peer.online)
+        .map(|peer| peer.ip.clone())
+        .collect();
+    Ok(discovery::probe_many(
+        &ips,
+        cfg.discovery_port,
+        Duration::from_millis(400),
+    ))
 }
 
 fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {

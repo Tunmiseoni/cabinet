@@ -1,5 +1,7 @@
 mod commands;
 mod config;
+#[allow(dead_code)]
+mod discovery;
 mod launcher;
 #[allow(dead_code)]
 mod player;
@@ -29,6 +31,7 @@ pub fn run() {
             commands::peer_health,
             commands::peers_health,
             commands::list_roms,
+            commands::list_rooms,
             commands::launcher_info,
             commands::overlay_status,
             commands::get_scores,
