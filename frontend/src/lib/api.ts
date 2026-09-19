@@ -7,6 +7,7 @@ export interface Config {
   tailscalePath: string | null;
   defaultPeerIp: string | null;
   discoveryPort: number;
+  controlPort: number;
   rttWarnMs: number;
   pollIntervalSecs: number;
 }

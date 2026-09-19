@@ -12,6 +12,7 @@ pub struct Config {
     pub tailscale_path: Option<String>,
     pub default_peer_ip: Option<String>,
     pub discovery_port: u16,
+    pub control_port: u16,
     pub rtt_warn_ms: u32,
     pub poll_interval_secs: u32,
 }
@@ -25,6 +26,7 @@ impl Default for Config {
             tailscale_path: None,
             default_peer_ip: None,
             discovery_port: crate::discovery::DEFAULT_PORT,
+            control_port: crate::control::DEFAULT_PORT,
             rtt_warn_ms: 150,
             poll_interval_secs: 10,
         }

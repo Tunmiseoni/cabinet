@@ -59,6 +59,16 @@ impl CurrentMatch {
     pub fn names(&self, node_id: &str) -> bool {
         self.p1.node_id == node_id || self.p2.node_id == node_id
     }
+
+    pub fn opponent_of(&self, node_id: &str) -> Option<&MatchSlot> {
+        if self.p1.node_id == node_id {
+            Some(&self.p2)
+        } else if self.p2.node_id == node_id {
+            Some(&self.p1)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -28,6 +28,7 @@ interface FormState {
   tailscalePath: string;
   defaultPeerIp: string;
   discoveryPort: string;
+  controlPort: string;
   rttWarnMs: string;
   pollIntervalSecs: string;
 }
@@ -40,6 +41,7 @@ function toForm(config: Config | null): FormState {
     tailscalePath: config?.tailscalePath ?? "",
     defaultPeerIp: config?.defaultPeerIp ?? "",
     discoveryPort: String(config?.discoveryPort ?? 47810),
+    controlPort: String(config?.controlPort ?? 47811),
     rttWarnMs: String(config?.rttWarnMs ?? 150),
     pollIntervalSecs: String(config?.pollIntervalSecs ?? 10),
   };
@@ -84,6 +86,7 @@ export function SettingsDialog({
         tailscalePath: emptyToNull(form.tailscalePath),
         defaultPeerIp: emptyToNull(form.defaultPeerIp),
         discoveryPort: Number(form.discoveryPort) || 47810,
+        controlPort: Number(form.controlPort) || 47811,
         rttWarnMs: Number(form.rttWarnMs) || 150,
         pollIntervalSecs: Math.max(2, Number(form.pollIntervalSecs) || 10),
       });
@@ -163,7 +166,19 @@ export function SettingsDialog({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="discoveryPort">Discovery port</Label>
+              <Label htmlFor="rttWarnMs">Ping warning threshold (ms)</Label>
+              <Input
+                id="rttWarnMs"
+                type="number"
+                min={20}
+                value={form.rttWarnMs}
+                onChange={(event) => update("rttWarnMs")(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="discoveryPort">Discovery port (UDP)</Label>
               <Input
                 id="discoveryPort"
                 type="number"
@@ -173,16 +188,17 @@ export function SettingsDialog({
                 onChange={(event) => update("discoveryPort")(event.target.value)}
               />
             </div>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="rttWarnMs">Ping warning threshold (ms)</Label>
-            <Input
-              id="rttWarnMs"
-              type="number"
-              min={20}
-              value={form.rttWarnMs}
-              onChange={(event) => update("rttWarnMs")(event.target.value)}
-            />
+            <div className="grid gap-2">
+              <Label htmlFor="controlPort">Control port (TCP)</Label>
+              <Input
+                id="controlPort"
+                type="number"
+                min={1}
+                max={65535}
+                value={form.controlPort}
+                onChange={(event) => update("controlPort")(event.target.value)}
+              />
+            </div>
           </div>
 
           <Separator />

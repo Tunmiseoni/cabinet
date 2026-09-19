@@ -1,6 +1,8 @@
 mod commands;
 mod config;
 #[allow(dead_code)]
+mod control;
+#[allow(dead_code)]
 mod discovery;
 mod launcher;
 #[allow(dead_code)]
