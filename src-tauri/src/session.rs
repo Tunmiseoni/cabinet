@@ -1,6 +1,8 @@
+use crate::config::{self, Config};
 use crate::launcher::{LaunchSpec, MatchConfig};
 use crate::results::{self, MatchResult};
 use crate::scores::{ScoreBoard, ScoreCounter, SCORES_EVENT};
+use crate::tailscale::{self, PeerHealth};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::{Child, Command};
@@ -9,6 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub const MATCH_EVENT: &str = "match-state-changed";
+const HEALTH_INTERVAL: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +34,7 @@ pub struct MatchState {
     pub started_at_ms: Option<u64>,
     pub instances: Vec<InstanceState>,
     pub result: Option<MatchResult>,
+    pub peer_health: Option<PeerHealth>,
     pub message: Option<String>,
 }
 
@@ -44,6 +48,7 @@ impl Default for MatchState {
             started_at_ms: None,
             instances: Vec::new(),
             result: None,
+            peer_health: None,
             message: None,
         }
     }
@@ -164,6 +169,7 @@ pub fn launch_many(
         started_at_ms: Some(now_ms()),
         instances,
         result: None,
+        peer_health: None,
         message: None,
     };
 
@@ -183,6 +189,9 @@ pub fn launch_many(
 
     emit(app, &state);
     spawn_monitor(app.clone(), generation);
+    if !dev {
+        spawn_health(app.clone(), generation, plans[0].config.peer_ip.clone());
+    }
     Ok(state)
 }
 
@@ -198,6 +207,46 @@ pub fn launch(
         config: config.clone(),
     }];
     launch_many(app, &plans, dev, track_scores, config.peer_ip.clone())
+}
+
+fn spawn_health(app: AppHandle, generation: u64, ip: String) {
+    std::thread::spawn(move || {
+        let binary = {
+            let cfg = app
+                .path()
+                .app_config_dir()
+                .map(|dir| Config::load(&config::config_path(dir)))
+                .unwrap_or_default();
+            tailscale::resolve_binary(&cfg).ok()
+        };
+        let Some(binary) = binary else {
+            return;
+        };
+
+        while running(&app, generation) {
+            let health = tailscale::ping(&binary, &ip);
+            if !running(&app, generation) {
+                break;
+            }
+            let state = {
+                let session = app.state::<Session>();
+                let mut inner = session.inner.lock().unwrap();
+                if inner.generation != generation {
+                    break;
+                }
+                inner.state.peer_health = Some(health);
+                inner.state.clone()
+            };
+            emit(&app, &state);
+            std::thread::sleep(HEALTH_INTERVAL);
+        }
+    });
+}
+
+fn running(app: &AppHandle, generation: u64) -> bool {
+    let session = app.state::<Session>();
+    let inner = session.inner.lock().unwrap();
+    inner.generation == generation && !inner.running.is_empty()
 }
 
 fn spawn_monitor(app: AppHandle, generation: u64) {

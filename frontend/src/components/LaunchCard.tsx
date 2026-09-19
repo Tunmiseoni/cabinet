@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { PeerHealthBadge } from "@/components/PeerHealthBadge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -243,6 +244,13 @@ export function LaunchCard({
                     .join(" + ")}`
                 : (match.message ?? "finished")}
             </span>
+          )}
+          {match?.status === "running" && match.peerHealth && (
+            <PeerHealthBadge
+              health={match.peerHealth}
+              rttWarnMs={rttWarnMs}
+              loading={false}
+            />
           )}
           {match?.result && (
             <span className="flex items-center gap-1.5 text-sm font-medium">

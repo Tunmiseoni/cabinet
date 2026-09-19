@@ -178,6 +178,7 @@ export interface MatchState {
   startedAtMs: number | null;
   instances: InstanceState[];
   result: MatchResult | null;
+  peerHealth: PeerHealth | null;
   message: string | null;
 }
 
