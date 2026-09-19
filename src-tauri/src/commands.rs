@@ -4,6 +4,8 @@ use crate::discovery::{self, DiscoveredRoom};
 use crate::launcher::linux::LinuxLauncher;
 #[cfg(target_os = "macos")]
 use crate::launcher::macos::{MacosLauncher, DEFAULT_APP_DIR};
+#[cfg(target_os = "windows")]
+use crate::launcher::windows::WindowsLauncher;
 use crate::launcher::{InstallInfo, Launcher, MatchConfig};
 use crate::results::{self, OverlayStatus};
 use crate::room::RoomState;
@@ -107,10 +109,18 @@ pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launch
     Ok(Box::new(launcher))
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(target_os = "windows")]
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+    let override_dir = cfg.fightcade_dir.clone().map(PathBuf::from);
+    let launcher = WindowsLauncher::detect(override_dir);
+    let launcher = if dev { launcher.loopback() } else { launcher };
+    Ok(Box::new(launcher))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
     let _ = (cfg, dev);
-    Err("this build only ships the macOS and Linux launchers so far".into())
+    Err("this build only ships the macOS, Linux, and Windows launchers".into())
 }
 
 #[tauri::command]

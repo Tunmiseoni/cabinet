@@ -6,17 +6,30 @@ The network problem this solves, and the full design, are documented in [`docs/0
 
 ## Status
 
-**Phase 1 (macOS + Linux launchers, connection health, result watcher, local score ledger) and Phase 2.1–2.6 (rooms/KotH, shared ledger, overlay auto-report, mid-match re-ping) are implemented.** Current app:
+**Phase 1 (macOS + Linux + Windows launchers, connection health, result watcher, local score ledger), Phase 2.1–2.6 (rooms/KotH, shared ledger, overlay auto-report, mid-match re-ping), and the GitHub Releases distribution pipeline are implemented.** Current app:
 
 - Peer registry and per-peer **connection health** — RTT, `direct` vs `DERP (relay)`, with a pre-match warning when a peer is relayed or above the latency threshold.
 - ROM index from the configured emulator's ROM directory.
-- **Launcher** for macOS FightCade (bundled Wine) and **Linux FightCade** (Flatpak `com.fightcade.Fightcade`, or a native/Wine install) with spawn/stop and process-exit detection.
+- **Launcher** for macOS FightCade (bundled Wine), **Linux FightCade** (Flatpak `com.fightcade.Fightcade`, or a native/Wine install), and **Windows FightCade** (native `fcadefbneo.exe`) with spawn/stop and process-exit detection.
 - **Match-result detection** — polls the emulator's `fbneo/fightcade/` overlay files (`winner.txt`, scores, characters) during and after a session and surfaces the result in the launcher card. Requires `bVidSaveOverlayFiles 1` in the FightCade FBNeo config.
 - **Lifetime scores** — a local per-opponent win/loss ledger (plus overall totals, win rate, and streaks), persisted to the app config dir. Game counts come from overlay score increments; loopback Dev-pair games are excluded. Resettable from Settings.
 - **Rooms (Phase 2)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the host-persisted shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Results are auto-reported from the emulator overlay, with manual "I won"/"I lost" buttons as fallback; the match peer's RTT/path is re-pinged during play.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
 
-**Priorities.** The next step is **distribution**: GitHub Actions builds a per-OS matrix and publishes installers to **GitHub Releases**; the repo is now **public** (history scrubbed 2026-09-19, `docs/04-design.md` §8) so friends can download releases anonymously. That pipeline, plus the **Windows launcher adapter** (required for the Windows friend), unblocks the 4-person live test (Phase 2.7). After that: spectating (Phase 3, gated on a RetroArch spike). See `docs/04-design.md` §7 for the open items.
+## Download
+
+Installers are published to [GitHub Releases](https://github.com/Tunmiseoni/cabinet/releases): a `.dmg` for Apple Silicon macOS, a `-setup.exe` (NSIS) for Windows, and `.AppImage`/`.deb` for Linux. No GitHub account is needed.
+
+The builds are **unsigned**:
+
+- **macOS** — Gatekeeper will block the first launch. Right-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/cabinet.app`.
+- **Windows** — SmartScreen may warn; choose **More info → Run anyway**.
+
+On Windows, run `scripts/fcade-lan-windows-firewall.bat` once (elevated) to allow inbound UDP for the emulator.
+
+## Priorities
+
+The next step is the 4-person live test (Phase 2.7): the GitHub Actions per-OS release pipeline and the **Windows launcher adapter** are now in place, so all four machines can play from released builds. After that: spectating (Phase 3, gated on a RetroArch spike). See `docs/04-design.md` §7 for the open items.
 
 ## Quickstart
 

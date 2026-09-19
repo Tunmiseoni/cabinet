@@ -4,6 +4,8 @@ use std::path::PathBuf;
 #[allow(dead_code)]
 pub mod linux;
 pub mod macos;
+#[allow(dead_code)]
+pub mod windows;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
