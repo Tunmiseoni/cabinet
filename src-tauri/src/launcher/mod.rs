@@ -1,11 +1,11 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub mod linux;
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub mod macos;
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub mod windows;
 
 #[derive(Debug, Clone, Serialize)]

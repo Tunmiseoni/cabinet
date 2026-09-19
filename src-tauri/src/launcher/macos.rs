@@ -122,10 +122,13 @@ mod tests {
                 "-w"
             ]
         );
-        assert!(spec.envs.contains(&(
-            "WINEPREFIX".to_string(),
-            "/Applications/FightCade2.app/Contents/Resources/.wine32".to_string()
-        )));
+        let expected_prefix = PathBuf::from("/Applications/FightCade2.app")
+            .join("Contents/Resources/.wine32")
+            .to_string_lossy()
+            .to_string();
+        assert!(spec
+            .envs
+            .contains(&("WINEPREFIX".to_string(), expected_prefix)));
     }
 
     #[test]

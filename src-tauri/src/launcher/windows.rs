@@ -17,13 +17,6 @@ impl WindowsLauncher {
         }
     }
 
-    pub fn loopback_with(install_dir: PathBuf) -> Self {
-        Self {
-            install_dir,
-            peer_override: Some("127.0.0.1".to_string()),
-        }
-    }
-
     pub fn loopback(self) -> Self {
         Self {
             peer_override: Some("127.0.0.1".to_string()),
