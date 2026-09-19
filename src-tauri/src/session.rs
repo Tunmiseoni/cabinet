@@ -5,7 +5,7 @@ use crate::scores::{ScoreBoard, ScoreCounter, SCORES_EVENT};
 use crate::tailscale::{self, PeerHealth};
 use serde::Serialize;
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::Child;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
@@ -92,7 +92,7 @@ fn emit(app: &AppHandle, state: &MatchState) {
 }
 
 fn spawn_child(plan: &Plan) -> Result<Child, String> {
-    let mut command = Command::new(&plan.spec.program);
+    let mut command = crate::process::command(&plan.spec.program);
     command
         .args(&plan.spec.args)
         .current_dir(&plan.spec.cwd)

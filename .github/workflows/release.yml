@@ -88,9 +88,12 @@ jobs:
             - **Windows**: `*-setup.exe` (NSIS)
             - **Linux**: `.AppImage` or `.deb`
 
-            These builds are unsigned. On macOS, right-click the app and choose
-            Open, or run `xattr -dr com.apple.quarantine "/Applications/The Cabinet.app"`.
-            On Windows, choose "More info" -> "Run anyway" at the SmartScreen prompt.
+            These builds are unsigned. On macOS, a freshly downloaded app is
+            quarantined by Gatekeeper and reports as "damaged and can't be
+            opened" — right-click → Open does **not** clear this. Run:
+            `xattr -dr com.apple.quarantine "/Applications/The Cabinet.app"`
+            then open it normally. On Windows, choose "More info" ->
+            "Run anyway" at the SmartScreen prompt.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

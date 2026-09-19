@@ -41,34 +41,34 @@ pub fn set_config(app: AppHandle, config: Config) -> Result<Config, String> {
     Ok(config)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_peers(app: AppHandle) -> Result<Tailnet, String> {
     let cfg = Config::load(&config_file(&app)?);
     let binary = tailscale::resolve_binary(&cfg)?;
     tailscale::status(&binary)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn peer_health(app: AppHandle, ip: String) -> Result<PeerHealth, String> {
     let cfg = Config::load(&config_file(&app)?);
     let binary = tailscale::resolve_binary(&cfg)?;
     Ok(tailscale::ping(&binary, &ip))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn peers_health(app: AppHandle, ips: Vec<String>) -> Result<Vec<PeerHealth>, String> {
     let cfg = Config::load(&config_file(&app)?);
     let binary = tailscale::resolve_binary(&cfg)?;
     Ok(tailscale::ping_many(&binary, &ips))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_roms(app: AppHandle) -> Result<RomIndex, String> {
     let cfg = Config::load(&config_file(&app)?);
     Ok(roms::index(&cfg))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_rooms(app: AppHandle) -> Result<Vec<DiscoveredRoom>, String> {
     let cfg = Config::load(&config_file(&app)?);
     let binary = tailscale::resolve_binary(&cfg)?;
@@ -123,13 +123,13 @@ pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launch
     Err("this build only ships the macOS, Linux, and Windows launchers".into())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn launcher_info(app: AppHandle) -> Result<InstallInfo, String> {
     let cfg = Config::load(&config_file(&app)?);
     resolve_launcher(&cfg, false)?.detect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn overlay_status(app: AppHandle) -> Result<OverlayStatus, String> {
     let cfg = Config::load(&config_file(&app)?);
     let launcher = resolve_launcher(&cfg, false)?;
@@ -156,7 +156,7 @@ pub struct LaunchRequest {
     pub dev: bool,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState, String> {
     let cfg = Config::load(&config_file(&app)?);
     let launcher = resolve_launcher(&cfg, request.dev)?;
@@ -169,7 +169,7 @@ pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState
     session::launch(&app, &spec, &config, request.dev, !request.dev)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_match(app: AppHandle) -> Result<MatchState, String> {
     session::stop(&app)
 }
@@ -179,7 +179,7 @@ pub fn match_status(app: AppHandle) -> MatchState {
     session::status(&app)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String> {
     let cfg = Config::load(&config_file(&app)?);
     let launcher = resolve_launcher(&cfg, true)?;
@@ -202,7 +202,7 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String
     session::launch_many(&app, &plans, true, false, "127.0.0.1 (P1↔P2)".to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn host_room(
     app: AppHandle,
     rom: String,
@@ -211,7 +211,7 @@ pub fn host_room(
     RoomService::host(&app, rom, secret)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn join_room(
     app: AppHandle,
     ip: String,
@@ -221,22 +221,22 @@ pub fn join_room(
     RoomService::join(&app, ip, room_id, secret)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn leave_room(app: AppHandle) -> Result<(), String> {
     RoomService::leave(&app)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn room_enqueue(app: AppHandle) -> Result<(), String> {
     RoomService::enqueue(&app)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn room_leave_queue(app: AppHandle) -> Result<(), String> {
     RoomService::leave_queue(&app)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn report_room_result(
     app: AppHandle,
     match_id: String,

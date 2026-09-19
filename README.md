@@ -22,7 +22,7 @@ Installers are published to [GitHub Releases](https://github.com/Tunmiseoni/the-
 
 The builds are **unsigned**:
 
-- **macOS** — Gatekeeper will block the first launch. Right-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine "/Applications/The Cabinet.app"`.
+- **macOS** — a freshly downloaded app is quarantined by Gatekeeper and reports as **"damaged and can't be opened"**. Right-click → Open does *not* clear this; run `xattr -dr com.apple.quarantine "/Applications/The Cabinet.app"`, then open it normally.
 - **Windows** — SmartScreen may warn; choose **More info → Run anyway**.
 
 On Windows, run `scripts/fcade-lan-windows-firewall.bat` once (elevated) to allow inbound UDP for the emulator.
@@ -78,6 +78,14 @@ FBNeo inside its sandbox; a native/Wine install is used as a fallback, and the
 ROM directory is auto-detected. If detection fails, set the FightCade directory
 in Settings. Ensure Tailscale is running and ports `47810/47811` (UDP/TCP) are
 allowed through the local firewall.
+
+If the window opens blank/white, the app disables the WebKitGTK DMA-BUF
+renderer automatically. If it still fails, run it from a terminal to see the
+error and try the compositing fallback:
+
+```sh
+WEBKIT_DISABLE_COMPOSITING_MODE=1 ./The.Cabinet_*_amd64.AppImage
+```
 
 #### Switching a Linux source build to a release
 

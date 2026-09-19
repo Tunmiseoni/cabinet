@@ -1,6 +1,6 @@
 [package]
 name = "the-cabinet"
-version = "0.1.1"
+version = "0.1.2"
 description = "Tailnet FightCade lobby (launcher, KotH, spectating)"
 authors = ["The Cabinet contributors"]
 edition = "2021"

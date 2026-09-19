@@ -4,6 +4,7 @@ mod control;
 mod discovery;
 mod launcher;
 mod player;
+mod process;
 mod results;
 mod room;
 mod roms;
@@ -36,8 +37,18 @@ fn migrate_legacy_config_dir(current: &std::path::Path) {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn apply_linux_webkit_workarounds() {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    apply_linux_webkit_workarounds();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(session::Session::default())

@@ -1,7 +1,7 @@
 use super::{InstallInfo, LaunchSpec, Launcher, MatchConfig};
+use crate::process;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub const FLATPAK_APP: &str = "com.fightcade.Fightcade";
 const FLATPAK_EMULATOR_DIR: &str = "/app/fightcade/Fightcade/emulator/fbneo";
@@ -185,7 +185,7 @@ fn shell_single_quote(value: &str) -> String {
 
 fn flatpak_data_dir() -> Option<PathBuf> {
     let flatpak = find_on_path("flatpak", "flatpak")?;
-    let ok = Command::new(flatpak)
+    let ok = process::command(flatpak)
         .args(["info", FLATPAK_APP])
         .output()
         .map(|output| output.status.success())

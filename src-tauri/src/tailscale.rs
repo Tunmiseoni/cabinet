@@ -1,7 +1,9 @@
 use crate::config::Config;
+use crate::process;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -177,7 +179,7 @@ fn find_on_path() -> Option<PathBuf> {
 }
 
 fn run(binary: &PathBuf, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(binary)
+    let output = process::command(binary)
         .args(args)
         .output()
         .map_err(|err| format!("failed to run tailscale: {err}"))?;
@@ -193,9 +195,24 @@ fn run(binary: &PathBuf, args: &[&str]) -> Result<String, String> {
     Ok(stdout)
 }
 
+const STATUS_CACHE_TTL: Duration = Duration::from_millis(500);
+
+fn status_cache() -> &'static Mutex<Option<(PathBuf, Instant, Tailnet)>> {
+    static CACHE: OnceLock<Mutex<Option<(PathBuf, Instant, Tailnet)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
 pub fn status(binary: &PathBuf) -> Result<Tailnet, String> {
+    if let Some((cached_binary, at, tailnet)) = status_cache().lock().unwrap().as_ref() {
+        if cached_binary == binary && at.elapsed() < STATUS_CACHE_TTL {
+            return Ok(tailnet.clone());
+        }
+    }
+
     let raw = run(binary, &["status", "--json"])?;
-    parse_status(&raw)
+    let tailnet = parse_status(&raw)?;
+    *status_cache().lock().unwrap() = Some((binary.clone(), Instant::now(), tailnet.clone()));
+    Ok(tailnet)
 }
 
 pub fn parse_status(raw: &str) -> Result<Tailnet, String> {
@@ -233,7 +250,7 @@ pub fn parse_status(raw: &str) -> Result<Tailnet, String> {
 }
 
 pub fn ping(binary: &PathBuf, ip: &str) -> PeerHealth {
-    let output = Command::new(binary)
+    let output = process::command(binary)
         .args(["ping", "--c", "1", "--timeout", "2s", ip])
         .output();
 
