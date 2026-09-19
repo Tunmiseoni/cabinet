@@ -131,7 +131,7 @@ impl Launcher for LinuxLauncher {
 
     fn emulator_dir(&self) -> PathBuf {
         match &self.layout {
-            Layout::Flatpak { data_dir } => data_dir.clone(),
+            Layout::Flatpak { data_dir } => data_dir.join("ROMs/fbneo"),
             Layout::Native { fb_dir, .. } => fb_dir.clone(),
             Layout::Unavailable { .. } => PathBuf::new(),
         }
@@ -251,6 +251,10 @@ mod tests {
         assert!(inner.contains(FLATPAK_WINE_ENTRY));
         assert!(inner.contains("quark:direct,sfiii3nr1,7001,100.64.0.2,7000,0,0"));
         assert_eq!(spec.cwd, PathBuf::from("/home/u/.var/app/data"));
+        assert_eq!(
+            launcher.emulator_dir(),
+            PathBuf::from("/home/u/.var/app/data/ROMs/fbneo")
+        );
     }
 
     #[test]
