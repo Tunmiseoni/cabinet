@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 #[allow(dead_code)]
 pub mod linux;
+#[allow(dead_code)]
 pub mod macos;
 #[allow(dead_code)]
 pub mod windows;
