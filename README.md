@@ -13,10 +13,10 @@ The network problem this solves, and the full design, are documented in [`docs/0
 - **Launcher** for macOS FightCade (bundled Wine) and **Linux FightCade** (Flatpak `com.fightcade.Fightcade`, or a native/Wine install) with spawn/stop and process-exit detection.
 - **Match-result detection** — polls the emulator's `fbneo/fightcade/` overlay files (`winner.txt`, scores, characters) during and after a session and surfaces the result in the launcher card. Requires `bVidSaveOverlayFiles 1` in the FightCade FBNeo config.
 - **Lifetime scores** — a local per-opponent win/loss ledger (plus overall totals, win rate, and streaks), persisted to the app config dir. Game counts come from overlay score increments; loopback Dev-pair games are excluded. Resettable from Settings.
-- **Rooms (Phase 2, in progress)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the host-persisted shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Results are auto-reported from the emulator overlay, with manual "I won"/"I lost" buttons as fallback; the match peer's RTT/path is re-pinged during play. The 4-person test remains.
+- **Rooms (Phase 2)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the host-persisted shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Results are auto-reported from the emulator overlay, with manual "I won"/"I lost" buttons as fallback; the match peer's RTT/path is re-pinged during play.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
 
-Still to come: the 4-person room test (rest of Phase 2), spectating (Phase 3, gated on a RetroArch spike), Windows launcher adapter, packaging (Phase 4).
+**Priorities.** The next blocker is a convenient way to get builds onto the other machines and push updates iteratively (`docs/04-design.md` §7); the 4-person live test (Phase 2.7) and further multi-machine testing are deferred until that is solved. After delivery: spectating (Phase 3, gated on a RetroArch spike) and the Windows launcher adapter.
 
 ## Quickstart
 

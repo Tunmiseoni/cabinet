@@ -4,7 +4,7 @@ Guidance for agents working in this repository.
 
 ## About this project
 
-Research and tooling for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet, bypassing ISP CGNAT with the emulator's `quark:direct` mode. The plan (see [`docs/04-design.md`](docs/04-design.md)) is a cross-platform Tauri app named **cabinet**, providing a lobby, king-of-the-hill queue, room discovery over the tailnet, per-player win/loss/draw tracking, and low-bandwidth input-relay spectating. Stack: Tauri v2 (Rust backend) + Vite/React/Tailwind/shadcn frontend. **Phase 1 (macOS + Linux launchers, connection health, result watcher, local score ledger) is implemented, plus Phase 2.1–2.4 (rooms/KotH backend + UI)**; Phase 0/0b, 2.5–2.7, 3, 4 remain.
+Research and tooling for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet, bypassing ISP CGNAT with the emulator's `quark:direct` mode. The plan (see [`docs/04-design.md`](docs/04-design.md)) is a cross-platform Tauri app named **cabinet**, providing a lobby, king-of-the-hill queue, room discovery over the tailnet, per-player win/loss/draw tracking, and low-bandwidth input-relay spectating. Stack: Tauri v2 (Rust backend) + Vite/React/Tailwind/shadcn frontend. **Phase 1 (macOS + Linux launchers, connection health, result watcher, local score ledger) and Phase 2.1–2.6 (rooms/KotH backend + UI, shared ledger, overlay auto-report, mid-match re-ping) are implemented.** The next blocker is **delivery/packaging** (getting builds/updates onto the other machines conveniently); all live multi-machine testing (Phase 2.7) is deferred until that is solved. Phase 0/0b, 3, 4 remain.
 
 ## Important: the user uses speech-to-text
 
