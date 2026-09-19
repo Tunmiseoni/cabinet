@@ -1,7 +1,11 @@
 mod commands;
 mod config;
 mod launcher;
+#[allow(dead_code)]
+mod player;
 mod results;
+#[allow(dead_code)]
+mod room;
 mod roms;
 mod scores;
 mod session;

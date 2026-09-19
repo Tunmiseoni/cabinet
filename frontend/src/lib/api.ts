@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export interface Config {
+  handle: string | null;
   fightcadeDir: string | null;
   romDir: string | null;
   tailscalePath: string | null;
@@ -10,6 +11,7 @@ export interface Config {
 }
 
 export interface Peer {
+  nodeId: string;
   hostname: string;
   dnsName: string;
   os: string;

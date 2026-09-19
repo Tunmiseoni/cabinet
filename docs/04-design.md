@@ -68,6 +68,11 @@ Tradeoff: FightCade uses dedicated UDP/GGPO and is generally regarded as better 
 - **Spectator acceptance bar: 2 concurrent spectators** (4-person group: 2 play, 2 watch).
 - **Match definition: best-of-N.** Winner comes from the overlay `winner.txt` if it proves to work in direct mode; otherwise emulator-exit + a manual "I won" button, with disputes resolved by the room host.
 - **Score tracking: per-player wins/losses/draws**, persisted by the room host (see §5).
+- **Match orchestration: authority-pull.** The host publishes `RoomState.currentMatch` naming both players (as stable node ids + assigned sides); each client launches its own emulator when it sees itself named, and stops/advances on host state. The host never pushes launch commands, so a missed message cannot strand a client mid-game. See the room protocol in §5.
+- **Player identity: stable `node_id` + user-set `handle`.** The ladder is keyed by the machine's Tailscale **node id** (the key of the `Peer` map in `tailscale status --json`, and `Self.ID`), which is stable across IP/hostname changes; the display name is a user-set `handle` (falling back to the tailnet hostname). This replaces the local ledger's IP key when in a room.
+- **Transport: UDP discovery + TCP control, newline-delimited JSON, versioned.** Discovery is a fixed UDP port (probe → room-info reply); control is a fixed TCP port (client connects, `hello`, then state/result messages). Both ports are configurable to dodge conflicts. See §5.
+- **A drawn game is replayed**: no ladder change, same two players. This is deliberate — the overlay has no confirmed draw signal, so inventing a ledger outcome would be worse than replaying.
+- **A room secret guards joins.** The TCP `hello` must present the room's join secret (shown to the host); this answers the tailnet's default `accept` posture without requiring ACLs. See §5.
 - **Connection health is a first-class lobby feature.** Tailnet-level signals first (`tailscale status --json` + `tailscale ping`: RTT, direct-vs-relay, tx/rx) — no emulator cooperation needed. Fine-grained GGPO stats (ping, queue lengths, frames-behind) only later, via the shim path if ever. Complementary: recommend `bShowFPS 2` (ping+jitter on-screen overlay) for direct matches.
 - **Gated proposals: emotes, opt-in voice, and input recording / match history.** Lobby/match reactions, mic/audio (default off, explicit per-session opt-in), and recording match inputs into a lobby match history for replays are **not** in scope until a **/grill-me session** stress-tests each. Voice especially must answer "why not Discord?"; recording/replay must answer "why not FightCade's existing `quark:replay`/`.fr` files?" and settle determinism/storage/consent before it enters the roadmap.
 - **Development harness:** abstract "launch an emulator instance" so dev can use isolated/native instances instead of three Wine instances sharing one `WINEPREFIX`. **Implemented:** a `launch_dev_pair` command starts both sides (P1 local 7001, P2 local 7000) on `127.0.0.1`, plus a developer-loopback option for a single instance. Two Wine instances in the shared FightCade prefix were verified to coexist and bind their ports correctly, so no prefix isolation is needed for pairs.
@@ -79,21 +84,23 @@ Tradeoff: FightCade uses dedicated UDP/GGPO and is generally regarded as better 
 
 ```
 cabinet
-├─ frontend/           -> Vite + React + Tailwind v4 + shadcn/ui (lobby, ladder, scoreboard, spectator list)
+├─ frontend/           -> Vite + React + Tailwind v4 + shadcn/ui (lobby, room/KotH, ladder, scoreboard, spectator list)
 └─ src-tauri/          -> Rust backend
-   ├─ peer registry    -> `tailscale status --json` (stable 100.x / MagicDNS)
+   ├─ peer registry    -> `tailscale status --json` (stable 100.x / MagicDNS / node id)
    ├─ nethealth        -> per-peer RTT/path polling (`tailscale status --json` + `tailscale ping`); lobby badges + pre-match gate
-   ├─ room discovery   -> fixed UDP port probe across tailnet peers
+   ├─ identity         -> stable node id + user handle (`player`)
+   ├─ room discovery   -> fixed UDP port probe across tailnet peers (`discovery`)
+   ├─ room control     -> newline-delimited JSON over a fixed TCP port (`control`)
    ├─ ROM index        -> scan the configured emulator's ROM dir
    ├─ session launcher -> port of scripts/fcade-lan-{macos,linux,windows}
    ├─ match supervisor -> watches process exit + fbneo/fightcade/*.txt
-   ├─ room authority   -> host-authoritative queue + KotH ladder (P2P, no infra)
+   ├─ room authority   -> host-authoritative queue + KotH ladder (`room`, P2P, no infra)
    └─ score ledger     -> wins/losses/draws per player (room-host persisted)
 ```
 
 Gated components (no build order until grilled, see Decisions): `replay recorder` (capture per-match input streams + core/ROM identity; likely reuses the emulator's native replay format rather than a custom one) and `match history` (lobby index of past matches with playback, backed by the recorder).
 
-Launcher abstraction covers: macOS Wine (`wine32on64` + `.wine32`), Linux Flatpak (`com.fightcade.Fightcade`) or native, Windows native, and a developer loopback mode. Phase 1 implements the macOS Wine adapter and the loopback mode; Linux/Windows adapters are pending. The Rust modules map onto the diagram as `tailscale` (peer registry + nethealth), `roms` (ROM index), `launcher` (session launcher abstraction), `session` (match supervisor), `results` (overlay/result watcher), `scores` (local per-opponent lifetime ledger), and `config`/`commands` (settings + IPC); `room discovery`, `room authority`, and the shared score ledger are not built yet. The current `scores` ledger is **local and per-opponent** (this machine's W/L vs each tailnet IP, counted per game from overlay score increments); the host-authoritative shared ladder in §5 remains Phase 2.
+Launcher abstraction covers: macOS Wine (`wine32on64` + `.wine32`), Linux Flatpak (`com.fightcade.Fightcade`) or native, Windows native, and a developer loopback mode. Phase 1 implements the macOS Wine adapter and the loopback mode; Linux/Windows adapters are pending. The Rust modules map onto the diagram as `tailscale` (peer registry + nethealth), `roms` (ROM index), `launcher` (session launcher abstraction), `session` (match supervisor), `results` (overlay/result watcher), `scores` (local per-opponent lifetime ledger), and `config`/`commands` (settings + IPC). Phase 2 adds `player` (identity), `discovery`, `control`, and `room` (KotH state machine + host-authoritative shared ledger). The current `scores` ledger is **local and per-opponent** (this machine's W/L vs each tailnet IP, counted per game from overlay score increments); the host-authoritative shared ladder in §5 is Phase 2.
 
 Connection health (`nethealth`) polls `tailscale status --json` for per-peer `Online`, `CurAddr`/`Relay`, `Active`, `TxBytes`/`RxBytes`, and runs `tailscale ping --c N <peer>` for RTT plus the `via direct …` vs `via DERP(…)` path. The lobby shows one badge per peer (RTT in ms + path); launching warns when the path is relayed or RTT is above threshold. In-match the wrapper re-pings periodically — coarse by design, since per-frame GGPO stats live inside the closed emulator (visible on-screen via `bShowFPS 2`, ping+jitter). Fine-grained GGPO stats (queue lengths, frames-behind) arrive only with the shim path, if ever; on the RetroArch path the tailnet-level signals are the wrapper's display.
 
@@ -116,7 +123,60 @@ Per-player ledger:
   1. `fbneo/fightcade/winner.txt` (+ `p1score.txt`/`p2score.txt`) when `bVidSaveOverlayFiles 1` — **verified in direct mode (2026-09-19)**. Details in §7.
   2. Emulator exit + per-player confirm.
   3. Manual dispute resolution by the room host.
-- Draw handling: a draw is recorded when neither player is a winner (double KO / timeout with equal rounds). Exact signal to be determined in the spike; if no signal exists, offer a "Draw" button alongside "I won".
+- Draw handling: a drawn game (double KO / timeout with equal rounds) **does not mutate the ladder — the same two players replay it**. The overlay has no confirmed draw signal, so rather than fabricate a ledger outcome the host simply re-runs the match. A manual "Draw / replay" button lets a player request it when the overlay is ambiguous.
+
+### Room protocol (Phase 2)
+
+Agreed wire format, implemented incrementally in Phase 2 (2.1 state machine → 2.2 discovery → 2.3 control → 2.4 orchestration → 2.5 shared ledger → 2.6 mid-match re-ping).
+
+**Identity.** A player is keyed by the Tailscale **node id** (the `Peer` map key in `tailscale status --json`, and `Self.ID`) — stable across IP/`DNSName`/hostname changes. The display name is a user-set **handle** (defaults to the tailnet hostname). The room state carries `node_id`, `handle`, and `ip` for display/launch purposes.
+
+**Discovery (UDP, default `47810`, configurable).** Each app probes every online tailnet peer's discovery port with a small JSON datagram and waits briefly for replies:
+
+```
+-> {"magic":"cabinet/1","kind":"probe"}
+<- {"magic":"cabinet/1","kind":"room","roomId":"...","host":"<handle>","rom":"sfiii3nr1",
+    "phase":"lobby|playing","champion":"<handle>","queue":3,"players":2,"secretRequired":true}
+```
+
+A host listens on the port; a non-host replies nothing. The lobby renders one row per room; an empty list means nobody is hosting. Discovery reveals no secrets.
+
+**Control (TCP, default `47811`, configurable).** Newline-delimited JSON, one message per line. The host listens; clients connect and drive:
+
+```
+client -> {"v":1,"kind":"hello","roomId":"...","nodeId":"...","handle":"...","secret":"...","want":"play|spectate"}
+host   -> {"v":1,"kind":"welcome","playerId":"...","state":{...RoomState}}
+client -> {"v":1,"kind":"enqueue"}          // join the KotH queue
+client -> {"v":1,"kind":"leave"}
+client -> {"v":1,"kind":"result","matchId":"...","outcome":"win|loss","confidence":"overlay|manual"}
+host   -> {"v":1,"kind":"state","state":{...RoomState}}     // on every change
+host   -> {"v":1,"kind":"ping"} / client -> {"v":1,"kind":"pong"}
+```
+
+The client may open this connection only if it presents the room's `secret`; a wrong/missing secret is rejected with an `error` message. Because tailnet peers can otherwise reach the port, the secret is the join gate (documented; not a substitute for ACLs).
+
+**RoomState (host-authoritative, versioned).**
+
+```
+{ "roomId", "host": {nodeId,handle,ip}, "rom", "revision":N,
+  "phase": "lobby|playing",
+  "champion": {nodeId,handle} | null,
+  "challenger": {nodeId,handle} | null,
+  "queue": [{nodeId,handle}],
+  "currentMatch": { "matchId", "p1":{nodeId,handle,ip,side}, "p2":{...}, "startedAtMs" } | null,
+  "ledger": { "<nodeId>": {handle,wins,losses,draws,games} } }
+```
+
+**Orchestration (authority-pull).** On every state message the client compares `currentMatch` against its own `nodeId`:
+- named in `currentMatch` → launch `quark:direct` locally with the assigned side and the opponent's `ip`;
+- was in a match, now not → stop its instance;
+- not named → stay idle.
+
+The host advances the ladder only on a result, so a client that misses a state message re-syncs from the next `state` and still launches/stops correctly.
+
+**Result flow.** The client watches its **local** overlay (existing `results.rs` watcher) and knows its own side. On a decisive score increment it sends `result` with `matchId` (to reject stale reports) and `confidence=overlay`; the host records W/L and advances. If a match ends with no overlay signal, the client offers the existing manual "I won" button (`confidence=manual`); the host resolves disputes. On a `draw`/replay the host re-runs the same pairing.
+
+**Shared ledger.** The host persists `RoomState.ledger` (per `node_id`) to its config dir so scores survive sessions; clients render the host's ledger as read-only. The existing local per-opponent ledger remains the fallback when not in a room. When a room session is active, the local `quark` launches are host-driven and the local ledger is bypassed to avoid double counting.
 
 ## 6. Phased plan
 
@@ -125,12 +185,12 @@ Per-player ledger:
 | 0 | RetroArch spectator spike: host + 1 client + 2 spectators over Tailscale; measure feel and bandwidth | Feel acceptable at <100 ms? |
 | 0b | If not: FightCade `ggponet.dll` shim spike (static RE of `quark:stream` arg semantics, then a minimal shim) | Hard time-box; if the `quark:stream` middle token is a server session id, stop |
 | 1 | Tauri launcher: peer registry, ROM index, side/role, spawn/teardown, Wine/Flatpak/native; **lobby connection health** (per-peer ping + direct/relay badge, pre-match warn on relay/high RTT) | Replaces scripts with equivalent behavior; unhealthy peer flagged before launch |
-| 2 | Room + KotH + score ledger; auto-launch next pair; result detection; periodic re-ping of match peers during the session | 4-person session end-to-end |
+| 2 | Room + KotH + score ledger; auto-launch next pair; result detection; periodic re-ping of match peers during the session. Sub-steps: **2.1** `player`/`room` state machine (pure, tested) → **2.2** UDP discovery → **2.3** TCP control → **2.4** authority-pull orchestration → **2.5** host-persisted shared ledger → **2.6** mid-match re-ping → **2.7** 4-person test | 4-person session end-to-end |
 | 3 | Spectate integration via the Phase 0 outcome; else documented as deferred; show spectator link quality with the same nethealth signals | 2 concurrent spectators |
 | 4 | Docs + packaging | Reproducible on all four machines |
 | Gated | Emotes + opt-in voice + input recording / match history for replays | Admitted to the roadmap only after a /grill-me session |
 
-**Progress note.** Phase 1 is implemented (macOS-first). The app currently provides: peer registry and per-peer connection health (`tailscale status --json` + `tailscale ping`, direct/DERP/RTT badges, relay/high-RTT warnings), ROM index, config/settings overrides, the macOS Wine launcher with spawn/stop/exit detection, a developer loopback pair, a **match-result watcher** that polls the emulator's `fbneo/fightcade/` overlay files (winner/scores/characters) during and after a session, and a **local per-opponent lifetime score ledger** with streak tracking and a lobby card. Verification: Rust unit tests for parsers/ports/config, the overlay reader, and the ledger/counter, plus opt-in live smoke tests (status, ping, ROM scan, real emulator launch and loopback pair); the shell launchers remain the reference. The lifetime-score ledger was **verified live** on 2026-09-19 (a real direct match wrote two games to `scores.json` and updated the lobby card). Phase 0/0b, 2, 3, and 4 are not yet done; the Linux/Windows launcher adapters are stubbed by platform gating (non-macOS builds return an error until implemented).
+**Progress note.** Phase 1 is implemented (macOS-first). The app currently provides: peer registry and per-peer connection health (`tailscale status --json` + `tailscale ping`, direct/DERP/RTT badges, relay/high-RTT warnings), ROM index, config/settings overrides, the macOS Wine launcher with spawn/stop/exit detection, a developer loopback pair, a **match-result watcher** that polls the emulator's `fbneo/fightcade/` overlay files (winner/scores/characters) during and after a session, and a **local per-opponent lifetime score ledger** with streak tracking and a lobby card. Verification: Rust unit tests for parsers/ports/config, the overlay reader, and the ledger/counter, plus opt-in live smoke tests (status, ping, ROM scan, real emulator launch and loopback pair); the shell launchers remain the reference. The lifetime-score ledger was **verified live** on 2026-09-19 (a real direct match wrote two games to `scores.json` and updated the lobby card). Phase 2's wire protocol is designed in §5 (2.0); sub-steps 2.1–2.7 are not built. Phase 0/0b, 3, and 4 are not yet done; the Linux/Windows launcher adapters are stubbed by platform gating (non-macOS builds return an error until implemented).
 
 ### Prerequisites (do once per machine)
 
@@ -172,6 +232,7 @@ Cross-compiling Tauri across OSes is painful; each of the four machines builds i
 - Is RetroArch FBNeo netplay feel acceptable for fighting games at <100 ms?
 - Multi-spectator fan-out ceiling and whether each spectator needs its own inbound UDP port / firewall rule.
 - What exactly constitutes a "draw" signal from the emulator, if any.
+- Room protocol: does the macOS/Windows firewall prompt on first UDP/TCP bind, and can the bind be limited to the tailnet interface (`utun`) rather than all interfaces? Can more than one room coexist on the tailnet (multiple hosts answering discovery)? Does the join secret need a per-room rotation after each session?
 - Connection-health UX: poll cadence for `tailscale status --json` / `tailscale ping` (lobby idle vs. in-match), RTT warn threshold (group plays direct at <100 ms — warn above ~150 ms?), and Windows/macOS CLI output parity for parsing.
 - Can the wrapper detect mid-match degradation, or only pre-match? (GGPO stats need the shim; tailnet re-ping mid-match is coarse.)
 - Emotes/voice gate: what survives /grill-me? Open: emote surface (lobby-only vs. in-match overlay), voice transport (WebRTC over tailnet vs. "just use Discord"), push-to-talk vs. open mic, per-session consent UX.

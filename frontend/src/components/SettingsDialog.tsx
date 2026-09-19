@@ -22,6 +22,7 @@ interface SettingsDialogProps {
 }
 
 interface FormState {
+  handle: string;
   fightcadeDir: string;
   romDir: string;
   tailscalePath: string;
@@ -32,6 +33,7 @@ interface FormState {
 
 function toForm(config: Config | null): FormState {
   return {
+    handle: config?.handle ?? "",
     fightcadeDir: config?.fightcadeDir ?? "",
     romDir: config?.romDir ?? "",
     tailscalePath: config?.tailscalePath ?? "",
@@ -74,6 +76,7 @@ export function SettingsDialog({
     setSaving(true);
     try {
       await onSave({
+        handle: emptyToNull(form.handle),
         fightcadeDir: emptyToNull(form.fightcadeDir),
         romDir: emptyToNull(form.romDir),
         tailscalePath: emptyToNull(form.tailscalePath),
@@ -98,6 +101,15 @@ export function SettingsDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
+          <div className="grid gap-2">
+            <Label htmlFor="handle">Your handle</Label>
+            <Input
+              id="handle"
+              value={form.handle}
+              placeholder="Shown in rooms and the ladder (defaults to your tailnet hostname)"
+              onChange={(event) => update("handle")(event.target.value)}
+            />
+          </div>
           <div className="grid gap-2">
             <Label htmlFor="romDir">ROM directory</Label>
             <Input

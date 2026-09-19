@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Config {
+    pub handle: Option<String>,
     pub fightcade_dir: Option<String>,
     pub rom_dir: Option<String>,
     pub tailscale_path: Option<String>,
@@ -17,6 +18,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            handle: None,
             fightcade_dir: None,
             rom_dir: None,
             tailscale_path: None,

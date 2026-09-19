@@ -6,6 +6,7 @@ use std::process::Command;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Peer {
+    pub node_id: String,
     pub hostname: String,
     pub dns_name: String,
     pub os: String,
@@ -61,6 +62,8 @@ struct RawStatus {
 
 #[derive(Deserialize)]
 struct RawPeer {
+    #[serde(rename = "ID", default)]
+    id: String,
     #[serde(rename = "HostName", default)]
     hostname: String,
     #[serde(rename = "DNSName", default)]
@@ -86,7 +89,12 @@ struct RawPeer {
 }
 
 impl RawPeer {
-    fn into_peer(self, is_self: bool) -> Peer {
+    fn into_peer(self, is_self: bool, fallback_id: String) -> Peer {
+        let node_id = if self.id.is_empty() {
+            fallback_id
+        } else {
+            self.id
+        };
         let ip = self
             .ips
             .iter()
@@ -95,6 +103,7 @@ impl RawPeer {
             .or_else(|| self.ips.first().cloned())
             .unwrap_or_default();
         Peer {
+            node_id,
             hostname: self.hostname,
             dns_name: self.dns_name,
             os: self.os,
@@ -193,14 +202,19 @@ pub fn parse_status(raw: &str) -> Result<Tailnet, String> {
     let parsed: RawStatus =
         serde_json::from_str(raw).map_err(|err| format!("invalid status JSON: {err}"))?;
 
-    let self_peer = parsed.self_node.map(|node| node.into_peer(true));
+    let self_peer = parsed
+        .self_node
+        .map(|node| node.into_peer(true, String::new()));
 
     let mut peers: Vec<Peer> = parsed
         .peers
         .map(|map| {
-            map.into_values()
-                .filter_map(|value| serde_json::from_value::<RawPeer>(value).ok())
-                .map(|node| node.into_peer(false))
+            map.into_iter()
+                .filter_map(|(id, value)| {
+                    serde_json::from_value::<RawPeer>(value)
+                        .ok()
+                        .map(|node| node.into_peer(false, id))
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -391,6 +405,7 @@ mod tests {
       "Version": "1.102.4",
       "BackendState": "Running",
       "Self": {
+        "ID": "nSELF",
         "HostName": "Onis-MacBook-Pro",
         "DNSName": "mac-host.example-tailnet.ts.net.",
         "OS": "macOS",
@@ -405,6 +420,7 @@ mod tests {
       },
       "Peer": {
         "nodeA": {
+          "ID": "nWIN",
           "HostName": "DESKTOP-8NLUFK6",
           "DNSName": "windows-host.example-tailnet.ts.net.",
           "OS": "windows",
@@ -440,10 +456,13 @@ mod tests {
         let self_peer = tailnet.self_peer.expect("self present");
         assert!(self_peer.is_self);
         assert_eq!(self_peer.ip, "100.64.0.10");
+        assert_eq!(self_peer.node_id, "nSELF");
         assert_eq!(tailnet.peers.len(), 2);
         assert_eq!(tailnet.peers[0].hostname, "cachyos-host");
         assert!(tailnet.peers[0].online);
+        assert_eq!(tailnet.peers[0].node_id, "nodeB");
         assert_eq!(tailnet.peers[1].hostname, "DESKTOP-8NLUFK6");
+        assert_eq!(tailnet.peers[1].node_id, "nWIN");
         assert_eq!(tailnet.peers[0].ip, "100.64.0.11");
     }
 
