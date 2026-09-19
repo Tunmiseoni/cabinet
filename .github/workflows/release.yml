@@ -88,12 +88,49 @@ jobs:
             - **Windows**: `*-setup.exe` (NSIS)
             - **Linux**: `.AppImage` or `.deb`
 
-            These builds are unsigned. On macOS, a freshly downloaded app is
-            quarantined by Gatekeeper and reports as "damaged and can't be
-            opened" — right-click → Open does **not** clear this. Run:
-            `xattr -dr com.apple.quarantine "/Applications/The Cabinet.app"`
-            then open it normally. On Windows, choose "More info" ->
-            "Run anyway" at the SmartScreen prompt.
+            These builds are not notarized. On macOS the app is ad-hoc signed,
+            so a freshly downloaded copy is quarantined and shows "unidentified
+            developer": right-click the app and choose Open, or use System
+            Settings -> Privacy & Security -> Open Anyway. If it instead says
+            "damaged and can't be opened", run
+            `xattr -cr "/Applications/The Cabinet.app"` and re-open.
+            On Windows, choose "More info" -> "Run anyway" at the SmartScreen
+            prompt.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Verify macOS bundle signature
+        if: matrix.platform == 'macos-latest'
+        run: |
+          set -euo pipefail
+          APP="$(find src-tauri/target -type d -name 'The Cabinet.app' -path '*release/bundle/macos*' | head -n1)"
+          if [ -z "$APP" ]; then
+            echo "::error::could not find the bundled .app"
+            exit 1
+          fi
+          echo "checking $APP"
+          test -d "$APP/Contents/_CodeSignature" || {
+            echo "::error::$APP has no _CodeSignature (bundle was not signed)"
+            exit 1
+          }
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Verify macOS DMG contents
+        if: matrix.platform == 'macos-latest'
+        run: |
+          set -euo pipefail
+          DMG="$(find src-tauri/target -name '*.dmg' -path '*release/bundle*' | head -n1)"
+          if [ -z "$DMG" ]; then
+            echo "::error::could not find the built .dmg"
+            exit 1
+          fi
+          MOUNT="$(mktemp -d)"
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT"
+          trap 'hdiutil detach "$MOUNT" >/dev/null' EXIT
+          APP="$MOUNT/The Cabinet.app"
+          test -d "$APP/Contents/_CodeSignature" || {
+            echo "::error::$APP inside the DMG has no _CodeSignature"
+            exit 1
+          }
+          codesign --verify --deep --strict --verbose=2 "$APP"

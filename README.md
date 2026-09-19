@@ -20,9 +20,9 @@ The network problem this solves, and the full design, are documented in [`docs/0
 
 Installers are published to [GitHub Releases](https://github.com/Tunmiseoni/the-cabinet/releases): a `.dmg` for Apple Silicon macOS, a `-setup.exe` (NSIS) for Windows, and `.AppImage`/`.deb` for Linux. No GitHub account is needed.
 
-The builds are **unsigned**:
+The builds are **not notarized**:
 
-- **macOS** — a freshly downloaded app is quarantined by Gatekeeper and reports as **"damaged and can't be opened"**. Right-click → Open does *not* clear this; run `xattr -dr com.apple.quarantine "/Applications/The Cabinet.app"`, then open it normally.
+- **macOS** — the app is ad-hoc signed (valid bundle signature), but Apple has not notarized it. A freshly downloaded copy is quarantined and shows **"unidentified developer"**: right-click the app and choose **Open**, or go to System Settings → Privacy & Security → **Open Anyway**. If you see "damaged and can't be opened" instead, the signature was stripped — run `xattr -cr "/Applications/The Cabinet.app"` and re-open.
 - **Windows** — SmartScreen may warn; choose **More info → Run anyway**.
 
 On Windows, run `scripts/fcade-lan-windows-firewall.bat` once (elevated) to allow inbound UDP for the emulator.
