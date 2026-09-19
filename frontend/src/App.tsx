@@ -4,27 +4,34 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LaunchCard } from "@/components/LaunchCard";
+import { LifetimeCard } from "@/components/LifetimeCard";
 import { PeersCard } from "@/components/PeersCard";
 import { RomsCard } from "@/components/RomsCard";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import {
   getConfig,
+  getScores,
   launcherInfo,
   launchDevPair,
   launchMatch,
   listPeers,
   listRoms,
   matchStatus,
+  overlayStatus,
   peersHealth,
+  resetScores,
   setConfig as saveConfig,
   stopMatch,
   type Config,
   type InstallInfo,
   type MatchState,
+  type OverlayStatus,
   type PeerHealth,
   type RomIndex,
+  type ScoreSnapshot,
   type Tailnet,
   MATCH_EVENT,
+  SCORES_EVENT,
 } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
 import { AlertTriangle, RefreshCw, Settings, Wifi } from "lucide-react";
@@ -35,6 +42,8 @@ function App() {
   const [romIndex, setRomIndex] = useState<RomIndex | null>(null);
   const [health, setHealth] = useState<Record<string, PeerHealth>>({});
   const [launcher, setLauncher] = useState<InstallInfo | null>(null);
+  const [overlay, setOverlay] = useState<OverlayStatus | null>(null);
+  const [scores, setScores] = useState<ScoreSnapshot | null>(null);
   const [match, setMatch] = useState<MatchState | null>(null);
   const [launchBusy, setLaunchBusy] = useState(false);
   const [peersLoading, setPeersLoading] = useState(true);
@@ -42,6 +51,7 @@ function App() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [peersError, setPeersError] = useState<string | null>(null);
   const [romsError, setRomsError] = useState<string | null>(null);
+  const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const rttWarnMs = config?.rttWarnMs ?? 150;
@@ -91,26 +101,47 @@ function App() {
   const refreshLauncher = useCallback(async () => {
     try {
       setLauncher(await launcherInfo());
+      setOverlay(await overlayStatus());
+      setAppError(null);
     } catch (err) {
-      setPeersError(String(err));
+      setAppError(String(err));
+    }
+  }, []);
+
+  const refreshScores = useCallback(async () => {
+    try {
+      setScores(await getScores());
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
     }
   }, []);
 
   useEffect(() => {
     getConfig()
       .then(setConfig)
-      .catch((err) => setPeersError(String(err)));
+      .catch((err) => setAppError(String(err)));
     refreshPeers();
     refreshRoms();
     refreshLauncher();
+    refreshScores();
     matchStatus()
       .then(setMatch)
       .catch(() => undefined);
-  }, [refreshPeers, refreshRoms, refreshLauncher]);
+  }, [refreshPeers, refreshRoms, refreshLauncher, refreshScores]);
 
   useEffect(() => {
     const unlisten = listen<MatchState>(MATCH_EVENT, (event) =>
       setMatch(event.payload),
+    );
+    return () => {
+      unlisten.then((dispose) => dispose());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<ScoreSnapshot>(SCORES_EVENT, (event) =>
+      setScores(event.payload),
     );
     return () => {
       unlisten.then((dispose) => dispose());
@@ -129,8 +160,9 @@ function App() {
       await refreshPeers();
       await refreshRoms();
       await refreshLauncher();
+      setAppError(null);
     } catch (err) {
-      setPeersError(String(err));
+      setAppError(String(err));
     }
   }
 
@@ -143,8 +175,9 @@ function App() {
     setLaunchBusy(true);
     try {
       setMatch(await launchMatch({ rom, peerIp, side, dev }));
+      setAppError(null);
     } catch (err) {
-      setPeersError(String(err));
+      setAppError(String(err));
     } finally {
       setLaunchBusy(false);
     }
@@ -154,8 +187,9 @@ function App() {
     setLaunchBusy(true);
     try {
       setMatch(await stopMatch());
+      setAppError(null);
     } catch (err) {
-      setPeersError(String(err));
+      setAppError(String(err));
     } finally {
       setLaunchBusy(false);
     }
@@ -165,10 +199,20 @@ function App() {
     setLaunchBusy(true);
     try {
       setMatch(await launchDevPair(rom));
+      setAppError(null);
     } catch (err) {
-      setPeersError(String(err));
+      setAppError(String(err));
     } finally {
       setLaunchBusy(false);
+    }
+  }
+
+  async function handleResetScores() {
+    try {
+      setScores(await resetScores());
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
     }
   }
 
@@ -196,6 +240,7 @@ function App() {
                 refreshPeers();
                 refreshRoms();
                 refreshLauncher();
+                refreshScores();
               }}
             >
               <RefreshCw className="size-4" />
@@ -212,12 +257,12 @@ function App() {
           </div>
         </header>
 
-        {(peersError || romsError) && (
+        {(peersError || romsError || appError) && (
           <Alert variant="destructive">
             <AlertTriangle className="size-4" />
             <AlertTitle>Something went wrong</AlertTitle>
             <AlertDescription className="break-words">
-              {[peersError, romsError].filter(Boolean).join(" · ")}
+              {[peersError, romsError, appError].filter(Boolean).join(" · ")}
             </AlertDescription>
           </Alert>
         )}
@@ -261,11 +306,14 @@ function App() {
           <RomsCard romIndex={romIndex} loading={romsLoading} error={romsError} />
         </div>
 
+        <LifetimeCard scores={scores} tailnet={tailnet} overlay={overlay} />
+
         <SettingsDialog
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
           config={config}
           onSave={handleSaveConfig}
+          onResetScores={handleResetScores}
         />
       </div>
     </TooltipProvider>

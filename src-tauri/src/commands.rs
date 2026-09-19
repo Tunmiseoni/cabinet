@@ -1,7 +1,9 @@
 use crate::config::{self, Config};
 use crate::launcher::macos::{MacosLauncher, DEFAULT_APP_DIR};
 use crate::launcher::{InstallInfo, Launcher, MatchConfig};
+use crate::results::{self, OverlayStatus};
 use crate::roms::{self, RomIndex};
+use crate::scores::{ScoreBoard, Snapshot};
 use crate::session::{self, MatchState, Plan};
 use crate::tailscale::{self, PeerHealth, Tailnet};
 use serde::Deserialize;
@@ -78,6 +80,23 @@ fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String
 pub fn launcher_info(app: AppHandle) -> Result<InstallInfo, String> {
     let cfg = Config::load(&config_file(&app)?);
     resolve_launcher(&cfg, false)?.detect()
+}
+
+#[tauri::command]
+pub fn overlay_status(app: AppHandle) -> Result<OverlayStatus, String> {
+    let cfg = Config::load(&config_file(&app)?);
+    let launcher = resolve_launcher(&cfg, false)?;
+    Ok(results::overlay_status(&launcher.emulator_dir()))
+}
+
+#[tauri::command]
+pub fn get_scores(app: AppHandle) -> Snapshot {
+    app.state::<ScoreBoard>().snapshot()
+}
+
+#[tauri::command]
+pub fn reset_scores(app: AppHandle) -> Snapshot {
+    app.state::<ScoreBoard>().reset()
 }
 
 #[derive(Debug, Deserialize)]

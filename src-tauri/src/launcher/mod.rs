@@ -83,6 +83,7 @@ pub trait Launcher: Send + Sync {
     fn id(&self) -> &'static str;
     fn label(&self) -> &'static str;
     fn detect(&self) -> Result<InstallInfo, String>;
+    fn emulator_dir(&self) -> PathBuf;
     fn spec(&self, config: &MatchConfig) -> Result<LaunchSpec, String>;
 }
 

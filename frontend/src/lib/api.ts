@@ -61,6 +61,30 @@ export interface InstallInfo {
   detail: string;
 }
 
+export interface OverlayStatus {
+  enabled: boolean;
+  iniPath: string;
+}
+
+export interface ScoreEntry {
+  wins: number;
+  losses: number;
+  draws: number;
+  games: number;
+  currentStreak: number;
+  bestStreak: number;
+  lastPlayedMs: number;
+}
+
+export interface ScoreRecord extends ScoreEntry {
+  opponent: string;
+}
+
+export interface ScoreSnapshot {
+  records: ScoreRecord[];
+  totals: ScoreEntry;
+}
+
 export interface InstanceState {
   side: number;
   sideLabel: string;
@@ -70,6 +94,19 @@ export interface InstanceState {
   message: string | null;
 }
 
+export interface MatchResult {
+  rom: string | null;
+  started: boolean;
+  winner: string | null;
+  winnerSide: number | null;
+  p1Name: string | null;
+  p2Name: string | null;
+  p1Score: number | null;
+  p2Score: number | null;
+  p1Character: string | null;
+  p2Character: string | null;
+}
+
 export interface MatchState {
   status: "idle" | "running" | "finished";
   rom: string | null;
@@ -77,6 +114,7 @@ export interface MatchState {
   dev: boolean;
   startedAtMs: number | null;
   instances: InstanceState[];
+  result: MatchResult | null;
   message: string | null;
 }
 
@@ -88,6 +126,8 @@ export interface LaunchRequest {
 }
 
 export const MATCH_EVENT = "match-state-changed";
+
+export const SCORES_EVENT = "scores-changed";
 
 export const getConfig = () => invoke<Config>("get_config");
 
@@ -105,6 +145,12 @@ export const peersHealth = (ips: string[]) =>
 export const listRoms = () => invoke<RomIndex>("list_roms");
 
 export const launcherInfo = () => invoke<InstallInfo>("launcher_info");
+
+export const overlayStatus = () => invoke<OverlayStatus>("overlay_status");
+
+export const getScores = () => invoke<ScoreSnapshot>("get_scores");
+
+export const resetScores = () => invoke<ScoreSnapshot>("reset_scores");
 
 export const launchMatch = (request: LaunchRequest) =>
   invoke<MatchState>("launch_match", { request });

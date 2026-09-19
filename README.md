@@ -11,6 +11,8 @@ The network problem this solves, and the full design, are documented in [`docs/0
 - Peer registry and per-peer **connection health** — RTT, `direct` vs `DERP (relay)`, with a pre-match warning when a peer is relayed or above the latency threshold.
 - ROM index from the configured emulator's ROM directory.
 - **Launcher** for macOS FightCade (bundled Wine) with spawn/stop and process-exit detection.
+- **Match-result detection** — polls the emulator's `fbneo/fightcade/` overlay files (`winner.txt`, scores, characters) during and after a session and surfaces the result in the launcher card. Requires `bVidSaveOverlayFiles 1` in the FightCade FBNeo config.
+- **Lifetime scores** — a local per-opponent win/loss ledger (plus overall totals, win rate, and streaks), persisted to the app config dir. Game counts come from overlay score increments; loopback Dev-pair games are excluded. Resettable from Settings.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
 
 Still to come: room discovery + king-of-the-hill + score ledger (Phase 2), spectating (Phase 3, gated on a RetroArch spike), packaging (Phase 4). Linux/Windows launcher adapters are not implemented yet — non-macOS builds return an error.

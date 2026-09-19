@@ -23,11 +23,6 @@ impl MacosLauncher {
         }
     }
 
-    fn emulator_dir(&self) -> PathBuf {
-        self.app_dir
-            .join("Contents/MacOS/emulator/fbneo")
-    }
-
     fn wine(&self) -> PathBuf {
         self.app_dir
             .join("Contents/Resources/wine/bin/wine32on64")
@@ -67,6 +62,10 @@ impl Launcher for MacosLauncher {
             installed,
             detail,
         })
+    }
+
+    fn emulator_dir(&self) -> PathBuf {
+        self.app_dir.join("Contents/MacOS/emulator/fbneo")
     }
 
     fn spec(&self, config: &MatchConfig) -> Result<LaunchSpec, String> {

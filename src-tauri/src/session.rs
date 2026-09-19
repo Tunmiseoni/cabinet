@@ -1,5 +1,8 @@
 use crate::launcher::{LaunchSpec, MatchConfig};
+use crate::results::{self, MatchResult};
+use crate::scores::{ScoreBoard, ScoreCounter, SCORES_EVENT};
 use serde::Serialize;
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -27,6 +30,7 @@ pub struct MatchState {
     pub dev: bool,
     pub started_at_ms: Option<u64>,
     pub instances: Vec<InstanceState>,
+    pub result: Option<MatchResult>,
     pub message: Option<String>,
 }
 
@@ -39,6 +43,7 @@ impl Default for MatchState {
             dev: false,
             started_at_ms: None,
             instances: Vec::new(),
+            result: None,
             message: None,
         }
     }
@@ -59,6 +64,10 @@ struct SessionInner {
     generation: u64,
     running: Vec<Running>,
     state: MatchState,
+    overlay_dir: Option<PathBuf>,
+    last_result: MatchResult,
+    score_counter: Option<ScoreCounter>,
+    score_opponent: Option<String>,
 }
 
 #[derive(Default)]
@@ -111,6 +120,11 @@ pub fn launch_many(
     inner.generation += 1;
     let generation = inner.generation;
 
+    let overlay_dir = plans.first().map(|plan| results::overlay_dir(&plan.spec.cwd));
+    if let Some(dir) = &overlay_dir {
+        results::reset(dir);
+    }
+
     let mut running: Vec<Running> = Vec::new();
     let mut instances = Vec::new();
 
@@ -148,10 +162,21 @@ pub fn launch_many(
         dev,
         started_at_ms: Some(now_ms()),
         instances,
+        result: None,
         message: None,
     };
 
     inner.running = running;
+    inner.overlay_dir = overlay_dir;
+    inner.last_result = MatchResult::default();
+    if dev {
+        inner.score_counter = None;
+        inner.score_opponent = None;
+    } else {
+        let plan = &plans[0];
+        inner.score_counter = Some(ScoreCounter::new(plan.config.side));
+        inner.score_opponent = Some(plan.config.peer_ip.clone());
+    }
     inner.state = state.clone();
     drop(inner);
 
@@ -186,6 +211,7 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
         let running = std::mem::take(&mut inner.running);
         let mut still = Vec::new();
         let mut changed = false;
+        let mut outcomes = Vec::new();
 
         for mut entry in running {
             match entry.child.try_wait() {
@@ -209,12 +235,41 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
             changed = true;
         }
 
+        if let Some(dir) = inner.overlay_dir.clone() {
+            let current = results::read(&dir);
+            if let Some(counter) = inner.score_counter.as_mut() {
+                outcomes = counter.observe(current.p1_score, current.p2_score);
+            }
+            if current != inner.last_result {
+                inner.state.result = if current.is_empty() {
+                    None
+                } else {
+                    Some(current.clone())
+                };
+                inner.last_result = current;
+                changed = true;
+            }
+        }
+
+        let opponent = inner.score_opponent.clone();
         let state = inner.state.clone();
         drop(inner);
 
         if changed {
             emit(&app, &state);
         }
+
+        if !outcomes.is_empty() {
+            if let Some(opponent) = opponent {
+                let board = app.state::<ScoreBoard>();
+                let now = now_ms();
+                for outcome in &outcomes {
+                    board.record(&opponent, *outcome, now);
+                }
+                app.emit(SCORES_EVENT, board.snapshot()).ok();
+            }
+        }
+
         if done {
             break;
         }

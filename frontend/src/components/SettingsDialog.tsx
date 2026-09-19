@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import type { Config } from "@/lib/api";
 
 interface SettingsDialogProps {
@@ -17,6 +18,7 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
   config: Config | null;
   onSave: (config: Config) => Promise<void>;
+  onResetScores: () => Promise<void>;
 }
 
 interface FormState {
@@ -46,16 +48,27 @@ export function SettingsDialog({
   onOpenChange,
   config,
   onSave,
+  onResetScores,
 }: SettingsDialogProps) {
   const [form, setForm] = useState<FormState>(() => toForm(config));
   const [saving, setSaving] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   useEffect(() => {
     if (open) setForm(toForm(config));
   }, [open, config]);
 
+  useEffect(() => {
+    if (!open) setConfirmingReset(false);
+  }, [open]);
+
   const update = (key: keyof FormState) => (value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  async function handleReset() {
+    await onResetScores();
+    setConfirmingReset(false);
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -144,6 +157,44 @@ export function SettingsDialog({
                 }
               />
             </div>
+          </div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="grid gap-1">
+              <Label>Lifetime scores</Label>
+              <p className="text-xs text-muted-foreground">
+                Erase the per-opponent win/loss history. This cannot be undone.
+              </p>
+            </div>
+            {confirmingReset ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmingReset(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => void handleReset()}
+                >
+                  Confirm reset
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setConfirmingReset(true)}
+              >
+                Reset scores
+              </Button>
+            )}
           </div>
         </div>
         <DialogFooter>
