@@ -22,13 +22,20 @@ echo "==> cabinet Linux setup ($MODE)"
 
 if command -v pacman >/dev/null 2>&1; then
   echo "==> installing system dependencies (sudo pacman)"
-  sudo pacman -S --needed --noconfirm \
-    base-devel webkit2gtk-4.1 libxdo openssl \
-    libayatana-appindicator librsvg zlib glib2 \
-    nodejs npm flatpak
+  if ! sudo pacman -S --needed --noconfirm \
+      webkit2gtk-4.1 base-devel curl wget file openssl \
+      appmenu-gtk-module libappindicator-gtk3 librsvg xdotool; then
+    echo "warning: pacman failed — install the Tauri Linux deps manually:" >&2
+    echo "  sudo pacman -S --needed webkit2gtk-4.1 base-devel curl wget file openssl \\" >&2
+    echo "    appmenu-gtk-module libappindicator-gtk3 librsvg xdotool" >&2
+  fi
+  echo "==> installing runtime tools (node, npm, flatpak)"
+  sudo pacman -S --needed --noconfirm nodejs npm flatpak \
+    || echo "warning: could not install nodejs/npm/flatpak — install them manually if the build fails" >&2
 else
   echo "warning: pacman not found — install the Tauri Linux deps manually:" >&2
-  echo "  webkit2gtk-4.1 libxdo openssl libayatana-appindicator librsvg nodejs npm flatpak" >&2
+  echo "  webkit2gtk-4.1 base-devel curl wget file openssl appmenu-gtk-module libappindicator-gtk3 librsvg xdotool" >&2
+  echo "  plus nodejs npm flatpak" >&2
 fi
 
 if ! command -v cargo >/dev/null 2>&1; then
