@@ -72,6 +72,69 @@ pub fn frozen_core_sha256() -> &'static str {
     ""
 }
 
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+fn standard_core_dirs(home: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+
+    if cfg!(target_os = "macos") {
+        if let Some(home) = home {
+            dirs.push(home.join("Library/Application Support/RetroArch/cores"));
+        }
+    }
+
+    if cfg!(target_os = "linux") {
+        if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+            dirs.push(PathBuf::from(xdg).join("retroarch/cores"));
+        }
+        if let Some(home) = home {
+            dirs.push(home.join(".config/retroarch/cores"));
+            dirs.push(home.join(".var/app/org.libretro.RetroArch/config/retroarch/cores"));
+        }
+    }
+
+    if cfg!(target_os = "windows") {
+        dirs.push(PathBuf::from("C:/RetroArch-Win64/cores"));
+        dirs.push(PathBuf::from("C:/RetroArch/cores"));
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            dirs.push(PathBuf::from(appdata).join("RetroArch/cores"));
+        }
+    }
+
+    dirs
+}
+
+fn core_candidates(program: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(parent) = program
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        candidates.push(parent.join("cores").join(core_file_name()));
+    }
+    candidates.extend(
+        standard_core_dirs(home)
+            .into_iter()
+            .map(|dir| dir.join(core_file_name())),
+    );
+    candidates
+}
+
+fn resolve_core(configured: Option<&str>, candidates: &[PathBuf], managed: PathBuf) -> PathBuf {
+    if let Some(value) = configured.map(str::trim).filter(|value| !value.is_empty()) {
+        return PathBuf::from(value);
+    }
+    candidates
+        .iter()
+        .find(|candidate| candidate.is_file())
+        .cloned()
+        .unwrap_or(managed)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParityStatus {
@@ -105,17 +168,13 @@ impl RetroArchProvider {
             .filter(|value| !value.trim().is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(DEFAULT_PROGRAM));
-        let core = cfg
-            .retroarch_core
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                app_data_dir
-                    .join("cores")
-                    .join(platform_tag())
-                    .join(core_file_name())
-            });
+        let managed_core = app_data_dir
+            .join("cores")
+            .join(platform_tag())
+            .join(core_file_name());
+        let home = home_dir();
+        let candidates = core_candidates(&program, home.as_deref());
+        let core = resolve_core(cfg.retroarch_core.as_deref(), &candidates, managed_core);
         let nickname = cfg
             .retroarch_nickname
             .as_deref()
@@ -288,7 +347,10 @@ impl Provider for RetroArchProvider {
         } else {
             let mut parts = Vec::new();
             if core_sha.is_none() {
-                parts.push(format!("core not readable: {}", self.core.display()));
+                parts.push(format!(
+                    "core not found at {} — set the FBNeo core in Settings",
+                    self.core.display()
+                ));
             } else if !core_ok {
                 parts.push("core revision or sha256 differs from the frozen set".to_string());
             }
@@ -567,6 +629,104 @@ mod tests {
         let core = scratch.dir.join("core.bin");
         std::fs::write(&core, b"....GIT6bb3167....extra GIT deadbeef").unwrap();
         assert_eq!(core_git(&core).unwrap().as_deref(), Some("GIT6bb3167"));
+    }
+
+    #[test]
+    fn resolve_core_prefers_the_configured_path() {
+        let scratch = Scratch::new("configured");
+        let resolved = resolve_core(
+            Some("/custom/fbneo.dylib"),
+            &[scratch.dir.join("standard.dylib")],
+            scratch.dir.join("managed.dylib"),
+        );
+        assert_eq!(resolved, PathBuf::from("/custom/fbneo.dylib"));
+    }
+
+    #[test]
+    fn resolve_core_uses_the_first_existing_candidate() {
+        let scratch = Scratch::new("candidates");
+        let absent = scratch.dir.join("absent.dylib");
+        let present = scratch.dir.join("present.dylib");
+        std::fs::write(&present, b"core").unwrap();
+        let resolved = resolve_core(
+            Some("   "),
+            &[absent, present.clone()],
+            scratch.dir.join("managed.dylib"),
+        );
+        assert_eq!(resolved, present);
+    }
+
+    #[test]
+    fn resolve_core_falls_back_to_the_managed_path() {
+        let scratch = Scratch::new("managed");
+        let managed = scratch.dir.join("managed.dylib");
+        let resolved = resolve_core(None, &[scratch.dir.join("absent.dylib")], managed.clone());
+        assert_eq!(resolved, managed);
+    }
+
+    #[test]
+    fn core_candidates_start_with_the_program_directory() {
+        let program = Path::new("/opt/RetroArch/retroarch");
+        let candidates = core_candidates(program, Some(Path::new("/home/player")));
+        assert_eq!(
+            candidates.first(),
+            Some(&PathBuf::from("/opt/RetroArch/cores").join(core_file_name()))
+        );
+    }
+
+    #[test]
+    fn core_candidates_include_the_host_standard_dir() {
+        let home = Path::new("/home/player");
+        let candidates = core_candidates(Path::new("retroarch"), Some(home));
+        #[cfg(target_os = "macos")]
+        assert!(candidates.contains(
+            &home
+                .join("Library/Application Support/RetroArch/cores")
+                .join(core_file_name())
+        ));
+        #[cfg(target_os = "linux")]
+        assert!(candidates.contains(&home.join(".config/retroarch/cores").join(core_file_name())));
+        #[cfg(target_os = "windows")]
+        assert!(candidates
+            .iter()
+            .any(|path| path.to_string_lossy().contains("RetroArch-Win64")));
+    }
+
+    #[test]
+    #[ignore = "reads the real standard RetroArch core and FightCade ROM on this machine"]
+    fn live_auto_detects_the_frozen_core() {
+        let Some(rom_dir) = crate::roms::resolve_rom_dir(&Config::default()) else {
+            eprintln!("skipping: no ROM directory found");
+            return;
+        };
+        let rom = rom_dir.join("sfiii3nr1.zip");
+        if !rom.is_file() {
+            eprintln!("skipping: {} not present", rom.display());
+            return;
+        }
+        let scratch = Scratch::new("live-parity");
+        let provider = RetroArchProvider::new(
+            &Config::default(),
+            &scratch.dir,
+            &scratch.dir,
+            false,
+        );
+        let status = provider
+            .parity(&rom)
+            .unwrap()
+            .expect("retroarch has a parity gate");
+        eprintln!(
+            "core={} git={:?} rom={} detail={}",
+            status.core_path,
+            status.core_git,
+            status.rom_path,
+            status.detail
+        );
+        assert!(
+            status.ok,
+            "expected the auto-detected frozen core to match: {}",
+            status.detail
+        );
     }
 
     #[test]

@@ -197,14 +197,15 @@ export function SettingsDialog({
                 <Input
                   id="retroarchCore"
                   value={form.retroarchCore}
-                  placeholder="…/cores/macos-arm64/fbneo_libretro.dylib"
+                  placeholder="/Users/you/Library/Application Support/RetroArch/cores/fbneo_libretro.dylib"
                   onChange={(event) =>
                     update("retroarchCore")(event.target.value)
                   }
                 />
                 <p className="text-xs text-muted-foreground">
-                  Point this at the frozen FBNeo core. Netplay refuses to sync if
-                  every machine's core revision does not match.
+                  Leave blank to auto-detect the standard RetroArch core folder.
+                  Netplay refuses to sync if every machine's core revision does
+                  not match.
                 </p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">

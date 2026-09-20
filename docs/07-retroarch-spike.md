@@ -265,5 +265,10 @@ frozen-set parity check (core `GIT` + sha256, ROM sha256).
   is hidden without Screen Recording permission); the same fallback also un-flaked the FightCade
   placement test. Cabinet mode is therefore viable for RetroArch; frame-follow remains the fallback
   when Accessibility is denied.
+- Core resolution: when `retroarchCore` is unset, the provider now probes, in order, the
+  `retroarchPath` sibling `cores/`, the platform-standard RetroArch core dirs (macOS
+  `~/Library/Application Support/RetroArch/cores`, Linux `~/.config/retroarch/cores` including the
+  Flatpak path, Windows `C:\RetroArch-Win64\cores`), and only then the app-data managed path — so an
+  installed frozen core is found without a Settings entry.
 - Not yet verified in-app: cross-OS core parity, managed core download (release unpublished),
   and the four-person input-feel run below.
