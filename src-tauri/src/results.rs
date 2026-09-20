@@ -412,9 +412,10 @@ mod tests {
         emulator.write_ini("bVidSaveOverlayFiles 0\n");
 
         assert!(enable_overlay(&emulator.dir).unwrap().enabled);
+        let newline = if cfg!(target_os = "windows") { "\r\n" } else { "\n" };
         assert_eq!(
             fs::read_to_string(emulator.ini()).unwrap(),
-            "bVidSaveOverlayFiles 1\n"
+            format!("bVidSaveOverlayFiles 1{newline}")
         );
     }
 
@@ -424,9 +425,10 @@ mod tests {
         emulator.write_ini("// bVidSaveOverlayFiles 1\n");
 
         assert!(enable_overlay(&emulator.dir).unwrap().enabled);
+        let newline = if cfg!(target_os = "windows") { "\r\n" } else { "\n" };
         assert_eq!(
             fs::read_to_string(emulator.ini()).unwrap(),
-            "bVidSaveOverlayFiles 1\n"
+            format!("bVidSaveOverlayFiles 1{newline}")
         );
     }
 

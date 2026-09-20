@@ -179,6 +179,7 @@ fn find_on_path() -> Option<PathBuf> {
 }
 
 fn cli_command(binary: &PathBuf) -> std::process::Command {
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut command = process::command(binary);
     #[cfg(target_os = "macos")]
     command.env("TAILSCALE_BE_CLI", "1");

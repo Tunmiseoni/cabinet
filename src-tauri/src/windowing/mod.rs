@@ -17,6 +17,7 @@ pub struct Rect {
 }
 
 impl Rect {
+    #[allow(dead_code)]
     pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
         Self {
             x,
@@ -26,6 +27,7 @@ impl Rect {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_valid(self) -> bool {
         [self.x, self.y, self.width, self.height]
             .iter()

@@ -11,6 +11,7 @@ pub const FROZEN_CORE_GIT: &str = "GIT6bb3167";
 pub const FROZEN_ROM_SHA256: &str =
     "4ed142c90fc1a4632d20600d2f5b46caac813422caab62cce3fa9f85ee5cc4dc";
 
+#[allow(dead_code)]
 const FROZEN_CORE_SHA256_MACOS: &str =
     "674e76fbe4980b716214e7bb2b5a6e06b9489cc08e7472bcd676b5f1dfcb8488";
 #[allow(dead_code)]
@@ -508,7 +509,8 @@ mod tests {
                 "--appendconfig",
                 scratch
                     .dir
-                    .join("cfg/netplay-p1.cfg")
+                    .join("cfg")
+                    .join("netplay-p1.cfg")
                     .to_str()
                     .unwrap(),
                 "--verbose",
@@ -537,7 +539,8 @@ mod tests {
                 "--appendconfig",
                 scratch
                     .dir
-                    .join("cfg/netplay-p2.cfg")
+                    .join("cfg")
+                    .join("netplay-p2.cfg")
                     .to_str()
                     .unwrap(),
                 "--verbose",
@@ -577,7 +580,8 @@ mod tests {
         provider(&scratch)
             .spec(&request(Role::P1, &rom, "100.64.0.2"))
             .unwrap();
-        let overrides = std::fs::read_to_string(scratch.dir.join("cfg/netplay-p1.cfg")).unwrap();
+        let overrides =
+            std::fs::read_to_string(scratch.dir.join("cfg").join("netplay-p1.cfg")).unwrap();
         assert!(overrides.contains("pause_nonactive = \"false\""));
         assert!(overrides.contains("config_save_on_exit = \"false\""));
         assert!(overrides.contains("netplay_nat_traversal = \"false\""));
