@@ -23,6 +23,7 @@ Investigation and remediation options for: **"Test game, tutorial, and spectatin
 | [`03-implementation-plan.md`](03-implementation-plan.md) | Step-by-step plan for the chosen (free, Tailscale) route |
 | [`04-design.md`](04-design.md) | Current spec: The Cabinet Tauri app, network health, KotH, room discovery, score tracking, spectating |
 | [`06-redesign.md`](06-redesign.md) | Proposal (gated on a /grill-me session): Cabinet mode (the emulator hosted inside the app) and the wider redesign pass. Also answers "does FightCade need to be installed?" |
+| [`07-retroarch-spike.md`](07-retroarch-spike.md) | Phase 0 RetroArch netplay/spectator spike: frozen core/ROM parity, harness, local loopback verification (2 players + 2 spectators), and the live feel-test protocol |
 
 ## Environment (as observed)
 
