@@ -157,6 +157,14 @@ pub struct LaunchRequest {
     pub dev: bool,
 }
 
+fn effective_peer(dev: bool, peer_ip: &str) -> String {
+    if dev && peer_ip.trim().is_empty() {
+        "127.0.0.1".to_string()
+    } else {
+        peer_ip.to_string()
+    }
+}
+
 #[tauri::command(async)]
 pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState, String> {
     let cfg = Config::load(&config_file(&app)?);
@@ -165,7 +173,8 @@ pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState
     if !install.installed {
         return Err(format!("emulator not found — {}", install.detail));
     }
-    let config = MatchConfig::new(request.rom, request.peer_ip, request.side)?;
+    let peer_ip = effective_peer(request.dev, &request.peer_ip);
+    let config = MatchConfig::new(request.rom, peer_ip, request.side)?;
     let spec = launcher.spec(&config)?;
     session::launch(&app, &spec, &config, request.dev, !request.dev)
 }
@@ -332,5 +341,28 @@ pub fn cabinet_request_permission() -> Result<bool, String> {
     #[cfg(not(target_os = "macos"))]
     {
         Err("no permission is required on this platform".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dev_launch_defaults_an_empty_peer_to_loopback() {
+        assert_eq!(effective_peer(true, ""), "127.0.0.1");
+        assert_eq!(effective_peer(true, "   "), "127.0.0.1");
+    }
+
+    #[test]
+    fn non_dev_launch_keeps_the_peer_and_still_requires_one() {
+        assert_eq!(effective_peer(false, "100.64.0.2"), "100.64.0.2");
+        assert!(MatchConfig::new("rom".into(), effective_peer(false, ""), 0).is_err());
+    }
+
+    #[test]
+    fn dev_launch_makes_an_empty_peer_config_valid() {
+        let config = MatchConfig::new("rom".into(), effective_peer(true, ""), 0).unwrap();
+        assert_eq!(config.peer_ip, "127.0.0.1");
     }
 }
