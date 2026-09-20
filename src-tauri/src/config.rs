@@ -15,6 +15,7 @@ pub struct Config {
     pub control_port: u16,
     pub rtt_warn_ms: u32,
     pub poll_interval_secs: u32,
+    pub cabinet_mode: bool,
 }
 
 impl Default for Config {
@@ -29,6 +30,7 @@ impl Default for Config {
             control_port: crate::control::DEFAULT_PORT,
             rtt_warn_ms: 150,
             poll_interval_secs: 10,
+            cabinet_mode: false,
         }
     }
 }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LaunchCard } from "@/components/LaunchCard";
 import { LifetimeCard } from "@/components/LifetimeCard";
+import { MatchView } from "@/components/MatchView";
 import { PeersCard } from "@/components/PeersCard";
 import { RoomCard } from "@/components/RoomCard";
 import { RoomsCard } from "@/components/RoomsCard";
@@ -50,6 +51,10 @@ import {
 import { healthWarning } from "@/lib/health";
 import { AlertTriangle, RefreshCw, Settings, Wifi } from "lucide-react";
 
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [tailnet, setTailnet] = useState<Tailnet | null>(null);
@@ -72,36 +77,45 @@ function App() {
   const [romsError, setRomsError] = useState<string | null>(null);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showLobby, setShowLobby] = useState(false);
+
+  const running = match?.status === "running";
+  const cabinetActive = Boolean(config?.cabinetMode) && running && !showLobby;
+
+  useEffect(() => {
+    if (!running) setShowLobby(false);
+  }, [running]);
 
   const rttWarnMs = config?.rttWarnMs ?? 150;
 
-  const refreshPeers = useCallback(async () => {
-    setPeersLoading(true);
+  const refreshPeers = useCallback(async (silent = false) => {
+    if (!silent) setPeersLoading(true);
     try {
       const status = await listPeers();
-      setTailnet(status);
+      setTailnet((prev) => (sameJson(prev, status) ? prev : status));
       setPeersError(null);
 
       const onlineIps = status.peers
         .filter((peer) => peer.online)
         .map((peer) => peer.ip);
       if (onlineIps.length === 0) {
-        setHealth({});
+        setHealth((prev) => (Object.keys(prev).length === 0 ? prev : {}));
         return;
       }
-      setHealthLoading(true);
+      if (!silent) setHealthLoading(true);
       try {
         const results = await peersHealth(onlineIps);
-        setHealth(
-          Object.fromEntries(results.map((result) => [result.ip, result])),
+        const next = Object.fromEntries(
+          results.map((result) => [result.ip, result]),
         );
+        setHealth((prev) => (sameJson(prev, next) ? prev : next));
       } finally {
-        setHealthLoading(false);
+        if (!silent) setHealthLoading(false);
       }
     } catch (err) {
       setPeersError(String(err));
     } finally {
-      setPeersLoading(false);
+      if (!silent) setPeersLoading(false);
     }
   }, []);
 
@@ -136,15 +150,16 @@ function App() {
     }
   }, []);
 
-  const refreshRooms = useCallback(async () => {
-    setRoomsLoading(true);
+  const refreshRooms = useCallback(async (silent = false) => {
+    if (!silent) setRoomsLoading(true);
     try {
-      setRooms(await listRooms());
+      const next = await listRooms();
+      setRooms((prev) => (sameJson(prev, next) ? prev : next));
       setAppError(null);
     } catch (err) {
       setAppError(String(err));
     } finally {
-      setRoomsLoading(false);
+      if (!silent) setRoomsLoading(false);
     }
   }, []);
 
@@ -211,8 +226,8 @@ function App() {
   useEffect(() => {
     const seconds = config?.pollIntervalSecs ?? 10;
     const timer = setInterval(() => {
-      refreshPeers();
-      refreshRooms();
+      refreshPeers(true);
+      refreshRooms(true);
     }, Math.max(2, seconds) * 1000);
     return () => clearInterval(timer);
   }, [config?.pollIntervalSecs, refreshPeers, refreshRooms]);
@@ -364,9 +379,32 @@ function App() {
     .map((peer) => healthWarning(peer.hostname, health[peer.ip], rttWarnMs))
     .filter((warning): warning is string => warning !== null);
 
+  if (cabinetActive && match) {
+    return (
+      <TooltipProvider>
+        <MatchView
+          match={match}
+          rttWarnMs={rttWarnMs}
+          onShowLobby={() => setShowLobby(true)}
+        />
+      </TooltipProvider>
+    );
+  }
+
   return (
     <TooltipProvider>
       <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-6">
+        {running && config?.cabinetMode && (
+          <Alert>
+            <AlertTitle>Match in progress</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-4">
+              <span>The emulator is hosted in Cabinet mode.</span>
+              <Button size="sm" onClick={() => setShowLobby(false)}>
+                Return to Cabinet
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
         <header className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">The Cabinet</h1>

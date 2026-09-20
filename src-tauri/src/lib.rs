@@ -12,6 +12,7 @@ mod scores;
 mod service;
 mod session;
 mod tailscale;
+mod windowing;
 
 const LEGACY_IDENTIFIER: &str = "com.cabinet.app";
 const MIGRATED_FILES: [&str; 3] = ["config.json", "scores.json", "room-ledger.json"];
@@ -53,6 +54,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(session::Session::default())
         .manage(service::RoomService::default())
+        .manage(windowing::Host::new())
         .setup(|app| {
             use tauri::Manager;
             let dir = app.path().app_config_dir()?;
@@ -84,6 +86,10 @@ pub fn run() {
             commands::report_room_result,
             commands::room_state,
             commands::room_secret,
+            commands::cabinet_status,
+            commands::cabinet_place,
+            commands::cabinet_release,
+            commands::cabinet_request_permission,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

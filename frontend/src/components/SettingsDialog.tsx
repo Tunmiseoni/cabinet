@@ -31,6 +31,7 @@ interface FormState {
   controlPort: string;
   rttWarnMs: string;
   pollIntervalSecs: string;
+  cabinetMode: boolean;
 }
 
 function toForm(config: Config | null): FormState {
@@ -44,6 +45,7 @@ function toForm(config: Config | null): FormState {
     controlPort: String(config?.controlPort ?? 47811),
     rttWarnMs: String(config?.rttWarnMs ?? 150),
     pollIntervalSecs: String(config?.pollIntervalSecs ?? 10),
+    cabinetMode: config?.cabinetMode ?? false,
   };
 }
 
@@ -89,6 +91,7 @@ export function SettingsDialog({
         controlPort: Number(form.controlPort) || 47811,
         rttWarnMs: Number(form.rttWarnMs) || 150,
         pollIntervalSecs: Math.max(2, Number(form.pollIntervalSecs) || 10),
+        cabinetMode: form.cabinetMode,
       });
       onOpenChange(false);
     } finally {
@@ -98,7 +101,7 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-4 sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -106,7 +109,7 @@ export function SettingsDialog({
             blank to use the platform default.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4">
+        <div className="-mr-4 grid min-h-0 flex-1 gap-4 overflow-y-auto pr-4">
           <div className="grid gap-2">
             <Label htmlFor="handle">Your handle</Label>
             <Input
@@ -152,7 +155,7 @@ export function SettingsDialog({
               onChange={(event) => update("defaultPeerIp")(event.target.value)}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="pollIntervalSecs">Poll interval (s)</Label>
               <Input
@@ -176,7 +179,7 @@ export function SettingsDialog({
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="discoveryPort">Discovery port (UDP)</Label>
               <Input
@@ -199,6 +202,27 @@ export function SettingsDialog({
                 onChange={(event) => update("controlPort")(event.target.value)}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="grid gap-1">
+              <Label htmlFor="cabinetMode">Cabinet mode</Label>
+              <p className="text-xs text-muted-foreground">
+                Host the emulator inside The Cabinet during a match (macOS). Needs
+                Accessibility permission; without it the game stays a separate window.
+              </p>
+            </div>
+            <input
+              id="cabinetMode"
+              type="checkbox"
+              className="size-4 shrink-0 accent-primary"
+              checked={form.cabinetMode}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, cabinetMode: event.target.checked }))
+              }
+            />
           </div>
 
           <Separator />

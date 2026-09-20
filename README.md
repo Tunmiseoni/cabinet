@@ -4,6 +4,8 @@ A cross-platform desktop lobby for playing **FightCade 2 FBNeo** games with frie
 
 The network problem this solves, and the full design, are documented in [`docs/04-design.md`](docs/04-design.md) (the historical troubleshooting record is `docs/01`–`03`).
 
+**FightCade must be installed, but it is never launched.** The app bypasses the FightCade client entirely (no lobby, no `fcade`, no matchmaking) and uses the installation only as the provider of the `quark:direct` emulator binary, Wine (macOS), the ROM directory, `fcadefbneo.ini`, and the overlay output. Uninstalling FightCade breaks the launchers. See [`docs/06-redesign.md`](docs/06-redesign.md) §2.
+
 ## Status
 
 **Phase 1 (macOS + Linux + Windows launchers, connection health, result watcher, local score ledger), Phase 2.1–2.6 (rooms/KotH, shared ledger, overlay auto-report, mid-match re-ping), and the GitHub Releases distribution pipeline are implemented.** Current app:
@@ -15,6 +17,7 @@ The network problem this solves, and the full design, are documented in [`docs/0
 - **Lifetime scores** — a local per-opponent win/loss ledger (plus overall totals, win rate, and streaks), persisted to the app config dir. Game counts come from overlay score increments; loopback Dev-pair games are excluded. Resettable from Settings.
 - **Rooms (Phase 2)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the host-persisted shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Results are auto-reported from the emulator overlay, with manual "I won"/"I lost" buttons as fallback; the match peer's RTT/path is re-pinged during play.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
+- **Cabinet mode (off by default, macOS)** — with the setting enabled, launching a match opens a full-screen cabinet bezel and hosts the emulator window inside it via the macOS Accessibility API. Needs a one-time Accessibility grant; without it the game stays a separate window. See [`docs/06-redesign.md`](docs/06-redesign.md).
 
 ## Download
 
@@ -30,6 +33,8 @@ On Windows, run `scripts/fcade-lan-windows-firewall.bat` once (elevated) to allo
 ## Priorities
 
 The next step is the 4-person live test (Phase 2.7): the GitHub Actions per-OS release pipeline and the **Windows launcher adapter** are now in place, so all four machines can play from released builds. After that: spectating (Phase 3, gated on a RetroArch spike). See `docs/04-design.md` §7 for the open items.
+
+A UX redesign is also proposed — **Cabinet mode**, hosting the emulator inside the app so a match is one window, plus a single-window information architecture. It is gated on a `/grill-me` session; the proposal, per-OS feasibility, and the required grill agenda are in [`docs/06-redesign.md`](docs/06-redesign.md).
 
 ## Quickstart
 

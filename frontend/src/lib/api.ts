@@ -10,6 +10,7 @@ export interface Config {
   controlPort: number;
   rttWarnMs: number;
   pollIntervalSecs: number;
+  cabinetMode: boolean;
 }
 
 export interface Peer {
@@ -189,6 +190,35 @@ export interface LaunchRequest {
   dev: boolean;
 }
 
+export type CabinetPermission = "granted" | "denied" | "notRequired";
+
+export type CabinetMode = "placement" | "frameFollow" | "unsupported";
+
+export interface CabinetRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface CabinetWindow {
+  id: number;
+  ownerPid: number;
+  ownerName: string;
+  title: string;
+  bounds: CabinetRect;
+}
+
+export interface CabinetStatus {
+  platform: string;
+  supported: boolean;
+  permission: CabinetPermission;
+  mode: CabinetMode;
+  detail: string;
+  ownerPids: number[];
+  windows: CabinetWindow[];
+}
+
 export const MATCH_EVENT = "match-state-changed";
 
 export const SCORES_EVENT = "scores-changed";
@@ -251,3 +281,14 @@ export const reportRoomResult = (matchId: string, won: boolean) =>
 export const roomState = () => invoke<RoomState | null>("room_state");
 
 export const roomSecret = () => invoke<string | null>("room_secret");
+
+export const cabinetStatus = () => invoke<CabinetStatus>("cabinet_status");
+
+export const cabinetPlace = (windowId: number, rect: CabinetRect) =>
+  invoke<CabinetMode>("cabinet_place", { windowId, rect });
+
+export const cabinetRelease = (windowId: number) =>
+  invoke<void>("cabinet_release", { windowId });
+
+export const cabinetRequestPermission = () =>
+  invoke<boolean>("cabinet_request_permission");
