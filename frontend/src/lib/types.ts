@@ -8,8 +8,6 @@ export interface Config {
   romDir: string | null;
   tailscalePath: string | null;
   defaultPeerIp: string | null;
-  discoveryPort: number;
-  controlPort: number;
   rttWarnMs: number;
   pollIntervalSecs: number;
   cabinetMode: boolean;
@@ -77,7 +75,6 @@ export interface InstallInfo {
 
 export interface ProviderCapabilities {
   spectate: boolean;
-  overlayResults: boolean;
   devPair: boolean;
 }
 
@@ -101,89 +98,6 @@ export interface ParityStatus {
   detail: string;
 }
 
-export interface RoomAdvert {
-  roomId: string;
-  host: string;
-  rom: string;
-  phase: string;
-  champion: string | null;
-  queue: number;
-  players: number;
-  secretRequired: boolean;
-}
-
-export interface DiscoveredRoom extends RoomAdvert {
-  ip: string;
-}
-
-export interface RoomPlayer {
-  nodeId: string;
-  handle: string;
-  ip: string;
-}
-
-export interface MatchSlot {
-  nodeId: string;
-  handle: string;
-  ip: string;
-  side: number;
-}
-
-export interface CurrentMatch {
-  matchId: string;
-  p1: MatchSlot;
-  p2: MatchSlot;
-  startedAtMs: number;
-}
-
-export interface LedgerEntry {
-  handle: string;
-  wins: number;
-  losses: number;
-  draws: number;
-  games: number;
-}
-
-export type RoomPhase = "lobby" | "playing";
-
-export interface RoomState {
-  roomId: string;
-  host: RoomPlayer;
-  rom: string;
-  revision: number;
-  phase: RoomPhase;
-  champion: RoomPlayer | null;
-  challenger: RoomPlayer | null;
-  queue: RoomPlayer[];
-  currentMatch: CurrentMatch | null;
-  ledger: Record<string, LedgerEntry>;
-  matchSeq: number;
-}
-
-export interface OverlayStatus {
-  enabled: boolean;
-  iniPath: string;
-}
-
-export interface ScoreEntry {
-  wins: number;
-  losses: number;
-  draws: number;
-  games: number;
-  currentStreak: number;
-  bestStreak: number;
-  lastPlayedMs: number;
-}
-
-export interface ScoreRecord extends ScoreEntry {
-  opponent: string;
-}
-
-export interface ScoreSnapshot {
-  records: ScoreRecord[];
-  totals: ScoreEntry;
-}
-
 export interface InstanceState {
   role: MatchRole;
   roleLabel: string;
@@ -193,19 +107,6 @@ export interface InstanceState {
   message: string | null;
 }
 
-export interface MatchResult {
-  rom: string | null;
-  started: boolean;
-  winner: string | null;
-  winnerSide: number | null;
-  p1Name: string | null;
-  p2Name: string | null;
-  p1Score: number | null;
-  p2Score: number | null;
-  p1Character: string | null;
-  p2Character: string | null;
-}
-
 export interface MatchState {
   status: "idle" | "running" | "finished";
   rom: string | null;
@@ -213,7 +114,6 @@ export interface MatchState {
   dev: boolean;
   startedAtMs: number | null;
   instances: InstanceState[];
-  result: MatchResult | null;
   peerHealth: PeerHealth | null;
   message: string | null;
 }
@@ -269,7 +169,3 @@ export interface CabinetStatus {
 }
 
 export const MATCH_EVENT = "match-state-changed";
-
-export const SCORES_EVENT = "scores-changed";
-
-export const ROOM_EVENT = "room-state-changed";

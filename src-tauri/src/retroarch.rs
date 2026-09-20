@@ -281,16 +281,8 @@ impl Provider for RetroArchProvider {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             spectate: true,
-            overlay_results: false,
             dev_pair: true,
         }
-    }
-
-    fn emulator_dir(&self) -> PathBuf {
-        self.core
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."))
     }
 
     fn port(&self, _role: Role) -> Option<u16> {
@@ -617,7 +609,6 @@ mod tests {
         let scratch = Scratch::new("caps");
         let caps = provider(&scratch).capabilities();
         assert!(caps.spectate);
-        assert!(!caps.overlay_results);
         assert!(caps.dev_pair);
     }
 

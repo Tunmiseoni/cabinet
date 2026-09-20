@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-pub const DISCOVERY_PROBE_TIMEOUT: Duration = Duration::from_millis(400);
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 pub const PROBE_DEFAULT_TIMEOUT_MS: u64 = 3_000;
 pub const PROBE_TIMEOUT_MIN_MS: u64 = 100;

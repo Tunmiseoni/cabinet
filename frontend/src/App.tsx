@@ -3,51 +3,29 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LaunchCard } from "@/components/LaunchCard";
-import { LifetimeCard } from "@/components/LifetimeCard";
 import { MatchView } from "@/components/MatchView";
 import { PeersCard } from "@/components/PeersCard";
-import { RoomCard } from "@/components/RoomCard";
-import { RoomsCard } from "@/components/RoomsCard";
 import { RomsCard } from "@/components/RomsCard";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import {
-  enableOverlay,
   getConfig,
-  getScores,
-  hostRoom,
-  joinRoom,
   launcherInfo,
   launchDevPair,
   launchMatch,
-  leaveRoom,
   listPeers,
-  listRooms,
   listRoms,
   matchStatus,
-  overlayStatus,
   peersHealth,
-  reportRoomResult,
-  resetScores,
-  roomEnqueue,
-  roomLeaveQueue,
-  roomSecret,
-  roomState,
   setConfig as saveConfig,
   stopMatch,
   type Config,
-  type DiscoveredRoom,
   type MatchRole,
   type MatchState,
-  type OverlayStatus,
   type PeerHealth,
   type ProviderInfo,
-  type RoomState,
   type RomIndex,
-  type ScoreSnapshot,
   type Tailnet,
   MATCH_EVENT,
-  ROOM_EVENT,
-  SCORES_EVENT,
 } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
 import { useAsyncTask, usePolling, useTauriEvent } from "@/lib/hooks";
@@ -60,12 +38,6 @@ function App() {
   const [romIndex, setRomIndex] = useState<RomIndex | null>(null);
   const [health, setHealth] = useState<Record<string, PeerHealth>>({});
   const [launcher, setLauncher] = useState<ProviderInfo | null>(null);
-  const [overlay, setOverlay] = useState<OverlayStatus | null>(null);
-  const [scores, setScores] = useState<ScoreSnapshot | null>(null);
-  const [rooms, setRooms] = useState<DiscoveredRoom[]>([]);
-  const [roomsLoading, setRoomsLoading] = useState(true);
-  const [room, setRoom] = useState<RoomState | null>(null);
-  const [roomSecretValue, setRoomSecretValue] = useState<string | null>(null);
   const [match, setMatch] = useState<MatchState | null>(null);
   const [peersLoading, setPeersLoading] = useState(true);
   const [romsLoading, setRomsLoading] = useState(true);
@@ -77,8 +49,6 @@ function App() {
   const [showLobby, setShowLobby] = useState(false);
 
   const launchAction = useAsyncTask(setAppError);
-  const overlayAction = useAsyncTask(setAppError);
-  const roomAction = useAsyncTask(setAppError);
   const settingsAction = useAsyncTask(setAppError);
 
   const running = match?.status === "running";
@@ -136,37 +106,9 @@ function App() {
   const refreshLauncher = useCallback(async () => {
     try {
       setLauncher(await launcherInfo());
-      setOverlay(await overlayStatus());
       setAppError(null);
     } catch (err) {
       setAppError(String(err));
-    }
-  }, []);
-
-  const handleEnableOverlay = () =>
-    overlayAction.run(async () => {
-      setOverlay(await enableOverlay());
-    });
-
-  const refreshScores = useCallback(async () => {
-    try {
-      setScores(await getScores());
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    }
-  }, []);
-
-  const refreshRooms = useCallback(async (silent = false) => {
-    if (!silent) setRoomsLoading(true);
-    try {
-      const next = await listRooms();
-      setRooms((prev) => (sameJson(prev, next) ? prev : next));
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      if (!silent) setRoomsLoading(false);
     }
   }, []);
 
@@ -177,44 +119,16 @@ function App() {
     refreshPeers();
     refreshRoms();
     refreshLauncher();
-    refreshScores();
-    refreshRooms();
-    roomState()
-      .then(setRoom)
-      .catch(() => undefined);
-    roomSecret()
-      .then(setRoomSecretValue)
-      .catch(() => undefined);
     matchStatus()
       .then(setMatch)
       .catch(() => undefined);
-  }, [
-    refreshPeers,
-    refreshRoms,
-    refreshLauncher,
-    refreshScores,
-    refreshRooms,
-  ]);
+  }, [refreshPeers, refreshRoms, refreshLauncher]);
 
   useTauriEvent<MatchState>(MATCH_EVENT, setMatch);
-
-  useTauriEvent<ScoreSnapshot>(SCORES_EVENT, setScores);
-
-  useTauriEvent<RoomState | null>(ROOM_EVENT, (next) => {
-    setRoom(next);
-    if (next) {
-      roomSecret()
-        .then(setRoomSecretValue)
-        .catch(() => undefined);
-    } else {
-      setRoomSecretValue(null);
-    }
-  });
 
   const pollSeconds = Math.max(2, config?.pollIntervalSecs ?? 10);
   usePolling(() => {
     refreshPeers(true);
-    refreshRooms(true);
   }, pollSeconds * 1000);
 
   const handleSaveConfig = (next: Config) =>
@@ -245,50 +159,6 @@ function App() {
     launchAction.run(async () => {
       setMatch(await launchDevPair(rom));
     });
-
-  const handleResetScores = () =>
-    settingsAction.run(async () => {
-      setScores(await resetScores());
-    });
-
-  const handleHostRoom = (rom: string, secret: string | null) =>
-    roomAction.run(async () => {
-      setRoom(await hostRoom(rom, secret));
-      setRoomSecretValue(await roomSecret());
-      await refreshRooms();
-    });
-
-  const handleJoinRoom = (target: DiscoveredRoom, secret: string | null) =>
-    roomAction.run(async () => {
-      setRoom(await joinRoom(target.ip, target.roomId, secret));
-      setRoomSecretValue(null);
-    });
-
-  const handleLeaveRoom = () =>
-    roomAction.run(async () => {
-      await leaveRoom();
-      setRoom(null);
-      setRoomSecretValue(null);
-      await refreshRooms();
-    });
-
-  const handleRoomEnqueue = () =>
-    roomAction.run(async () => {
-      await roomEnqueue();
-    });
-
-  const handleRoomLeaveQueue = () =>
-    roomAction.run(async () => {
-      await roomLeaveQueue();
-    });
-
-  const handleReportRoomResult = async (won: boolean) => {
-    const matchId = room?.currentMatch?.matchId;
-    if (!matchId) return;
-    await roomAction.run(async () => {
-      await reportRoomResult(matchId, won);
-    });
-  };
 
   const warnings = (tailnet?.peers ?? [])
     .filter((peer) => peer.online)
@@ -325,7 +195,7 @@ function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">The Cabinet</h1>
             <p className="text-sm text-muted-foreground">
-              Tailnet FightCade lobby
+              Tailnet FightCade launcher
               {tailnet?.selfPeer?.ip ? ` · ${tailnet.selfPeer.ip}` : ""}
             </p>
           </div>
@@ -337,8 +207,6 @@ function App() {
                 refreshPeers();
                 refreshRoms();
                 refreshLauncher();
-                refreshScores();
-                refreshRooms();
               }}
             >
               <RefreshCw className="size-4" />
@@ -404,45 +272,11 @@ function App() {
           <RomsCard romIndex={romIndex} loading={romsLoading} error={romsError} />
         </div>
 
-        {room && (
-          <RoomCard
-            room={room}
-            selfNodeId={tailnet?.selfPeer?.nodeId ?? null}
-            secret={roomSecretValue}
-            busy={roomAction.busy}
-            onEnqueue={handleRoomEnqueue}
-            onLeaveQueue={handleRoomLeaveQueue}
-            onLeave={handleLeaveRoom}
-            onReport={handleReportRoomResult}
-          />
-        )}
-
-        <RoomsCard
-          rooms={rooms}
-          loading={roomsLoading}
-          error={null}
-          inRoom={room !== null}
-          romIndex={romIndex}
-          tailnet={tailnet}
-          onRefresh={refreshRooms}
-          onHost={handleHostRoom}
-          onJoin={handleJoinRoom}
-        />
-
-        <LifetimeCard
-          scores={scores}
-          tailnet={tailnet}
-          overlay={overlay}
-          onEnableOverlay={handleEnableOverlay}
-          enablingOverlay={overlayAction.busy}
-        />
-
         <SettingsDialog
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
           config={config}
           onSave={handleSaveConfig}
-          onResetScores={handleResetScores}
         />
       </div>
     </TooltipProvider>

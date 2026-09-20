@@ -27,7 +27,6 @@ import {
 import type {
   Config,
   MatchRole,
-  MatchResult,
   MatchState,
   ParityStatus,
   PeerHealth,
@@ -37,24 +36,13 @@ import type {
 } from "@/lib/api";
 import { parityStatus, probePort } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
-import { FlaskConical, Gamepad2, Play, Square, Trophy } from "lucide-react";
+import { FlaskConical, Gamepad2, Play, Square } from "lucide-react";
 
 const ROLE_LABELS: Record<MatchRole, string> = {
   p1: "P1 · host",
   p2: "P2 · client",
   spectator: "Spectator",
 };
-
-function describeResult(result: MatchResult): string {
-  const score = `${result.p1Score ?? "?"}–${result.p2Score ?? "?"}`;
-  const winner =
-    result.winnerSide === 0
-      ? (result.p1Name ?? "P1")
-      : result.winnerSide === 1
-        ? (result.p2Name ?? "P2")
-        : null;
-  return winner ? `${winner} wins · ${score}` : `draw · ${score}`;
-}
 
 interface LaunchCardProps {
   config: Config | null;
@@ -333,12 +321,6 @@ export function LaunchCard({
               rttWarnMs={rttWarnMs}
               loading={false}
             />
-          )}
-          {match?.result && (
-            <span className="flex items-center gap-1.5 text-sm font-medium">
-              <Trophy className="size-4 text-amber-500" />
-              {describeResult(match.result)}
-            </span>
           )}
         </div>
 

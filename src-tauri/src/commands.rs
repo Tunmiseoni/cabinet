@@ -1,15 +1,10 @@
 use crate::config::{self, Config};
 use crate::constants;
-use crate::discovery::{self, DiscoveredRoom};
 use crate::launcher::InstallInfo;
 use crate::probe;
 use crate::provider::{self, Capabilities, MatchRequest, Provider, ProviderKind, Role};
-use crate::results::{self, OverlayStatus};
 use crate::retroarch;
 use crate::roms::{self, RomIndex};
-use crate::room::RoomState;
-use crate::scores::{ScoreBoard, Snapshot};
-use crate::service::RoomService;
 use crate::session::{self, MatchState, Plan};
 use crate::tailscale::{self, PeerHealth, Tailnet};
 use crate::windowing::{self, PlacementMode, Rect, WindowInfo};
@@ -85,24 +80,6 @@ pub fn list_roms(app: AppHandle) -> Result<RomIndex, String> {
     Ok(roms::index(&cfg))
 }
 
-#[tauri::command(async)]
-pub fn list_rooms(app: AppHandle) -> Result<Vec<DiscoveredRoom>, String> {
-    let cfg = load_config(&app)?;
-    let binary = tailscale::resolve_binary(&cfg)?;
-    let tailnet = tailscale::status(&binary)?;
-    let ips: Vec<String> = tailnet
-        .peers
-        .iter()
-        .filter(|peer| peer.online)
-        .map(|peer| peer.ip.clone())
-        .collect();
-    Ok(discovery::probe_many(
-        &ips,
-        cfg.discovery_port,
-        constants::DISCOVERY_PROBE_TIMEOUT,
-    ))
-}
-
 fn rom_file(cfg: &Config, rom: &str) -> Result<PathBuf, String> {
     let dir = roms::resolve_rom_dir(cfg)
         .ok_or_else(|| "no ROM directory found — set one in settings".to_string())?;
@@ -142,18 +119,6 @@ pub fn launcher_info(app: AppHandle) -> Result<ProviderInfo, String> {
 }
 
 #[tauri::command(async)]
-pub fn overlay_status(app: AppHandle) -> Result<OverlayStatus, String> {
-    let provider = provider_for(&app, false)?;
-    if !provider.capabilities().overlay_results {
-        return Ok(OverlayStatus {
-            enabled: false,
-            ini_path: String::new(),
-        });
-    }
-    Ok(results::overlay_status(&provider.emulator_dir()))
-}
-
-#[tauri::command(async)]
 pub fn parity_status(
     app: AppHandle,
     rom: String,
@@ -164,27 +129,6 @@ pub fn parity_status(
     }
     let rom_path = optional_rom_file(&cfg, provider.as_ref(), &rom)?;
     provider.parity(&rom_path)
-}
-
-#[tauri::command(async)]
-pub fn enable_overlay(app: AppHandle) -> Result<OverlayStatus, String> {
-    if session::status(&app).status == "running" {
-        return Err("stop the match before changing FightCade settings".to_string());
-    }
-    let cfg = load_config(&app)?;
-    let launcher = provider::resolve_launcher(&cfg, false)?;
-    results::enable_overlay(&launcher.emulator_dir())
-        .map_err(|err| format!("cannot update FightCade config: {err}"))
-}
-
-#[tauri::command]
-pub fn get_scores(app: AppHandle) -> Snapshot {
-    app.state::<ScoreBoard>().snapshot()
-}
-
-#[tauri::command]
-pub fn reset_scores(app: AppHandle) -> Snapshot {
-    app.state::<ScoreBoard>().reset()
 }
 
 #[derive(Debug, Deserialize)]
@@ -238,7 +182,6 @@ fn plan_for(
         rom: rom.to_string(),
         peer_ip: peer_ip.to_string(),
         port: provider.port(role),
-        side: role.side(),
     })
 }
 
@@ -324,7 +267,6 @@ pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState
         &request.rom,
         &peer_ip,
     )?;
-    let overlay = provider.capabilities().overlay_results;
     let wait_for_host = request.dev
         && provider.kind() == ProviderKind::Retroarch
         && matches!(request.role, Role::P2 | Role::Spectator);
@@ -334,8 +276,6 @@ pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState
         session::LaunchOptions {
             dev: request.dev,
             wait_for_host,
-            overlay,
-            track_scores: overlay,
             peer_display: peer_ip,
         },
     )
@@ -372,56 +312,9 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String
         session::LaunchOptions {
             dev: true,
             wait_for_host: provider.kind() == ProviderKind::Retroarch,
-            overlay: false,
-            track_scores: false,
             peer_display: "127.0.0.1 (P1↔P2)".to_string(),
         },
     )
-}
-
-#[tauri::command(async)]
-pub fn host_room(app: AppHandle, rom: String, secret: Option<String>) -> Result<RoomState, String> {
-    RoomService::host(&app, rom, secret)
-}
-
-#[tauri::command(async)]
-pub fn join_room(
-    app: AppHandle,
-    ip: String,
-    room_id: String,
-    secret: Option<String>,
-) -> Result<RoomState, String> {
-    RoomService::join(&app, ip, room_id, secret)
-}
-
-#[tauri::command(async)]
-pub fn leave_room(app: AppHandle) -> Result<(), String> {
-    RoomService::leave(&app)
-}
-
-#[tauri::command(async)]
-pub fn room_enqueue(app: AppHandle) -> Result<(), String> {
-    RoomService::enqueue(&app)
-}
-
-#[tauri::command(async)]
-pub fn room_leave_queue(app: AppHandle) -> Result<(), String> {
-    RoomService::leave_queue(&app)
-}
-
-#[tauri::command(async)]
-pub fn report_room_result(app: AppHandle, match_id: String, won: bool) -> Result<(), String> {
-    RoomService::report_result(&app, match_id, won)
-}
-
-#[tauri::command]
-pub fn room_state(app: AppHandle) -> Option<RoomState> {
-    app.state::<RoomService>().state()
-}
-
-#[tauri::command]
-pub fn room_secret(app: AppHandle) -> Option<String> {
-    app.state::<RoomService>().secret()
 }
 
 #[derive(Debug, Serialize)]

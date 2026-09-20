@@ -1,21 +1,14 @@
 mod commands;
 mod config;
 mod constants;
-mod control;
 mod diagnostics;
-mod discovery;
 mod launcher;
 mod logging;
-mod player;
 mod probe;
 mod process;
 mod provider;
-mod results;
 mod retroarch;
 mod roms;
-mod room;
-mod scores;
-mod service;
 mod session;
 mod sync;
 mod tailscale;
@@ -23,7 +16,7 @@ mod time;
 mod windowing;
 
 const LEGACY_IDENTIFIER: &str = "com.cabinet.app";
-const MIGRATED_FILES: [&str; 3] = ["config.json", "scores.json", "room-ledger.json"];
+const MIGRATED_FILES: [&str; 1] = ["config.json"];
 
 fn migrate_legacy_config_dir(current: &std::path::Path) {
     let Some(legacy) = current
@@ -96,13 +89,11 @@ pub fn run() {
         .plugin(log_plugin)
         .plugin(tauri_plugin_opener::init())
         .manage(session::Session::default())
-        .manage(service::RoomService::default())
         .manage(windowing::Host::new())
         .setup(|app| {
             use tauri::Manager;
             let dir = app.path().app_config_dir()?;
             migrate_legacy_config_dir(&dir);
-            app.manage(scores::ScoreBoard::load(dir.join("scores.json")));
 
             let verbose = verbose_logging_requested(app.handle());
             log::set_max_level(if verbose {
@@ -130,25 +121,12 @@ pub fn run() {
             commands::peer_health,
             commands::peers_health,
             commands::list_roms,
-            commands::list_rooms,
             commands::launcher_info,
-            commands::overlay_status,
             commands::parity_status,
-            commands::enable_overlay,
-            commands::get_scores,
-            commands::reset_scores,
             commands::launch_match,
             commands::launch_dev_pair,
             commands::stop_match,
             commands::match_status,
-            commands::host_room,
-            commands::join_room,
-            commands::leave_room,
-            commands::room_enqueue,
-            commands::room_leave_queue,
-            commands::report_room_result,
-            commands::room_state,
-            commands::room_secret,
             commands::cabinet_status,
             commands::cabinet_place,
             commands::cabinet_release,
@@ -181,7 +159,6 @@ mod tests {
     fn migrates_missing_files_from_legacy_dir() {
         let (root, legacy, current) = scratch("copy");
         std::fs::write(legacy.join("config.json"), "{}").unwrap();
-        std::fs::write(legacy.join("scores.json"), "[]").unwrap();
 
         migrate_legacy_config_dir(&current);
 
@@ -189,11 +166,6 @@ mod tests {
             std::fs::read_to_string(current.join("config.json")).unwrap(),
             "{}"
         );
-        assert_eq!(
-            std::fs::read_to_string(current.join("scores.json")).unwrap(),
-            "[]"
-        );
-        assert!(!current.join("room-ledger.json").exists());
         std::fs::remove_dir_all(&root).ok();
     }
 

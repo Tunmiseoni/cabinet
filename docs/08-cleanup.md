@@ -1,8 +1,13 @@
 # Cleanup: applied refactors and deferred proposals
 
 Status: **applied pass done 2026-09-20** (balanced, behavior-preserving). The heavier refactors
-below are **proposed and deferred**; none block Phases 2.7/3. This file is the backlog for a
+below are **proposed and deferred**; none block Phases 3. This file is the backlog for a
 future cleanup session, so day-to-day feature work has a written target instead of ad-hoc churn.
+
+> **Removed 2026-09-21:** the rooms/lobbies/KotH subsystem, the local lifetime score ledger, and
+> the emulator overlay/result watcher were deleted entirely (see `docs/04-design.md` §3/§5). Some
+> paths referenced in the §1 table below (`scores.rs`, `control.rs`, `service.rs`) no longer exist;
+> the table is kept as a record of that pass.
 
 ## 1. Applied (2026-09-20)
 

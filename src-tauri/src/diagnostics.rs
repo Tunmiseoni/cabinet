@@ -111,8 +111,8 @@ fn diagnostics_text(app: &AppHandle) -> String {
             let caps = provider.capabilities();
             let _ = writeln!(
                 out,
-                "capabilities: spectate={} overlayResults={} devPair={}",
-                caps.spectate, caps.overlay_results, caps.dev_pair
+                "capabilities: spectate={} devPair={}",
+                caps.spectate, caps.dev_pair
             );
         }
         Err(err) => {

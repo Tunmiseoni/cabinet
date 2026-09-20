@@ -29,16 +29,6 @@ interface MatchViewProps {
   onShowLobby: () => void;
 }
 
-function describeResult(match: MatchState): string | null {
-  const result = match.result;
-  if (!result) return null;
-  const score = `${result.p1Score ?? "?"}–${result.p2Score ?? "?"}`;
-  if (result.winnerSide === null) return `draw · ${score}`;
-  const winner =
-    result.winnerSide === 0 ? (result.p1Name ?? "P1") : (result.p2Name ?? "P2");
-  return `${winner} wins · ${score}`;
-}
-
 interface ShellState {
   size: PhysicalSize;
   position: PhysicalPosition;
@@ -205,7 +195,6 @@ export function MatchView({ match, rttWarnMs, onShowLobby }: MatchViewProps) {
   const instances = match.instances
     .map((instance) => `${instance.roleLabel}@${instance.port ?? "—"}`)
     .join(" + ");
-  const result = describeResult(match);
   const supported = status?.supported ?? false;
 
   return (
@@ -225,7 +214,6 @@ export function MatchView({ match, rttWarnMs, onShowLobby }: MatchViewProps) {
             rttWarnMs={rttWarnMs}
             loading={false}
           />
-          {result && <span className="text-sm font-medium">{result}</span>}
           <Button variant="outline" size="sm" onClick={onShowLobby}>
             <X className="size-4" />
             Lobby

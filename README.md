@@ -1,24 +1,22 @@
 # The Cabinet
 
-A cross-platform desktop lobby for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet. It drives the emulator's built-in `quark:direct` mode, so matches connect peer-to-peer and bypass ISP CGNAT entirely — no FightCade matchmaking, no port forwarding, no paid VPN.
+A cross-platform desktop launcher for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet. It drives the emulator's built-in `quark:direct` mode, so matches connect peer-to-peer and bypass ISP CGNAT entirely — no FightCade matchmaking, no port forwarding, no paid VPN.
 
 The network problem this solves, and the full design, are documented in [`docs/04-design.md`](docs/04-design.md) (the historical troubleshooting record is `docs/01`–`03`).
 
-**FightCade must be installed, but it is never launched.** The app bypasses the FightCade client entirely (no lobby, no `fcade`, no matchmaking) and uses the installation only as the provider of the `quark:direct` emulator binary, Wine (macOS), the ROM directory, `fcadefbneo.ini`, and the overlay output. Uninstalling FightCade breaks the launchers. See [`docs/06-redesign.md`](docs/06-redesign.md) §2.
+**FightCade must be installed, but it is never launched.** The app bypasses the FightCade client entirely (no `fcade`, no matchmaking) and uses the installation only as the provider of the `quark:direct` emulator binary, Wine (macOS), the ROM directory, and `fcadefbneo.ini`. Uninstalling FightCade breaks the launchers. See [`docs/06-redesign.md`](docs/06-redesign.md) §2.
 
 ## Status
 
-**Phase 1 (macOS + Linux + Windows launchers, connection health, result watcher, local score ledger), Phase 2.1–2.6 (rooms/KotH, shared ledger, overlay auto-report, mid-match re-ping), and the GitHub Releases distribution pipeline are implemented.** Current app:
+**Phase 1 (macOS + Linux + Windows launchers, connection health), the RetroArch spectator provider, Cabinet mode, and the GitHub Releases distribution pipeline are implemented.** Current app:
 
 - Peer registry and per-peer **connection health** — RTT, `direct` vs `DERP (relay)`, with a pre-match warning when a peer is relayed or above the latency threshold.
 - ROM index from the configured emulator's ROM directory.
 - **Launcher** for macOS FightCade (bundled Wine), **Linux FightCade** (Flatpak `com.fightcade.Fightcade`, or a native/Wine install), and **Windows FightCade** (native `fcadefbneo.exe`) with spawn/stop and process-exit detection.
-- **Match-result detection** — polls the emulator's `fbneo/fightcade/` overlay files (`winner.txt`, scores, characters) during and after a session and surfaces the result in the launcher card. Requires `bVidSaveOverlayFiles 1` in the FightCade FBNeo config; when it is off, the lobby's lifetime card offers an **Enable** button that writes the setting.
-- **Lifetime scores** — a local per-opponent win/loss ledger (plus overall totals, win rate, and streaks), persisted to the app config dir. Game counts come from overlay score increments; loopback Dev-pair games are excluded. Resettable from Settings.
-- **Rooms (Phase 2)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the host-persisted shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Results are auto-reported from the emulator overlay, with manual "I won"/"I lost" buttons as fallback; the match peer's RTT/path is re-pinged during play.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
 - **RetroArch provider (Phase 0, opt-in)** — a selectable match provider beside FightCade that drives RetroArch netplay for host/client/**spectator**, with a parity gate on the frozen FBNeo core + ROM. Verified live across macOS/Linux/Windows (2026-09-20) at ~55–83 ms; this is the spectator path. See [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md).
 - **Cabinet mode (off by default, macOS)** — with the setting enabled, launching a match opens a full-screen cabinet bezel and hosts the emulator window inside it via the macOS Accessibility API. Needs a one-time Accessibility grant; without it the game stays a separate window. See [`docs/06-redesign.md`](docs/06-redesign.md).
+
 
 ## Download
 
@@ -33,7 +31,7 @@ On Windows, run `scripts/fcade-lan-windows-firewall.bat` once (elevated) to allo
 
 ## Priorities
 
-The next step is the 4-person live test (Phase 2.7): the GitHub Actions per-OS release pipeline and the **Windows launcher adapter** are now in place, so all four machines can play from released builds. Spectating has since cleared its Phase 0 gate — the RetroArch netplay/spectator spike passed live on the tailnet (2026-09-20: a macOS host + Linux client + Windows spectator stayed synced ~11 min at ~55–83 ms, feel rated acceptable), so RetroArch is the primary spectator path and the `ggponet.dll` shim is skipped. Phase 3 integration follows; the two-concurrent-spectator tailnet run is deferred. See `docs/04-design.md` §7 and [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md) for the open items.
+Spectating has cleared its Phase 0 gate — the RetroArch netplay/spectator spike passed live on the tailnet (2026-09-20: a macOS host + Linux client + Windows spectator stayed synced ~11 min at ~55–83 ms, feel rated acceptable), so RetroArch is the primary spectator path and the `ggponet.dll` shim is skipped. Phase 3 integration follows; the two-concurrent-spectator tailnet run is deferred. See `docs/04-design.md` §7 and [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md) for the open items.
 
 A UX redesign is also proposed — **Cabinet mode**, hosting the emulator inside the app so a match is one window, plus a single-window information architecture. It is gated on a `/grill-me` session; the proposal, per-OS feasibility, and the required grill agenda are in [`docs/06-redesign.md`](docs/06-redesign.md).
 
@@ -83,8 +81,8 @@ The bundle is written under `src-tauri/target/release/bundle/`. The app detects
 the FightCade Flatpak (`com.fightcade.Fightcade`) automatically and launches
 FBNeo inside its sandbox; a native/Wine install is used as a fallback, and the
 ROM directory is auto-detected. If detection fails, set the FightCade directory
-in Settings. Ensure Tailscale is running and ports `47810/47811` (UDP/TCP) are
-allowed through the local firewall.
+in Settings. Ensure Tailscale is running and the emulator's inbound netplay
+traffic is allowed through the local firewall.
 
 On Linux the app prefers the FightCade Flatpak (`com.fightcade.Fightcade`), falls
 back to a native/Wine install (including `~/Games/*`), and can derive the install
@@ -155,7 +153,7 @@ FUSE2 is missing, install `fuse2` or run the AppImage with
 the-cabinet/
 ├─ frontend/     Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias @/* -> frontend/src/*)
 ├─ src-tauri/    Rust backend (Tauri v2)
-│  └─ src/       config, tailscale, roms, launcher, session, results, scores, player, discovery, control, room, service, commands
+│  └─ src/       config, tailscale, roms, launcher, session, provider, retroarch, windowing, commands
 ├─ scripts/      helper scripts + the original per-OS FightCade launchers
 └─ docs/         investigation record (01–03) and current spec (04)
 ```

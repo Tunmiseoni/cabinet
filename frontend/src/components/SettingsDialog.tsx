@@ -26,7 +26,6 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
   config: Config | null;
   onSave: (config: Config) => Promise<void>;
-  onResetScores: () => Promise<void>;
 }
 
 interface FormState {
@@ -35,8 +34,6 @@ interface FormState {
   romDir: string;
   tailscalePath: string;
   defaultPeerIp: string;
-  discoveryPort: string;
-  controlPort: string;
   rttWarnMs: string;
   pollIntervalSecs: string;
   cabinetMode: boolean;
@@ -56,8 +53,6 @@ function toForm(config: Config | null): FormState {
     romDir: config?.romDir ?? "",
     tailscalePath: config?.tailscalePath ?? "",
     defaultPeerIp: config?.defaultPeerIp ?? "",
-    discoveryPort: String(config?.discoveryPort ?? 47810),
-    controlPort: String(config?.controlPort ?? 47811),
     rttWarnMs: String(config?.rttWarnMs ?? 150),
     pollIntervalSecs: String(config?.pollIntervalSecs ?? 10),
     cabinetMode: config?.cabinetMode ?? false,
@@ -78,11 +73,9 @@ export function SettingsDialog({
   onOpenChange,
   config,
   onSave,
-  onResetScores,
 }: SettingsDialogProps) {
   const [form, setForm] = useState<FormState>(() => toForm(config));
   const [saving, setSaving] = useState(false);
-  const [confirmingReset, setConfirmingReset] = useState(false);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<string | null>(null);
 
@@ -90,17 +83,8 @@ export function SettingsDialog({
     if (open) setForm(toForm(config));
   }, [open, config]);
 
-  useEffect(() => {
-    if (!open) setConfirmingReset(false);
-  }, [open]);
-
   const update = (key: keyof FormState) => (value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
-
-  async function handleReset() {
-    await onResetScores();
-    setConfirmingReset(false);
-  }
 
   async function handleOpenLogs() {
     try {
@@ -132,8 +116,6 @@ export function SettingsDialog({
         romDir: emptyToNull(form.romDir),
         tailscalePath: emptyToNull(form.tailscalePath),
         defaultPeerIp: emptyToNull(form.defaultPeerIp),
-        discoveryPort: Number(form.discoveryPort) || 47810,
-        controlPort: Number(form.controlPort) || 47811,
         rttWarnMs: Number(form.rttWarnMs) || 150,
         pollIntervalSecs: Math.max(2, Number(form.pollIntervalSecs) || 10),
         cabinetMode: form.cabinetMode,
@@ -178,9 +160,6 @@ export function SettingsDialog({
                 <SelectItem value="retroarch">RetroArch (native netplay)</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              RetroArch has no overlay results, so matches are reported manually.
-            </p>
           </div>
           <div className="flex items-center justify-between gap-4">
             <div className="grid gap-1">
@@ -207,7 +186,7 @@ export function SettingsDialog({
             <Input
               id="handle"
               value={form.handle}
-              placeholder="Shown in rooms and the ladder (defaults to your tailnet hostname)"
+              placeholder="Defaults to your tailnet hostname"
               onChange={(event) => update("handle")(event.target.value)}
             />
           </div>
@@ -328,30 +307,6 @@ export function SettingsDialog({
               />
             </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="discoveryPort">Discovery port (UDP)</Label>
-              <Input
-                id="discoveryPort"
-                type="number"
-                min={1}
-                max={65535}
-                value={form.discoveryPort}
-                onChange={(event) => update("discoveryPort")(event.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="controlPort">Control port (TCP)</Label>
-              <Input
-                id="controlPort"
-                type="number"
-                min={1}
-                max={65535}
-                value={form.controlPort}
-                onChange={(event) => update("controlPort")(event.target.value)}
-              />
-            </div>
-          </div>
 
           <Separator />
 
@@ -418,44 +373,6 @@ export function SettingsDialog({
               <p className="break-all text-xs text-muted-foreground">
                 {diagnosticsStatus}
               </p>
-            )}
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between gap-4">
-            <div className="grid gap-1">
-              <Label>Lifetime scores</Label>
-              <p className="text-xs text-muted-foreground">
-                Erase the per-opponent win/loss history. This cannot be undone.
-              </p>
-            </div>
-            {confirmingReset ? (
-              <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setConfirmingReset(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => void handleReset()}
-                >
-                  Confirm reset
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setConfirmingReset(true)}
-              >
-                Reset scores
-              </Button>
             )}
           </div>
         </div>

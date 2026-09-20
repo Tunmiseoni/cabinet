@@ -58,7 +58,6 @@ impl Role {
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
     pub spectate: bool,
-    pub overlay_results: bool,
     pub dev_pair: bool,
 }
 
@@ -74,7 +73,6 @@ pub trait Provider: Send + Sync {
     fn kind(&self) -> ProviderKind;
     fn detect(&self) -> Result<InstallInfo, String>;
     fn capabilities(&self) -> Capabilities;
-    fn emulator_dir(&self) -> PathBuf;
     fn port(&self, role: Role) -> Option<u16>;
     fn spec(&self, request: &MatchRequest) -> Result<LaunchSpec, String>;
 
@@ -105,13 +103,8 @@ impl Provider for FightCadeProvider {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             spectate: false,
-            overlay_results: true,
             dev_pair: true,
         }
-    }
-
-    fn emulator_dir(&self) -> PathBuf {
-        self.inner.emulator_dir()
     }
 
     fn port(&self, role: Role) -> Option<u16> {
@@ -241,7 +234,6 @@ mod tests {
         ))));
         let caps = provider.capabilities();
         assert!(!caps.spectate);
-        assert!(caps.overlay_results);
         assert!(caps.dev_pair);
         assert_eq!(provider.port(Role::P1), Some(7001));
         assert_eq!(provider.port(Role::P2), Some(7000));

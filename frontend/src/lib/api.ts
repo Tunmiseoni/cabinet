@@ -5,17 +5,13 @@ import type {
   CabinetStatus,
   Config,
   DiagnosticsResult,
-  DiscoveredRoom,
   LaunchRequest,
   MatchState,
-  OverlayStatus,
   ParityStatus,
   PeerHealth,
   PortProbe,
   ProviderInfo,
   RomIndex,
-  RoomState,
-  ScoreSnapshot,
   Tailnet,
 } from "./types";
 
@@ -36,20 +32,10 @@ export const peersHealth = (ips: string[]) =>
 
 export const listRoms = () => invoke<RomIndex>("list_roms");
 
-export const listRooms = () => invoke<DiscoveredRoom[]>("list_rooms");
-
 export const launcherInfo = () => invoke<ProviderInfo>("launcher_info");
-
-export const overlayStatus = () => invoke<OverlayStatus>("overlay_status");
 
 export const parityStatus = (rom: string) =>
   invoke<ParityStatus | null>("parity_status", { rom });
-
-export const enableOverlay = () => invoke<OverlayStatus>("enable_overlay");
-
-export const getScores = () => invoke<ScoreSnapshot>("get_scores");
-
-export const resetScores = () => invoke<ScoreSnapshot>("reset_scores");
 
 export const launchMatch = (request: LaunchRequest) =>
   invoke<MatchState>("launch_match", { request });
@@ -60,28 +46,6 @@ export const launchDevPair = (rom: string) =>
 export const stopMatch = () => invoke<MatchState>("stop_match");
 
 export const matchStatus = () => invoke<MatchState>("match_status");
-
-export const hostRoom = (rom: string, secret: string | null) =>
-  invoke<RoomState>("host_room", { rom, secret });
-
-export const joinRoom = (
-  ip: string,
-  roomId: string,
-  secret: string | null,
-) => invoke<RoomState>("join_room", { ip, roomId, secret });
-
-export const leaveRoom = () => invoke<void>("leave_room");
-
-export const roomEnqueue = () => invoke<void>("room_enqueue");
-
-export const roomLeaveQueue = () => invoke<void>("room_leave_queue");
-
-export const reportRoomResult = (matchId: string, won: boolean) =>
-  invoke<void>("report_room_result", { matchId, won });
-
-export const roomState = () => invoke<RoomState | null>("room_state");
-
-export const roomSecret = () => invoke<string | null>("room_secret");
 
 export const cabinetStatus = () => invoke<CabinetStatus>("cabinet_status");
 

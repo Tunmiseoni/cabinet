@@ -1,16 +1,14 @@
 use crate::config::{self, Config};
 use crate::constants;
-use crate::launcher::{LaunchSpec, MatchConfig};
+use crate::launcher::LaunchSpec;
 use crate::logging;
 use crate::probe;
 use crate::provider::Role;
-use crate::results::{self, MatchResult};
-use crate::scores::{ScoreBoard, ScoreCounter, SCORES_EVENT};
 use crate::sync::MutexExt;
 use crate::tailscale::{self, PeerHealth};
 use crate::time;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Stdio};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
@@ -37,7 +35,6 @@ pub struct MatchState {
     pub dev: bool,
     pub started_at_ms: Option<u64>,
     pub instances: Vec<InstanceState>,
-    pub result: Option<MatchResult>,
     pub peer_health: Option<PeerHealth>,
     pub message: Option<String>,
 }
@@ -51,7 +48,6 @@ impl Default for MatchState {
             dev: false,
             started_at_ms: None,
             instances: Vec::new(),
-            result: None,
             peer_health: None,
             message: None,
         }
@@ -64,22 +60,6 @@ pub struct Plan {
     pub rom: String,
     pub peer_ip: String,
     pub port: Option<u16>,
-    pub side: Option<u8>,
-}
-
-impl Plan {
-    pub fn from_fightcade(spec: LaunchSpec, config: MatchConfig) -> Self {
-        let role = if config.side == 0 { Role::P1 } else { Role::P2 };
-        let port = Some(config.local_port());
-        Self {
-            spec,
-            role,
-            rom: config.rom,
-            peer_ip: config.peer_ip,
-            port,
-            side: Some(config.side),
-        }
-    }
 }
 
 struct Running {
@@ -92,10 +72,6 @@ struct SessionInner {
     generation: u64,
     running: Vec<Running>,
     state: MatchState,
-    overlay_dir: Option<PathBuf>,
-    last_result: MatchResult,
-    score_counter: Option<ScoreCounter>,
-    score_opponent: Option<String>,
 }
 
 #[derive(Default)]
@@ -147,8 +123,6 @@ fn clear_running(inner: &mut SessionInner) {
 pub struct LaunchOptions {
     pub dev: bool,
     pub wait_for_host: bool,
-    pub overlay: bool,
-    pub track_scores: bool,
     pub peer_display: String,
 }
 
@@ -160,24 +134,12 @@ pub fn launch_many(
     if plans.is_empty() {
         return Err("nothing to launch".into());
     }
-    let overlay = options.overlay && !options.dev;
 
     let session = app.state::<Session>();
     let mut inner = session.inner.lock_or_recover();
     clear_running(&mut inner);
     inner.generation += 1;
     let generation = inner.generation;
-
-    let overlay_dir = if overlay {
-        plans
-            .first()
-            .map(|plan| results::overlay_dir(&plan.spec.cwd))
-    } else {
-        None
-    };
-    if let Some(dir) = &overlay_dir {
-        results::reset(dir);
-    }
 
     let session_dir = match logging::create_session_dir(app) {
         Ok(dir) => {
@@ -256,21 +218,11 @@ pub fn launch_many(
         dev: options.dev,
         started_at_ms: Some(time::now_ms()),
         instances,
-        result: None,
         peer_health: None,
         message: None,
     };
 
     inner.running = running;
-    inner.overlay_dir = overlay_dir;
-    inner.last_result = MatchResult::default();
-    if overlay && options.track_scores && plans[0].side.is_some() {
-        inner.score_counter = Some(ScoreCounter::new(plans[0].side.unwrap()));
-        inner.score_opponent = Some(plans[0].peer_ip.clone());
-    } else {
-        inner.score_counter = None;
-        inner.score_opponent = None;
-    }
     inner.state = state.clone();
     drop(inner);
 
@@ -339,7 +291,6 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
         let running = std::mem::take(&mut inner.running);
         let mut still = Vec::new();
         let mut changed = false;
-        let mut outcomes = Vec::new();
 
         for mut entry in running {
             match entry.child.try_wait() {
@@ -370,39 +321,11 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
             changed = true;
         }
 
-        if let Some(dir) = inner.overlay_dir.clone() {
-            let current = results::read(&dir);
-            if let Some(counter) = inner.score_counter.as_mut() {
-                outcomes = counter.observe(current.p1_score, current.p2_score);
-            }
-            if current != inner.last_result {
-                inner.state.result = if current.is_empty() {
-                    None
-                } else {
-                    Some(current.clone())
-                };
-                inner.last_result = current;
-                changed = true;
-            }
-        }
-
-        let opponent = inner.score_opponent.clone();
         let state = inner.state.clone();
         drop(inner);
 
         if changed {
             emit(&app, &state);
-        }
-
-        if !outcomes.is_empty() {
-            if let Some(opponent) = opponent {
-                let board = app.state::<ScoreBoard>();
-                let now = time::now_ms();
-                for outcome in &outcomes {
-                    board.record(&opponent, *outcome, now);
-                }
-                app.emit(SCORES_EVENT, board.snapshot()).ok();
-            }
         }
 
         if done {

@@ -13,8 +13,6 @@ pub struct Config {
     pub rom_dir: Option<String>,
     pub tailscale_path: Option<String>,
     pub default_peer_ip: Option<String>,
-    pub discovery_port: u16,
-    pub control_port: u16,
     pub rtt_warn_ms: u32,
     pub poll_interval_secs: u32,
     pub cabinet_mode: bool,
@@ -35,8 +33,6 @@ impl Default for Config {
             rom_dir: None,
             tailscale_path: None,
             default_peer_ip: None,
-            discovery_port: crate::discovery::DEFAULT_PORT,
-            control_port: crate::control::DEFAULT_PORT,
             rtt_warn_ms: 150,
             poll_interval_secs: 10,
             cabinet_mode: false,
@@ -87,7 +83,7 @@ mod tests {
     #[test]
     fn loads_a_config_without_provider_fields() {
         let config: Config = serde_json::from_str(
-            r#"{"handle":"Tunmise","cabinetMode":true,"discoveryPort":47810,"controlPort":47811,"rttWarnMs":150,"pollIntervalSecs":10}"#,
+            r#"{"handle":"Tunmise","cabinetMode":true,"rttWarnMs":150,"pollIntervalSecs":10}"#,
         )
         .unwrap();
         assert_eq!(config.provider, ProviderKind::Fightcade);
