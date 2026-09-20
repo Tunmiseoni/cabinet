@@ -5,6 +5,7 @@ mod discovery;
 mod launcher;
 mod player;
 mod process;
+mod provider;
 mod results;
 mod room;
 mod roms;
@@ -72,6 +73,7 @@ pub fn run() {
             commands::list_rooms,
             commands::launcher_info,
             commands::overlay_status,
+            commands::parity_status,
             commands::enable_overlay,
             commands::get_scores,
             commands::reset_scores,

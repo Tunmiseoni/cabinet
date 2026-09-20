@@ -5,6 +5,7 @@ use std::path::PathBuf;
 pub mod linux;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub mod macos;
+pub mod retroarch;
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub mod windows;
 
@@ -41,7 +42,11 @@ impl MatchConfig {
     }
 
     pub fn local_port(&self) -> u16 {
-        if self.side == 0 {
+        Self::local_port_for_side(self.side)
+    }
+
+    pub fn local_port_for_side(side: u8) -> u16 {
+        if side == 0 {
             7001
         } else {
             7000
@@ -56,6 +61,7 @@ impl MatchConfig {
         }
     }
 
+    #[allow(dead_code)]
     pub fn side_label(&self) -> &'static str {
         if self.side == 0 {
             "P1"

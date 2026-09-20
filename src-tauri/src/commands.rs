@@ -6,7 +6,10 @@ use crate::launcher::linux::LinuxLauncher;
 use crate::launcher::macos::{MacosLauncher, DEFAULT_APP_DIR};
 #[cfg(target_os = "windows")]
 use crate::launcher::windows::WindowsLauncher;
-use crate::launcher::{InstallInfo, Launcher, MatchConfig};
+use crate::launcher::{retroarch, InstallInfo, Launcher};
+use crate::provider::{
+    self, Capabilities, FightCadeProvider, MatchRequest, Provider, ProviderKind, Role,
+};
 use crate::results::{self, OverlayStatus};
 use crate::room::RoomState;
 use crate::roms::{self, RomIndex};
@@ -125,17 +128,95 @@ pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launch
     Err("this build only ships the macOS, Linux, and Windows launchers".into())
 }
 
+pub(crate) fn resolve_provider(
+    app: &AppHandle,
+    cfg: &Config,
+    dev: bool,
+) -> Result<Box<dyn Provider>, String> {
+    match cfg.provider {
+        ProviderKind::Fightcade => Ok(Box::new(FightCadeProvider::new(resolve_launcher(
+            cfg, dev,
+        )?))),
+        ProviderKind::Retroarch => {
+            let config_dir = app
+                .path()
+                .app_config_dir()
+                .map_err(|err| format!("cannot resolve config dir: {err}"))?;
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|err| format!("cannot resolve data dir: {err}"))?;
+            Ok(Box::new(provider::retroarch_provider(
+                cfg, &config_dir, &data_dir, dev,
+            )))
+        }
+    }
+}
+
+fn rom_file(cfg: &Config, rom: &str) -> Result<PathBuf, String> {
+    let dir = roms::resolve_rom_dir(cfg)
+        .ok_or_else(|| "no ROM directory found — set one in settings".to_string())?;
+    let path = dir.join(format!("{rom}.zip"));
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(format!("ROM file not found: {}", path.display()))
+    }
+}
+
+fn optional_rom_file(cfg: &Config, provider: &dyn Provider, rom: &str) -> Result<PathBuf, String> {
+    if provider.kind() == ProviderKind::Retroarch {
+        return rom_file(cfg, rom);
+    }
+    Ok(roms::resolve_rom_dir(cfg)
+        .map(|dir| dir.join(format!("{rom}.zip")))
+        .unwrap_or_default())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderInfo {
+    pub kind: ProviderKind,
+    pub install: InstallInfo,
+    pub capabilities: Capabilities,
+}
+
 #[tauri::command(async)]
-pub fn launcher_info(app: AppHandle) -> Result<InstallInfo, String> {
+pub fn launcher_info(app: AppHandle) -> Result<ProviderInfo, String> {
     let cfg = Config::load(&config_file(&app)?);
-    resolve_launcher(&cfg, false)?.detect()
+    let provider = resolve_provider(&app, &cfg, false)?;
+    Ok(ProviderInfo {
+        kind: provider.kind(),
+        install: provider.detect()?,
+        capabilities: provider.capabilities(),
+    })
 }
 
 #[tauri::command(async)]
 pub fn overlay_status(app: AppHandle) -> Result<OverlayStatus, String> {
     let cfg = Config::load(&config_file(&app)?);
-    let launcher = resolve_launcher(&cfg, false)?;
-    Ok(results::overlay_status(&launcher.emulator_dir()))
+    let provider = resolve_provider(&app, &cfg, false)?;
+    if !provider.capabilities().overlay_results {
+        return Ok(OverlayStatus {
+            enabled: false,
+            ini_path: String::new(),
+        });
+    }
+    Ok(results::overlay_status(&provider.emulator_dir()))
+}
+
+#[tauri::command(async)]
+pub fn parity_status(
+    app: AppHandle,
+    rom: String,
+) -> Result<Option<retroarch::ParityStatus>, String> {
+    let cfg = Config::load(&config_file(&app)?);
+    let provider = resolve_provider(&app, &cfg, false)?;
+    if rom.trim().is_empty() {
+        return Ok(None);
+    }
+    let rom_path = optional_rom_file(&cfg, provider.as_ref(), &rom)?;
+    provider.parity(&rom_path)
 }
 
 #[tauri::command(async)]
@@ -164,7 +245,7 @@ pub fn reset_scores(app: AppHandle) -> Snapshot {
 pub struct LaunchRequest {
     pub rom: String,
     pub peer_ip: String,
-    pub side: u8,
+    pub role: Role,
     #[serde(default)]
     pub dev: bool,
 }
@@ -177,18 +258,51 @@ fn effective_peer(dev: bool, peer_ip: &str) -> String {
     }
 }
 
+fn plan_for(
+    provider: &dyn Provider,
+    cfg: &Config,
+    role: Role,
+    rom: &str,
+    peer_ip: &str,
+) -> Result<Plan, String> {
+    let rom_path = optional_rom_file(cfg, provider, rom)?;
+    if let Some(status) = provider.parity(&rom_path)? {
+        if !status.ok {
+            return Err(status.detail);
+        }
+    }
+    let request = MatchRequest {
+        role,
+        rom,
+        rom_path: &rom_path,
+        peer_ip,
+    };
+    let spec = provider.spec(&request)?;
+    Ok(Plan {
+        spec,
+        role,
+        rom: rom.to_string(),
+        peer_ip: peer_ip.to_string(),
+        port: provider.port(role),
+        side: role.side(),
+    })
+}
+
 #[tauri::command(async)]
 pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState, String> {
     let cfg = Config::load(&config_file(&app)?);
-    let launcher = resolve_launcher(&cfg, request.dev)?;
-    let install = launcher.detect()?;
+    let provider = resolve_provider(&app, &cfg, request.dev)?;
+    let install = provider.detect()?;
     if !install.installed {
         return Err(format!("emulator not found — {}", install.detail));
     }
+    if request.role == Role::Spectator && !provider.capabilities().spectate {
+        return Err("this provider cannot spectate".into());
+    }
     let peer_ip = effective_peer(request.dev, &request.peer_ip);
-    let config = MatchConfig::new(request.rom, peer_ip, request.side)?;
-    let spec = launcher.spec(&config)?;
-    session::launch(&app, &spec, &config, request.dev, !request.dev)
+    let plan = plan_for(provider.as_ref(), &cfg, request.role, &request.rom, &peer_ip)?;
+    let overlay = provider.capabilities().overlay_results;
+    session::launch(&app, &plan, request.dev, overlay, overlay, peer_ip)
 }
 
 #[tauri::command(async)]
@@ -204,24 +318,19 @@ pub fn match_status(app: AppHandle) -> MatchState {
 #[tauri::command(async)]
 pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String> {
     let cfg = Config::load(&config_file(&app)?);
-    let launcher = resolve_launcher(&cfg, true)?;
-    let install = launcher.detect()?;
+    let provider = resolve_provider(&app, &cfg, true)?;
+    let install = provider.detect()?;
     if !install.installed {
         return Err(format!("emulator not found — {}", install.detail));
     }
-    let p1 = MatchConfig::new(rom.clone(), "127.0.0.1".into(), 0)?;
-    let p2 = MatchConfig::new(rom, "127.0.0.1".into(), 1)?;
+    if !provider.capabilities().dev_pair {
+        return Err("this provider has no dev pair".into());
+    }
     let plans = vec![
-        Plan {
-            spec: launcher.spec(&p1)?,
-            config: p1,
-        },
-        Plan {
-            spec: launcher.spec(&p2)?,
-            config: p2,
-        },
+        plan_for(provider.as_ref(), &cfg, Role::P1, &rom, "127.0.0.1")?,
+        plan_for(provider.as_ref(), &cfg, Role::P2, &rom, "127.0.0.1")?,
     ];
-    session::launch_many(&app, &plans, true, false, "127.0.0.1 (P1↔P2)".to_string())
+    session::launch_many(&app, &plans, true, false, false, "127.0.0.1 (P1↔P2)".to_string())
 }
 
 #[tauri::command(async)]
@@ -369,12 +478,20 @@ mod tests {
     #[test]
     fn non_dev_launch_keeps_the_peer_and_still_requires_one() {
         assert_eq!(effective_peer(false, "100.64.0.2"), "100.64.0.2");
-        assert!(MatchConfig::new("rom".into(), effective_peer(false, ""), 0).is_err());
+        assert!(
+            crate::launcher::MatchConfig::new(
+                "rom".into(),
+                effective_peer(false, ""),
+                0
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn dev_launch_makes_an_empty_peer_config_valid() {
-        let config = MatchConfig::new("rom".into(), effective_peer(true, ""), 0).unwrap();
+        let config =
+            crate::launcher::MatchConfig::new("rom".into(), effective_peer(true, ""), 0).unwrap();
         assert_eq!(config.peer_ip, "127.0.0.1");
     }
 }

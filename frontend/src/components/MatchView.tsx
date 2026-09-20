@@ -203,7 +203,7 @@ export function MatchView({ match, rttWarnMs, onShowLobby }: MatchViewProps) {
   }
 
   const instances = match.instances
-    .map((instance) => `${instance.sideLabel}@${instance.port}`)
+    .map((instance) => `${instance.roleLabel}@${instance.port ?? "—"}`)
     .join(" + ");
   const result = describeResult(match);
   const supported = status?.supported ?? false;

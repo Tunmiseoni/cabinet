@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export type ProviderKind = "fightcade" | "retroarch";
+
+export type MatchRole = "p1" | "p2" | "spectator";
+
 export interface Config {
   handle: string | null;
   fightcadeDir: string | null;
@@ -11,6 +15,11 @@ export interface Config {
   rttWarnMs: number;
   pollIntervalSecs: number;
   cabinetMode: boolean;
+  provider: ProviderKind;
+  retroarchPath: string | null;
+  retroarchCore: string | null;
+  retroarchPort: number;
+  retroarchNickname: string | null;
 }
 
 export interface Peer {
@@ -63,6 +72,32 @@ export interface InstallInfo {
   id: string;
   label: string;
   installed: boolean;
+  detail: string;
+}
+
+export interface ProviderCapabilities {
+  spectate: boolean;
+  overlayResults: boolean;
+  devPair: boolean;
+}
+
+export interface ProviderInfo {
+  kind: ProviderKind;
+  install: InstallInfo;
+  capabilities: ProviderCapabilities;
+}
+
+export interface ParityStatus {
+  applicable: boolean;
+  ok: boolean;
+  corePath: string;
+  coreGit: string | null;
+  coreSha256: string | null;
+  expectedGit: string;
+  expectedSha256: string;
+  romPath: string;
+  romSha256: string | null;
+  expectedRomSha256: string;
   detail: string;
 }
 
@@ -150,9 +185,9 @@ export interface ScoreSnapshot {
 }
 
 export interface InstanceState {
-  side: number;
-  sideLabel: string;
-  port: number;
+  role: MatchRole;
+  roleLabel: string;
+  port: number | null;
   pid: number | null;
   exitCode: number | null;
   message: string | null;
@@ -186,7 +221,7 @@ export interface MatchState {
 export interface LaunchRequest {
   rom: string;
   peerIp: string;
-  side: number;
+  role: MatchRole;
   dev: boolean;
 }
 
@@ -242,9 +277,12 @@ export const listRoms = () => invoke<RomIndex>("list_roms");
 
 export const listRooms = () => invoke<DiscoveredRoom[]>("list_rooms");
 
-export const launcherInfo = () => invoke<InstallInfo>("launcher_info");
+export const launcherInfo = () => invoke<ProviderInfo>("launcher_info");
 
 export const overlayStatus = () => invoke<OverlayStatus>("overlay_status");
+
+export const parityStatus = (rom: string) =>
+  invoke<ParityStatus | null>("parity_status", { rom });
 
 export const enableOverlay = () => invoke<OverlayStatus>("enable_overlay");
 

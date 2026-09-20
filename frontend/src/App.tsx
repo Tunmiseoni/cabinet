@@ -37,10 +37,11 @@ import {
   stopMatch,
   type Config,
   type DiscoveredRoom,
-  type InstallInfo,
+  type MatchRole,
   type MatchState,
   type OverlayStatus,
   type PeerHealth,
+  type ProviderInfo,
   type RoomState,
   type RomIndex,
   type ScoreSnapshot,
@@ -61,7 +62,7 @@ function App() {
   const [tailnet, setTailnet] = useState<Tailnet | null>(null);
   const [romIndex, setRomIndex] = useState<RomIndex | null>(null);
   const [health, setHealth] = useState<Record<string, PeerHealth>>({});
-  const [launcher, setLauncher] = useState<InstallInfo | null>(null);
+  const [launcher, setLauncher] = useState<ProviderInfo | null>(null);
   const [overlay, setOverlay] = useState<OverlayStatus | null>(null);
   const [overlayBusy, setOverlayBusy] = useState(false);
   const [scores, setScores] = useState<ScoreSnapshot | null>(null);
@@ -261,12 +262,12 @@ function App() {
   async function handleLaunch(
     rom: string,
     peerIp: string,
-    side: number,
+    role: MatchRole,
     dev: boolean,
   ) {
     setLaunchBusy(true);
     try {
-      setMatch(await launchMatch({ rom, peerIp, side, dev }));
+      setMatch(await launchMatch({ rom, peerIp, role, dev }));
       setAppError(null);
     } catch (err) {
       setAppError(String(err));
@@ -482,7 +483,7 @@ function App() {
           tailnet={tailnet}
           health={health}
           romIndex={romIndex}
-          launcher={launcher}
+          provider={launcher}
           match={match}
           busy={launchBusy}
           onLaunch={handleLaunch}

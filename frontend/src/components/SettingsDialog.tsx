@@ -11,7 +11,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import type { Config } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { Config, ProviderKind } from "@/lib/api";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -32,6 +39,11 @@ interface FormState {
   rttWarnMs: string;
   pollIntervalSecs: string;
   cabinetMode: boolean;
+  provider: ProviderKind;
+  retroarchPath: string;
+  retroarchCore: string;
+  retroarchPort: string;
+  retroarchNickname: string;
 }
 
 function toForm(config: Config | null): FormState {
@@ -46,6 +58,11 @@ function toForm(config: Config | null): FormState {
     rttWarnMs: String(config?.rttWarnMs ?? 150),
     pollIntervalSecs: String(config?.pollIntervalSecs ?? 10),
     cabinetMode: config?.cabinetMode ?? false,
+    provider: config?.provider ?? "fightcade",
+    retroarchPath: config?.retroarchPath ?? "",
+    retroarchCore: config?.retroarchCore ?? "",
+    retroarchPort: String(config?.retroarchPort ?? 55435),
+    retroarchNickname: config?.retroarchNickname ?? "",
   };
 }
 
@@ -92,6 +109,11 @@ export function SettingsDialog({
         rttWarnMs: Number(form.rttWarnMs) || 150,
         pollIntervalSecs: Math.max(2, Number(form.pollIntervalSecs) || 10),
         cabinetMode: form.cabinetMode,
+        provider: form.provider,
+        retroarchPath: emptyToNull(form.retroarchPath),
+        retroarchCore: emptyToNull(form.retroarchCore),
+        retroarchPort: Number(form.retroarchPort) || 55435,
+        retroarchNickname: emptyToNull(form.retroarchNickname),
       });
       onOpenChange(false);
     } finally {
@@ -110,6 +132,26 @@ export function SettingsDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="-mr-4 grid min-h-0 flex-1 gap-4 overflow-y-auto pr-4">
+          <div className="grid gap-2">
+            <Label htmlFor="provider">Match provider</Label>
+            <Select
+              value={form.provider}
+              onValueChange={(value) =>
+                setForm((prev) => ({ ...prev, provider: value as ProviderKind }))
+              }
+            >
+              <SelectTrigger id="provider">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fightcade">FightCade (Wine, quark:direct)</SelectItem>
+                <SelectItem value="retroarch">RetroArch (native netplay)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              RetroArch has no overlay results, so matches are reported manually.
+            </p>
+          </div>
           <div className="grid gap-2">
             <Label htmlFor="handle">Your handle</Label>
             <Input
@@ -137,6 +179,62 @@ export function SettingsDialog({
               onChange={(event) => update("fightcadeDir")(event.target.value)}
             />
           </div>
+          {form.provider === "retroarch" && (
+            <>
+              <div className="grid gap-2">
+                <Label htmlFor="retroarchPath">RetroArch binary</Label>
+                <Input
+                  id="retroarchPath"
+                  value={form.retroarchPath}
+                  placeholder="/Applications/RetroArch.app/Contents/MacOS/RetroArch"
+                  onChange={(event) =>
+                    update("retroarchPath")(event.target.value)
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="retroarchCore">FBNeo core (frozen)</Label>
+                <Input
+                  id="retroarchCore"
+                  value={form.retroarchCore}
+                  placeholder="…/cores/macos-arm64/fbneo_libretro.dylib"
+                  onChange={(event) =>
+                    update("retroarchCore")(event.target.value)
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Point this at the frozen FBNeo core. Netplay refuses to sync if
+                  every machine's core revision does not match.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="retroarchPort">Netplay port</Label>
+                  <Input
+                    id="retroarchPort"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={form.retroarchPort}
+                    onChange={(event) =>
+                      update("retroarchPort")(event.target.value)
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="retroarchNickname">Netplay nickname</Label>
+                  <Input
+                    id="retroarchNickname"
+                    value={form.retroarchNickname}
+                    placeholder={form.handle || "your handle"}
+                    onChange={(event) =>
+                      update("retroarchNickname")(event.target.value)
+                    }
+                  />
+                </div>
+              </div>
+            </>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="tailscalePath">Tailscale binary</Label>
             <Input

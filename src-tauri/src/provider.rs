@@ -1,0 +1,187 @@
+use crate::launcher::retroarch::{ParityStatus, RetroArchProvider};
+use crate::launcher::{InstallInfo, LaunchSpec, Launcher, MatchConfig};
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ProviderKind {
+    #[default]
+    Fightcade,
+    Retroarch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Role {
+    P1,
+    P2,
+    Spectator,
+}
+
+impl Role {
+    pub fn label(self) -> &'static str {
+        match self {
+            Role::P1 => "P1",
+            Role::P2 => "P2",
+            Role::Spectator => "Spectator",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Role::P1 => "p1",
+            Role::P2 => "p2",
+            Role::Spectator => "spectator",
+        }
+    }
+
+    pub fn side(self) -> Option<u8> {
+        match self {
+            Role::P1 => Some(0),
+            Role::P2 => Some(1),
+            Role::Spectator => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Capabilities {
+    pub spectate: bool,
+    pub overlay_results: bool,
+    pub dev_pair: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchRequest<'a> {
+    pub role: Role,
+    pub rom: &'a str,
+    pub rom_path: &'a Path,
+    pub peer_ip: &'a str,
+}
+
+pub trait Provider: Send + Sync {
+    fn kind(&self) -> ProviderKind;
+    fn detect(&self) -> Result<InstallInfo, String>;
+    fn capabilities(&self) -> Capabilities;
+    fn emulator_dir(&self) -> PathBuf;
+    fn port(&self, role: Role) -> Option<u16>;
+    fn spec(&self, request: &MatchRequest) -> Result<LaunchSpec, String>;
+
+    fn parity(&self, _rom_path: &Path) -> Result<Option<ParityStatus>, String> {
+        Ok(None)
+    }
+}
+
+pub struct FightCadeProvider {
+    inner: Box<dyn Launcher>,
+}
+
+impl FightCadeProvider {
+    pub fn new(inner: Box<dyn Launcher>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Provider for FightCadeProvider {
+    fn kind(&self) -> ProviderKind {
+        ProviderKind::Fightcade
+    }
+
+    fn detect(&self) -> Result<InstallInfo, String> {
+        self.inner.detect()
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            spectate: false,
+            overlay_results: true,
+            dev_pair: true,
+        }
+    }
+
+    fn emulator_dir(&self) -> PathBuf {
+        self.inner.emulator_dir()
+    }
+
+    fn port(&self, role: Role) -> Option<u16> {
+        role.side().map(MatchConfig::local_port_for_side)
+    }
+
+    fn spec(&self, request: &MatchRequest) -> Result<LaunchSpec, String> {
+        let side = request.role.side().ok_or_else(|| {
+            "FightCade has no spectator role — pick a spectator-capable provider".to_string()
+        })?;
+        let config = MatchConfig::new(request.rom.to_string(), request.peer_ip.to_string(), side)?;
+        self.inner.spec(&config)
+    }
+}
+
+pub fn retroarch_provider(
+    cfg: &crate::config::Config,
+    app_config_dir: &Path,
+    app_data_dir: &Path,
+    dev: bool,
+) -> RetroArchProvider {
+    RetroArchProvider::new(cfg, app_config_dir, app_data_dir, dev)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::launcher::macos::MacosLauncher;
+
+    fn request<'a>(role: Role, rom_path: &'a Path, peer: &'a str) -> MatchRequest<'a> {
+        MatchRequest {
+            role,
+            rom: "sfiii3nr1",
+            rom_path,
+            peer_ip: peer,
+        }
+    }
+
+    #[test]
+    fn role_side_mapping() {
+        assert_eq!(Role::P1.side(), Some(0));
+        assert_eq!(Role::P2.side(), Some(1));
+        assert_eq!(Role::Spectator.side(), None);
+        assert_eq!(Role::Spectator.label(), "Spectator");
+    }
+
+    #[test]
+    fn fightcade_rejects_spectators_but_maps_players() {
+        let provider = FightCadeProvider::new(Box::new(MacosLauncher::new(PathBuf::from(
+            "/Applications/FightCade2.app",
+        ))));
+        let path = PathBuf::from("/tmp/sfiii3nr1.zip");
+
+        let p1 = provider
+            .spec(&request(Role::P1, &path, "100.64.0.2"))
+            .unwrap();
+        assert_eq!(p1.args[1], "quark:direct,sfiii3nr1,7001,100.64.0.2,7000,0,0");
+        assert!(provider.spec(&request(Role::Spectator, &path, "100.64.0.2")).is_err());
+    }
+
+    #[test]
+    fn fightcade_capabilities_and_ports() {
+        let provider = FightCadeProvider::new(Box::new(MacosLauncher::new(PathBuf::from(
+            "/Applications/FightCade2.app",
+        ))));
+        let caps = provider.capabilities();
+        assert!(!caps.spectate);
+        assert!(caps.overlay_results);
+        assert!(caps.dev_pair);
+        assert_eq!(provider.port(Role::P1), Some(7001));
+        assert_eq!(provider.port(Role::P2), Some(7000));
+        assert_eq!(provider.port(Role::Spectator), None);
+    }
+
+    #[test]
+    fn fightcade_has_no_parity_gate() {
+        let provider = FightCadeProvider::new(Box::new(MacosLauncher::new(PathBuf::from(
+            "/Applications/FightCade2.app",
+        ))));
+        assert!(provider.parity(Path::new("/tmp/rom.zip")).unwrap().is_none());
+    }
+}

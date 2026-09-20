@@ -140,7 +140,8 @@ fn launch_room_match(
     let config = crate::launcher::MatchConfig::new(rom.to_string(), peer_ip.to_string(), side)?;
     let spec = launcher.spec(&config)?;
     let overlay_dir = results::overlay_dir(&spec.cwd);
-    session::launch(app, &spec, &config, false, false)?;
+    let plan = session::Plan::from_fightcade(spec, config);
+    session::launch(app, &plan, false, true, false, peer_ip.to_string())?;
     Ok(overlay_dir)
 }
 

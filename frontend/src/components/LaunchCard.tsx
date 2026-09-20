@@ -26,15 +26,24 @@ import {
 } from "@/components/ui/select";
 import type {
   Config,
-  InstallInfo,
+  MatchRole,
   MatchResult,
   MatchState,
+  ParityStatus,
   PeerHealth,
+  ProviderInfo,
   RomIndex,
   Tailnet,
 } from "@/lib/api";
+import { parityStatus } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
 import { FlaskConical, Gamepad2, Play, Square, Trophy } from "lucide-react";
+
+const ROLE_LABELS: Record<MatchRole, string> = {
+  p1: "P1 · host",
+  p2: "P2 · client",
+  spectator: "Spectator",
+};
 
 function describeResult(result: MatchResult): string {
   const score = `${result.p1Score ?? "?"}–${result.p2Score ?? "?"}`;
@@ -52,10 +61,15 @@ interface LaunchCardProps {
   tailnet: Tailnet | null;
   health: Record<string, PeerHealth>;
   romIndex: RomIndex | null;
-  launcher: InstallInfo | null;
+  provider: ProviderInfo | null;
   match: MatchState | null;
   busy: boolean;
-  onLaunch: (rom: string, peerIp: string, side: number, dev: boolean) => Promise<void>;
+  onLaunch: (
+    rom: string,
+    peerIp: string,
+    role: MatchRole,
+    dev: boolean,
+  ) => Promise<void>;
   onLaunchDevPair: (rom: string) => Promise<void>;
   onStop: () => Promise<void>;
 }
@@ -65,7 +79,7 @@ export function LaunchCard({
   tailnet,
   health,
   romIndex,
-  launcher,
+  provider,
   match,
   busy,
   onLaunch,
@@ -74,9 +88,14 @@ export function LaunchCard({
 }: LaunchCardProps) {
   const [rom, setRom] = useState("");
   const [peerIp, setPeerIp] = useState("");
-  const [side, setSide] = useState("0");
+  const [role, setRole] = useState<MatchRole>("p1");
   const [dev, setDev] = useState(false);
   const [warnings, setWarnings] = useState<string[] | null>(null);
+  const [parity, setParity] = useState<ParityStatus | null>(null);
+
+  const capabilities = provider?.capabilities;
+  const spectate = capabilities?.spectate ?? false;
+  const devPair = capabilities?.devPair ?? false;
 
   const rttWarnMs = config?.rttWarnMs ?? 150;
   const onlinePeers = useMemo(
@@ -88,6 +107,28 @@ export function LaunchCard({
   useEffect(() => {
     if (!rom && roms.length > 0) setRom(roms[0].shortName);
   }, [rom, roms]);
+
+  useEffect(() => {
+    if (!spectate && role === "spectator") setRole("p1");
+  }, [spectate, role]);
+
+  useEffect(() => {
+    if (!rom || provider?.kind !== "retroarch") {
+      setParity(null);
+      return;
+    }
+    let cancelled = false;
+    parityStatus(rom)
+      .then((status) => {
+        if (!cancelled) setParity(status);
+      })
+      .catch(() => {
+        if (!cancelled) setParity(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rom, provider?.kind]);
 
   useEffect(() => {
     if (peerIp) return;
@@ -118,15 +159,21 @@ export function LaunchCard({
       setWarnings(found);
       return;
     }
-    await onLaunch(rom, peerIp, Number(side), dev);
+    await onLaunch(rom, peerIp, role, dev);
   }
 
   async function confirmLaunch() {
     setWarnings(null);
-    await onLaunch(rom, peerIp, Number(side), dev);
+    await onLaunch(rom, peerIp, role, dev);
   }
 
-  const canLaunch = rom !== "" && (dev || peerIp !== "") && !running && !busy;
+  const parityBlocked = parity !== null && !parity.ok;
+  const canLaunch =
+    rom !== "" &&
+    (dev || role === "spectator" || peerIp !== "") &&
+    !running &&
+    !busy &&
+    !parityBlocked;
 
   return (
     <Card>
@@ -136,10 +183,10 @@ export function LaunchCard({
           Launch match
         </CardTitle>
         <CardDescription>
-          {launcher
-            ? launcher.installed
-              ? `${launcher.label} · ready`
-              : `Not found — ${launcher.detail}`
+          {provider
+            ? provider.install.installed
+              ? `${provider.install.label} · ready`
+              : `Not found — ${provider.install.detail}`
             : "Checking emulator…"}
         </CardDescription>
       </CardHeader>
@@ -165,7 +212,7 @@ export function LaunchCard({
             <Select
               value={peerIp}
               onValueChange={setPeerIp}
-              disabled={running || dev}
+              disabled={running || dev || role === "p1" || role === "spectator"}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Choose a peer" />
@@ -185,14 +232,21 @@ export function LaunchCard({
             </Select>
           </div>
           <div className="grid gap-2">
-            <Label>Side</Label>
-            <Select value={side} onValueChange={setSide} disabled={running}>
+            <Label>Role</Label>
+            <Select
+              value={role}
+              onValueChange={(value) => setRole(value as MatchRole)}
+              disabled={running}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="0">P1 · local 7001</SelectItem>
-                <SelectItem value="1">P2 · local 7000</SelectItem>
+                <SelectItem value="p1">{ROLE_LABELS.p1}</SelectItem>
+                <SelectItem value="p2">{ROLE_LABELS.p2}</SelectItem>
+                {spectate && (
+                  <SelectItem value="spectator">{ROLE_LABELS.spectator}</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -226,7 +280,8 @@ export function LaunchCard({
               <Button
                 variant="outline"
                 onClick={() => void onLaunchDevPair(rom)}
-                disabled={rom === "" || busy}
+                disabled={rom === "" || busy || !devPair}
+                title={devPair ? undefined : "This provider has no dev pair"}
               >
                 <FlaskConical className="size-4" />
                 Dev pair
@@ -239,7 +294,7 @@ export function LaunchCard({
                 ? `${match.rom} · ${match.dev ? "loopback" : match.peerIp} · ${match.instances
                     .map(
                       (instance) =>
-                        `${instance.sideLabel}@${instance.port} (pid ${instance.pid})`,
+                        `${instance.roleLabel}@${instance.port ?? "—"} (pid ${instance.pid})`,
                     )
                     .join(" + ")}`
                 : (match.message ?? "finished")}
@@ -259,6 +314,19 @@ export function LaunchCard({
             </span>
           )}
         </div>
+
+        {parity && (
+          <p
+            className={
+              parity.ok
+                ? "text-xs text-muted-foreground"
+                : "text-xs text-destructive"
+            }
+            title={`core ${parity.corePath} · rom ${parity.romPath}`}
+          >
+            {parity.ok ? "Parity OK" : parity.detail}
+          </p>
+        )}
       </CardContent>
 
       <Dialog open={warnings !== null} onOpenChange={(open) => !open && setWarnings(null)}>

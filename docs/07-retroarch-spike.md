@@ -248,3 +248,22 @@ Never commit ROMs, cores, or emulator binaries. The frozen cores live outside th
 ### Pending — live tailnet test
 
 _Fill in when run: date, machines, RTT/path, per-role byte figures, feel ratings, decision._
+
+### 2026-09-20 — app provider slice (macOS, this machine)
+
+RetroArch is now a selectable provider in the app (Settings → Match provider; default FightCade).
+The app generates the per-role appendconfig under its config dir, launches host/client/spectator
+from `InstanceState` roles, skips the overlay/result watcher for RetroArch, and gates launch on a
+frozen-set parity check (core `GIT` + sha256, ROM sha256).
+
+- Unit: exact `-L … --appendconfig … [-H | -C ip] --port … --nick …` argv for all three roles;
+  capabilities; parity pass/fail. `scripts/test.sh` green.
+- Windowing: a native RetroArch window is matched by spawned PID and placed
+  (`240,87 897×700 → 120,120 720×480`, read back exactly) — opt-in
+  `windowing::macos::tests::live_places_retroarch_window`. A single-window Accessibility fallback
+  was added because RetroArch's window can briefly report CG/AX bounds that disagree (and its title
+  is hidden without Screen Recording permission); the same fallback also un-flaked the FightCade
+  placement test. Cabinet mode is therefore viable for RetroArch; frame-follow remains the fallback
+  when Accessibility is denied.
+- Not yet verified in-app: cross-OS core parity, managed core download (release unpublished),
+  and the four-person input-feel run below.

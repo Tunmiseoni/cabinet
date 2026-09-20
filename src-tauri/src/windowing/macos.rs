@@ -374,6 +374,7 @@ unsafe fn match_ax_element(
 ) -> Option<AXUIElementRef> {
     let mut best: Option<AXUIElementRef> = None;
     let mut best_score = 0i32;
+    let mut usable: Vec<AXUIElementRef> = Vec::new();
     for index in 0..windows.len() {
         let Some(item) = windows.get(index) else {
             continue;
@@ -402,6 +403,7 @@ unsafe fn match_ax_element(
                 continue;
             }
         }
+        usable.push(element);
         if score == 0 {
             continue;
         }
@@ -409,6 +411,13 @@ unsafe fn match_ax_element(
             best_score = score;
             best = Some(element);
         }
+    }
+
+    // Window titles are hidden without Screen Recording permission, and some
+    // native frontends (RetroArch) briefly report CG/AX bounds that disagree.
+    // If the process exposes exactly one real window, that must be the target.
+    if best.is_none() && usable.len() == 1 {
+        return usable.first().copied();
     }
     best
 }
@@ -605,5 +614,124 @@ mod tests {
             })
             .unwrap_or(false);
         assert!(moved, "expected the emulator window to be moved and resized");
+    }
+
+    #[test]
+    #[ignore = "launches native RetroArch and moves its window"]
+    fn live_places_retroarch_window() {
+        use crate::config::Config;
+        use crate::launcher::retroarch::RetroArchProvider;
+        use crate::provider::{MatchRequest, Provider, Role};
+        use std::path::PathBuf;
+        use std::time::Duration;
+
+        let home = std::env::var("HOME").unwrap_or_default();
+        let core = PathBuf::from(&home)
+            .join("Library/Application Support/RetroArch/cores/fbneo_libretro.dylib");
+        let rom = PathBuf::from(
+            "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs/sfiii3nr1.zip",
+        );
+        if !core.is_file() || !rom.is_file() {
+            eprintln!("windowing: skipping — RetroArch core or ROM not present");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!(
+            "cabinet-retroarch-window-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = Config {
+            retroarch_core: Some(core.to_string_lossy().to_string()),
+            ..Config::default()
+        };
+        let provider = RetroArchProvider::new(&cfg, &dir, &dir, false);
+        let spec = provider
+            .spec(&MatchRequest {
+                role: Role::P1,
+                rom: "sfiii3nr1",
+                rom_path: &rom,
+                peer_ip: "127.0.0.1",
+            })
+            .unwrap();
+        eprintln!("windowing: retroarch argv = {:?}", spec.args);
+
+        let mut child = crate::process::command(&spec.program)
+            .args(&spec.args)
+            .current_dir(&spec.cwd)
+            .envs(spec.envs.iter().cloned())
+            .spawn()
+            .expect("spawn retroarch");
+        std::thread::sleep(Duration::from_secs(8));
+
+        // A background-launched RetroArch may not become the frontmost app, so
+        // its window is not on the active space and CGWindowList omits it. Real
+        // launches are focus-stealing; nudge it the same way.
+        let _ = crate::process::command("osascript")
+            .args([
+                "-e",
+                "tell application \"System Events\" to set frontmost of process \"RetroArch\" to true",
+            ])
+            .output();
+        // RetroArch opens a small splash window before the game window settles.
+        std::thread::sleep(Duration::from_secs(6));
+
+        let mut target: Option<WindowInfo> = None;
+        for _ in 0..15 {
+            if let Some(found) = enumerate_windows()
+                .into_iter()
+                .find(|window| window.owner_pid == child.id() as i32)
+            {
+                target = Some(found);
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+
+        let Some(target) = target else {
+            for window in enumerate_windows() {
+                eprintln!(
+                    "windowing: candidate id={} pid={} owner={:?}",
+                    window.id, window.owner_pid, window.owner_name
+                );
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+            std::fs::remove_dir_all(&dir).ok();
+            eprintln!("windowing: no RetroArch window found for pid {}", child.id());
+            return;
+        };
+
+        let host = MacosWindowHost::default();
+        eprintln!(
+            "windowing: retroarch target id={} owner={:?} bounds={:?}",
+            target.id, target.owner_name, target.bounds
+        );
+        let result = host.place(target.id, Rect::new(120.0, 120.0, 720.0, 480.0));
+        eprintln!(
+            "windowing: retroarch placing id={} owner={:?} result={result:?}",
+            target.id, target.owner_name
+        );
+
+        std::thread::sleep(Duration::from_secs(1));
+        let after = enumerate_windows()
+            .into_iter()
+            .find(|window| window.id == target.id);
+        eprintln!(
+            "windowing: retroarch after = {:?}",
+            after.as_ref().map(|window| window.bounds)
+        );
+
+        let _ = child.kill();
+        let _ = child.wait();
+        std::fs::remove_dir_all(&dir).ok();
+
+        let moved = after
+            .map(|window| {
+                (window.bounds.x - 120.0).abs() < 40.0
+                    && (window.bounds.width - 720.0).abs() < 40.0
+            })
+            .unwrap_or(false);
+        assert!(moved, "expected the RetroArch window to be moved and resized");
     }
 }

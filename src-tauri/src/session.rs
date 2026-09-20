@@ -1,5 +1,6 @@
 use crate::config::{self, Config};
 use crate::launcher::{LaunchSpec, MatchConfig};
+use crate::provider::Role;
 use crate::results::{self, MatchResult};
 use crate::scores::{ScoreBoard, ScoreCounter, SCORES_EVENT};
 use crate::tailscale::{self, PeerHealth};
@@ -16,9 +17,9 @@ const HEALTH_INTERVAL: Duration = Duration::from_secs(4);
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstanceState {
-    pub side: u8,
-    pub side_label: String,
-    pub port: u16,
+    pub role: Role,
+    pub role_label: String,
+    pub port: Option<u16>,
     pub pid: Option<u32>,
     pub exit_code: Option<i32>,
     pub message: Option<String>,
@@ -56,12 +57,31 @@ impl Default for MatchState {
 
 pub struct Plan {
     pub spec: LaunchSpec,
-    pub config: MatchConfig,
+    pub role: Role,
+    pub rom: String,
+    pub peer_ip: String,
+    pub port: Option<u16>,
+    pub side: Option<u8>,
+}
+
+impl Plan {
+    pub fn from_fightcade(spec: LaunchSpec, config: MatchConfig) -> Self {
+        let role = if config.side == 0 { Role::P1 } else { Role::P2 };
+        let port = Some(config.local_port());
+        Self {
+            spec,
+            role,
+            rom: config.rom,
+            peer_ip: config.peer_ip,
+            port,
+            side: Some(config.side),
+        }
+    }
 }
 
 struct Running {
     child: Child,
-    side: u8,
+    role: Role,
 }
 
 #[derive(Default)]
@@ -113,12 +133,14 @@ pub fn launch_many(
     app: &AppHandle,
     plans: &[Plan],
     dev: bool,
+    overlay: bool,
     track_scores: bool,
     peer_display: String,
 ) -> Result<MatchState, String> {
     if plans.is_empty() {
         return Err("nothing to launch".into());
     }
+    let overlay = overlay && !dev;
 
     let session = app.state::<Session>();
     let mut inner = session.inner.lock().unwrap();
@@ -126,7 +148,11 @@ pub fn launch_many(
     inner.generation += 1;
     let generation = inner.generation;
 
-    let overlay_dir = plans.first().map(|plan| results::overlay_dir(&plan.spec.cwd));
+    let overlay_dir = if overlay {
+        plans.first().map(|plan| results::overlay_dir(&plan.spec.cwd))
+    } else {
+        None
+    };
     if let Some(dir) = &overlay_dir {
         results::reset(dir);
     }
@@ -149,12 +175,12 @@ pub fn launch_many(
         let pid = child.id();
         running.push(Running {
             child,
-            side: plan.config.side,
+            role: plan.role,
         });
         instances.push(InstanceState {
-            side: plan.config.side,
-            side_label: plan.config.side_label().to_string(),
-            port: plan.config.local_port(),
+            role: plan.role,
+            role_label: plan.role.label().to_string(),
+            port: plan.port,
             pid: Some(pid),
             exit_code: None,
             message: None,
@@ -163,7 +189,7 @@ pub fn launch_many(
 
     let state = MatchState {
         status: "running".to_string(),
-        rom: plans.first().map(|plan| plan.config.rom.clone()),
+        rom: plans.first().map(|plan| plan.rom.clone()),
         peer_ip: Some(peer_display),
         dev,
         started_at_ms: Some(now_ms()),
@@ -176,13 +202,12 @@ pub fn launch_many(
     inner.running = running;
     inner.overlay_dir = overlay_dir;
     inner.last_result = MatchResult::default();
-    if dev || !track_scores {
+    if overlay && track_scores && plans[0].side.is_some() {
+        inner.score_counter = Some(ScoreCounter::new(plans[0].side.unwrap()));
+        inner.score_opponent = Some(plans[0].peer_ip.clone());
+    } else {
         inner.score_counter = None;
         inner.score_opponent = None;
-    } else {
-        let plan = &plans[0];
-        inner.score_counter = Some(ScoreCounter::new(plan.config.side));
-        inner.score_opponent = Some(plan.config.peer_ip.clone());
     }
     inner.state = state.clone();
     drop(inner);
@@ -190,23 +215,27 @@ pub fn launch_many(
     emit(app, &state);
     spawn_monitor(app.clone(), generation);
     if !dev {
-        spawn_health(app.clone(), generation, plans[0].config.peer_ip.clone());
+        spawn_health(app.clone(), generation, plans[0].peer_ip.clone());
     }
     Ok(state)
 }
 
 pub fn launch(
     app: &AppHandle,
-    spec: &LaunchSpec,
-    config: &MatchConfig,
+    plan: &Plan,
     dev: bool,
+    overlay: bool,
     track_scores: bool,
+    peer_display: String,
 ) -> Result<MatchState, String> {
-    let plans = vec![Plan {
-        spec: spec.clone(),
-        config: config.clone(),
-    }];
-    launch_many(app, &plans, dev, track_scores, config.peer_ip.clone())
+    launch_many(
+        app,
+        std::slice::from_ref(plan),
+        dev,
+        overlay,
+        track_scores,
+        peer_display,
+    )
 }
 
 fn spawn_health(app: AppHandle, generation: u64, ip: String) {
@@ -268,12 +297,12 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
             match entry.child.try_wait() {
                 Ok(Some(status)) => {
                     changed = true;
-                    finish_slot(&mut inner.state, entry.side, status.code());
+                    finish_slot(&mut inner.state, entry.role, status.code());
                 }
                 Ok(None) => still.push(entry),
                 Err(_) => {
                     changed = true;
-                    finish_slot(&mut inner.state, entry.side, None);
+                    finish_slot(&mut inner.state, entry.role, None);
                 }
             }
         }
@@ -327,11 +356,11 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
     });
 }
 
-fn finish_slot(state: &mut MatchState, side: u8, code: Option<i32>) {
+fn finish_slot(state: &mut MatchState, role: Role, code: Option<i32>) {
     if let Some(slot) = state
         .instances
         .iter_mut()
-        .find(|slot| slot.side == side && slot.pid.is_some())
+        .find(|slot| slot.role == role && slot.pid.is_some())
     {
         slot.pid = None;
         slot.exit_code = code;
