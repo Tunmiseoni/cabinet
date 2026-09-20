@@ -144,7 +144,7 @@ export function LaunchCard({
   const running = match?.status === "running";
 
   function collectWarnings(): string[] {
-    if (dev) return [];
+    if (dev || role === "p1") return [];
     const warning = healthWarning(
       selectedPeer?.hostname ?? peerIp,
       health[peerIp],
@@ -168,9 +168,10 @@ export function LaunchCard({
   }
 
   const parityBlocked = parity !== null && !parity.ok;
+  const hostNeedsNoPeer = provider?.kind === "retroarch" && role === "p1";
   const canLaunch =
     rom !== "" &&
-    (dev || role === "spectator" || peerIp !== "") &&
+    (dev || hostNeedsNoPeer || peerIp !== "") &&
     !running &&
     !busy &&
     !parityBlocked;
@@ -212,7 +213,7 @@ export function LaunchCard({
             <Select
               value={peerIp}
               onValueChange={setPeerIp}
-              disabled={running || dev || role === "p1" || role === "spectator"}
+              disabled={running || dev || role === "p1"}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Choose a peer" />

@@ -214,7 +214,7 @@ pub fn launch_many(
 
     emit(app, &state);
     spawn_monitor(app.clone(), generation);
-    if !dev {
+    if !dev && !plans[0].peer_ip.trim().is_empty() {
         spawn_health(app.clone(), generation, plans[0].peer_ip.clone());
     }
     Ok(state)
