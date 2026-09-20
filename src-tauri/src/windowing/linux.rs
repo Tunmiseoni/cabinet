@@ -13,8 +13,9 @@ impl WindowHost for LinuxWindowHost {
             supported: false,
             permission: Permission::NotRequired,
             mode: PlacementMode::Unsupported,
-            detail: "Linux window hosting is not implemented yet; the emulator opens as its own window"
-                .to_string(),
+            detail:
+                "Linux window hosting is not implemented yet; the emulator opens as its own window"
+                    .to_string(),
         }
     }
 

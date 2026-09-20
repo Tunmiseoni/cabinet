@@ -109,7 +109,11 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         drop(listener);
-        assert!(!wait_for_port("127.0.0.1", port, Duration::from_millis(600)));
+        assert!(!wait_for_port(
+            "127.0.0.1",
+            port,
+            Duration::from_millis(600)
+        ));
     }
 
     #[test]

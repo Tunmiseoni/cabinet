@@ -24,8 +24,7 @@ impl MacosLauncher {
     }
 
     fn wine(&self) -> PathBuf {
-        self.app_dir
-            .join("Contents/Resources/wine/bin/wine32on64")
+        self.app_dir.join("Contents/Resources/wine/bin/wine32on64")
     }
 
     fn prefix(&self) -> PathBuf {
@@ -50,11 +49,7 @@ impl Launcher for MacosLauncher {
         let detail = if installed {
             format!("{} · {}", wine.display(), emulator_dir.display())
         } else {
-            format!(
-                "missing {} or {}",
-                wine.display(),
-                exe.display()
-            )
+            format!("missing {} or {}", wine.display(), exe.display())
         };
         Ok(InstallInfo {
             id: self.id().to_string(),

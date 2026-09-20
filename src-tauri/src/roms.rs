@@ -31,9 +31,7 @@ pub fn default_rom_dirs() -> Vec<PathBuf> {
     if cfg!(target_os = "linux") || cfg!(target_os = "macos") {
         if let Some(home) = std::env::var_os("HOME") {
             let home = PathBuf::from(home);
-            dirs.push(
-                home.join(".var/app/com.fightcade.Fightcade/data/ROMs/fbneo"),
-            );
+            dirs.push(home.join(".var/app/com.fightcade.Fightcade/data/ROMs/fbneo"));
             dirs.push(home.join("fightcade/emulator/fbneo/ROMs"));
             dirs.push(home.join("Fightcade/emulator/fbneo/ROMs"));
         }
@@ -121,7 +119,10 @@ mod tests {
         let roms = scan(&dir).expect("scan");
         let names: Vec<&str> = roms.iter().map(|r| r.short_name.as_str()).collect();
         assert_eq!(names, vec!["sfiii3nr1", "UPPER"]);
-        let upper = roms.iter().find(|r| r.short_name == "UPPER").expect("upper");
+        let upper = roms
+            .iter()
+            .find(|r| r.short_name == "UPPER")
+            .expect("upper");
         assert_eq!(upper.size_bytes, 2);
 
         fs::remove_dir_all(&dir).ok();

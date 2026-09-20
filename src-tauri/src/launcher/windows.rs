@@ -143,7 +143,10 @@ mod tests {
     fn spec_runs_the_native_exe() {
         let launcher = launcher_at("/fc");
         let spec = launcher.spec(&config()).unwrap();
-        assert_eq!(spec.program, PathBuf::from("/fc/emulator/fbneo/fcadefbneo.exe"));
+        assert_eq!(
+            spec.program,
+            PathBuf::from("/fc/emulator/fbneo/fcadefbneo.exe")
+        );
         assert_eq!(
             spec.args,
             vec!["quark:direct,sfiii3nr1,7001,100.64.0.2,7000,0,0", "-w"]
@@ -164,7 +167,10 @@ mod tests {
     fn loopback_rewrites_the_peer_ip() {
         let launcher = launcher_at("/fc").loopback();
         let spec = launcher.spec(&config()).unwrap();
-        assert_eq!(spec.args[0], "quark:direct,sfiii3nr1,7001,127.0.0.1,7000,0,0");
+        assert_eq!(
+            spec.args[0],
+            "quark:direct,sfiii3nr1,7001,127.0.0.1,7000,0,0"
+        );
     }
 
     #[test]

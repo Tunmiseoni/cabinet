@@ -11,7 +11,11 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(node_id: impl Into<String>, handle: impl Into<String>, ip: impl Into<String>) -> Self {
+    pub fn new(
+        node_id: impl Into<String>,
+        handle: impl Into<String>,
+        ip: impl Into<String>,
+    ) -> Self {
         Self {
             node_id: node_id.into(),
             handle: handle.into(),

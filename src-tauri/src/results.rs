@@ -345,7 +345,11 @@ mod tests {
         ));
         let result = read(&dir);
         println!("overlay {} -> {result:?}", dir.display());
-        assert!(!result.is_empty(), "expected overlay files in {}", dir.display());
+        assert!(
+            !result.is_empty(),
+            "expected overlay files in {}",
+            dir.display()
+        );
     }
 
     #[test]
@@ -412,7 +416,11 @@ mod tests {
         emulator.write_ini("bVidSaveOverlayFiles 0\n");
 
         assert!(enable_overlay(&emulator.dir).unwrap().enabled);
-        let newline = if cfg!(target_os = "windows") { "\r\n" } else { "\n" };
+        let newline = if cfg!(target_os = "windows") {
+            "\r\n"
+        } else {
+            "\n"
+        };
         assert_eq!(
             fs::read_to_string(emulator.ini()).unwrap(),
             format!("bVidSaveOverlayFiles 1{newline}")
@@ -425,7 +433,11 @@ mod tests {
         emulator.write_ini("// bVidSaveOverlayFiles 1\n");
 
         assert!(enable_overlay(&emulator.dir).unwrap().enabled);
-        let newline = if cfg!(target_os = "windows") { "\r\n" } else { "\n" };
+        let newline = if cfg!(target_os = "windows") {
+            "\r\n"
+        } else {
+            "\n"
+        };
         assert_eq!(
             fs::read_to_string(emulator.ini()).unwrap(),
             format!("bVidSaveOverlayFiles 1{newline}")

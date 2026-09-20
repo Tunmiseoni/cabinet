@@ -36,7 +36,8 @@ mod tests {
         let envs: Vec<_> = command.get_envs().collect();
         for key in ["LD_LIBRARY_PATH", "LD_PRELOAD"] {
             assert!(
-                envs.iter().any(|(name, value)| *name == OsStr::new(key) && value.is_none()),
+                envs.iter()
+                    .any(|(name, value)| *name == OsStr::new(key) && value.is_none()),
                 "{key} should be removed for host subprocesses"
             );
         }

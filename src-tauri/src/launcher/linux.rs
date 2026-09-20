@@ -142,10 +142,9 @@ impl Launcher for LinuxLauncher {
     fn detect(&self) -> Result<InstallInfo, String> {
         let installed = !matches!(self.layout, Layout::Unavailable { .. });
         let detail = match &self.layout {
-            Layout::Flatpak { data_dir } => format!(
-                "Flatpak {FLATPAK_APP} · {}",
-                data_dir.to_string_lossy()
-            ),
+            Layout::Flatpak { data_dir } => {
+                format!("Flatpak {FLATPAK_APP} · {}", data_dir.to_string_lossy())
+            }
             Layout::Native { fb_dir, runner } => match runner {
                 Runner::Direct => format!("native {}", fb_dir.display()),
                 Runner::Wine(wine) => format!("{wine} · {}", fb_dir.display()),
@@ -334,7 +333,8 @@ mod tests {
 
     #[test]
     fn native_direct_spec_runs_the_binary() {
-        let launcher = LinuxLauncher::native(PathBuf::from("/opt/fc/emulator/fbneo"), Runner::Direct);
+        let launcher =
+            LinuxLauncher::native(PathBuf::from("/opt/fc/emulator/fbneo"), Runner::Direct);
         let spec = launcher.spec(&config()).unwrap();
         assert_eq!(
             spec.program,
@@ -360,7 +360,9 @@ mod tests {
             spec.args[1],
             "quark:direct,sfiii3nr1,7001,100.64.0.2,7000,0,0"
         );
-        assert!(spec.envs.contains(&("WINEDEBUG".to_string(), "-all".to_string())));
+        assert!(spec
+            .envs
+            .contains(&("WINEDEBUG".to_string(), "-all".to_string())));
     }
 
     #[test]
@@ -369,7 +371,10 @@ mod tests {
             LinuxLauncher::native(PathBuf::from("/opt/fc/emulator/fbneo"), Runner::Direct)
                 .loopback();
         let spec = launcher.spec(&config()).unwrap();
-        assert_eq!(spec.args[0], "quark:direct,sfiii3nr1,7001,127.0.0.1,7000,0,0");
+        assert_eq!(
+            spec.args[0],
+            "quark:direct,sfiii3nr1,7001,127.0.0.1,7000,0,0"
+        );
     }
 
     #[test]
@@ -409,7 +414,10 @@ mod tests {
         assert_eq!(as_flatpak_data_dir(&PathBuf::from("/home/u/roms")), None);
 
         let launcher = LinuxLauncher::detect(Some(data), None);
-        assert_eq!(launcher.spec(&config()).unwrap().program, PathBuf::from("flatpak"));
+        assert_eq!(
+            launcher.spec(&config()).unwrap().program,
+            PathBuf::from("flatpak")
+        );
     }
 
     #[test]
@@ -429,7 +437,10 @@ mod tests {
     fn derives_a_flatpak_install_from_the_rom_dir() {
         let roms = PathBuf::from("/home/u/.var/app/com.fightcade.Fightcade/data/ROMs/fbneo");
         let launcher = LinuxLauncher::from_rom_dir(&roms).expect("flatpak layout");
-        assert_eq!(launcher.spec(&config()).unwrap().program, PathBuf::from("flatpak"));
+        assert_eq!(
+            launcher.spec(&config()).unwrap().program,
+            PathBuf::from("flatpak")
+        );
     }
 
     #[test]

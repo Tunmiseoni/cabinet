@@ -134,9 +134,7 @@ impl RoomState {
     }
 
     fn known(&self, node_id: &str) -> bool {
-        self.champion
-            .as_ref()
-            .is_some_and(|p| p.node_id == node_id)
+        self.champion.as_ref().is_some_and(|p| p.node_id == node_id)
             || self
                 .challenger
                 .as_ref()
@@ -179,7 +177,11 @@ impl RoomState {
             self.champion = None;
             removed = true;
         }
-        if self.challenger.as_ref().is_some_and(|p| p.node_id == node_id) {
+        if self
+            .challenger
+            .as_ref()
+            .is_some_and(|p| p.node_id == node_id)
+        {
             self.challenger = None;
             removed = true;
         }
@@ -280,8 +282,7 @@ impl RoomState {
             return;
         }
 
-        let (Some(champion), Some(challenger)) =
-            (self.champion.clone(), self.challenger.clone())
+        let (Some(champion), Some(challenger)) = (self.champion.clone(), self.challenger.clone())
         else {
             self.phase = Phase::Lobby;
             return;
