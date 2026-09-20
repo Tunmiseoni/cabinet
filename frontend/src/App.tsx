@@ -12,6 +12,7 @@ import { RoomsCard } from "@/components/RoomsCard";
 import { RomsCard } from "@/components/RomsCard";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import {
+  enableOverlay,
   getConfig,
   getScores,
   hostRoom,
@@ -62,6 +63,7 @@ function App() {
   const [health, setHealth] = useState<Record<string, PeerHealth>>({});
   const [launcher, setLauncher] = useState<InstallInfo | null>(null);
   const [overlay, setOverlay] = useState<OverlayStatus | null>(null);
+  const [overlayBusy, setOverlayBusy] = useState(false);
   const [scores, setScores] = useState<ScoreSnapshot | null>(null);
   const [rooms, setRooms] = useState<DiscoveredRoom[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(true);
@@ -138,6 +140,18 @@ function App() {
       setAppError(null);
     } catch (err) {
       setAppError(String(err));
+    }
+  }, []);
+
+  const handleEnableOverlay = useCallback(async () => {
+    setOverlayBusy(true);
+    try {
+      setOverlay(await enableOverlay());
+      setAppError(null);
+    } catch (err) {
+      setAppError(String(err));
+    } finally {
+      setOverlayBusy(false);
     }
   }, []);
 
@@ -513,7 +527,13 @@ function App() {
           onJoin={handleJoinRoom}
         />
 
-        <LifetimeCard scores={scores} tailnet={tailnet} overlay={overlay} />
+        <LifetimeCard
+          scores={scores}
+          tailnet={tailnet}
+          overlay={overlay}
+          onEnableOverlay={handleEnableOverlay}
+          enablingOverlay={overlayBusy}
+        />
 
         <SettingsDialog
           open={settingsOpen}

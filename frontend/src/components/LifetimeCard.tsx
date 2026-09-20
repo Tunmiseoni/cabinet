@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -20,6 +21,8 @@ interface LifetimeCardProps {
   scores: ScoreSnapshot | null;
   tailnet: Tailnet | null;
   overlay: OverlayStatus | null;
+  onEnableOverlay: () => void;
+  enablingOverlay: boolean;
 }
 
 function winRate(wins: number, games: number): string {
@@ -31,7 +34,13 @@ function hostnameFor(tailnet: Tailnet | null, ip: string): string {
   return tailnet?.peers.find((peer) => peer.ip === ip)?.hostname ?? ip;
 }
 
-export function LifetimeCard({ scores, tailnet, overlay }: LifetimeCardProps) {
+export function LifetimeCard({
+  scores,
+  tailnet,
+  overlay,
+  onEnableOverlay,
+  enablingOverlay,
+}: LifetimeCardProps) {
   const totals = scores?.totals;
   const records = scores?.records ?? [];
   const overlayOff = overlay !== null && !overlay.enabled;
@@ -56,7 +65,18 @@ export function LifetimeCard({ scores, tailnet, overlay }: LifetimeCardProps) {
             <span>
               Overlay saving is off, so results cannot be tracked. Set{" "}
               <code className="font-mono">bVidSaveOverlayFiles 1</code> in{" "}
-              <span className="font-mono">{overlay?.iniPath}</span>.
+              <span className="font-mono">{overlay?.iniPath}</span>{" "}
+              (close FightCade first).
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="ml-2 h-6 px-2 align-middle"
+                onClick={onEnableOverlay}
+                disabled={enablingOverlay}
+              >
+                {enablingOverlay ? "Enabling…" : "Enable"}
+              </Button>
             </span>
           </div>
         )}

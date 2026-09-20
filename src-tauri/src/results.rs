@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::fs;
+use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 pub const OVERLAY_DIR_NAME: &str = "fightcade";
@@ -58,6 +59,55 @@ fn ini_overlay_enabled(raw: &str) -> bool {
         parts.next() == Some("bVidSaveOverlayFiles")
             && parts.next().map(|value| value != "0").unwrap_or(false)
     })
+}
+
+pub fn enable_overlay(emulator_dir: &Path) -> io::Result<OverlayStatus> {
+    let ini = emulator_dir.join("config").join("fcadefbneo.ini");
+    let raw = match fs::read(&ini) {
+        Ok(bytes) => String::from_utf8(bytes).map_err(|_| {
+            io::Error::new(
+                ErrorKind::InvalidData,
+                "config file is not valid UTF-8; edit it manually",
+            )
+        })?,
+        Err(err) if err.kind() == ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err),
+    };
+
+    let newline = if raw.contains("\r\n") || cfg!(target_os = "windows") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+
+    let mut found = false;
+    let mut out = String::with_capacity(raw.len() + 32);
+    for line in raw.lines() {
+        let indent_len = line.len() - line.trim_start().len();
+        let trimmed = &line[indent_len..];
+        let uncommented = trimmed
+            .strip_prefix("//")
+            .map(str::trim_start)
+            .unwrap_or(trimmed);
+        if uncommented.split_whitespace().next() == Some("bVidSaveOverlayFiles") {
+            out.push_str(&line[..indent_len]);
+            out.push_str("bVidSaveOverlayFiles 1");
+            found = true;
+        } else {
+            out.push_str(line);
+        }
+        out.push_str(newline);
+    }
+    if !found {
+        out.push_str("bVidSaveOverlayFiles 1");
+        out.push_str(newline);
+    }
+
+    if let Some(parent) = ini.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&ini, out)?;
+    Ok(overlay_status(emulator_dir))
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -308,5 +358,114 @@ mod tests {
         ));
         assert!(!ini_overlay_enabled("bVidSaveOverlayFiles\n"));
         assert!(!ini_overlay_enabled(""));
+    }
+
+    struct TempEmulator {
+        dir: PathBuf,
+    }
+
+    impl TempEmulator {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "cabinet-emulator-{}-{}-{tag}",
+                std::process::id(),
+                unique()
+            ));
+            fs::create_dir_all(dir.join("config")).expect("create temp emulator dir");
+            Self { dir }
+        }
+
+        fn ini(&self) -> PathBuf {
+            self.dir.join("config").join("fcadefbneo.ini")
+        }
+
+        fn write_ini(&self, contents: &str) {
+            fs::write(self.ini(), contents).expect("write ini");
+        }
+    }
+
+    impl Drop for TempEmulator {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.dir).ok();
+        }
+    }
+
+    #[test]
+    fn enable_overlay_appends_when_absent() {
+        let emulator = TempEmulator::new("append");
+        emulator.write_ini("bVidOverlay 1\n");
+
+        let status = enable_overlay(&emulator.dir).expect("enable");
+
+        assert!(status.enabled);
+        assert!(ini_overlay_enabled(
+            &fs::read_to_string(emulator.ini()).unwrap()
+        ));
+        assert!(fs::read_to_string(emulator.ini())
+            .unwrap()
+            .contains("bVidOverlay 1"));
+    }
+
+    #[test]
+    fn enable_overlay_rewrites_a_disabled_value() {
+        let emulator = TempEmulator::new("zero");
+        emulator.write_ini("bVidSaveOverlayFiles 0\n");
+
+        assert!(enable_overlay(&emulator.dir).unwrap().enabled);
+        assert_eq!(
+            fs::read_to_string(emulator.ini()).unwrap(),
+            "bVidSaveOverlayFiles 1\n"
+        );
+    }
+
+    #[test]
+    fn enable_overlay_uncomments_the_setting() {
+        let emulator = TempEmulator::new("comment");
+        emulator.write_ini("// bVidSaveOverlayFiles 1\n");
+
+        assert!(enable_overlay(&emulator.dir).unwrap().enabled);
+        assert_eq!(
+            fs::read_to_string(emulator.ini()).unwrap(),
+            "bVidSaveOverlayFiles 1\n"
+        );
+    }
+
+    #[test]
+    fn enable_overlay_creates_the_file_and_dirs() {
+        let dir = std::env::temp_dir().join(format!(
+            "cabinet-emulator-{}-{}-create",
+            std::process::id(),
+            unique()
+        ));
+
+        let status = enable_overlay(&dir).expect("enable");
+
+        assert!(status.enabled);
+        assert!(dir.join("config").join("fcadefbneo.ini").is_file());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn enable_overlay_preserves_crlf_and_indentation() {
+        let emulator = TempEmulator::new("crlf");
+        emulator.write_ini("bVidOverlay 1\r\n  bVidSaveOverlayFiles 0\r\n");
+
+        enable_overlay(&emulator.dir).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(emulator.ini()).unwrap(),
+            "bVidOverlay 1\r\n  bVidSaveOverlayFiles 1\r\n"
+        );
+    }
+
+    #[test]
+    fn enable_overlay_refuses_invalid_utf8() {
+        let emulator = TempEmulator::new("binary");
+        fs::write(emulator.ini(), [0xff, 0xfe, 0x00]).unwrap();
+
+        let err = enable_overlay(&emulator.dir).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+        assert_eq!(fs::read(emulator.ini()).unwrap(), vec![0xff, 0xfe, 0x00]);
     }
 }

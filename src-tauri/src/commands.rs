@@ -138,6 +138,17 @@ pub fn overlay_status(app: AppHandle) -> Result<OverlayStatus, String> {
     Ok(results::overlay_status(&launcher.emulator_dir()))
 }
 
+#[tauri::command(async)]
+pub fn enable_overlay(app: AppHandle) -> Result<OverlayStatus, String> {
+    if session::status(&app).status == "running" {
+        return Err("stop the match before changing FightCade settings".to_string());
+    }
+    let cfg = Config::load(&config_file(&app)?);
+    let launcher = resolve_launcher(&cfg, false)?;
+    results::enable_overlay(&launcher.emulator_dir())
+        .map_err(|err| format!("cannot update FightCade config: {err}"))
+}
+
 #[tauri::command]
 pub fn get_scores(app: AppHandle) -> Snapshot {
     app.state::<ScoreBoard>().snapshot()

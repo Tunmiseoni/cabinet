@@ -246,6 +246,8 @@ export const launcherInfo = () => invoke<InstallInfo>("launcher_info");
 
 export const overlayStatus = () => invoke<OverlayStatus>("overlay_status");
 
+export const enableOverlay = () => invoke<OverlayStatus>("enable_overlay");
+
 export const getScores = () => invoke<ScoreSnapshot>("get_scores");
 
 export const resetScores = () => invoke<ScoreSnapshot>("reset_scores");

@@ -72,6 +72,7 @@ pub fn run() {
             commands::list_rooms,
             commands::launcher_info,
             commands::overlay_status,
+            commands::enable_overlay,
             commands::get_scores,
             commands::reset_scores,
             commands::launch_match,
