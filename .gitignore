@@ -27,6 +27,11 @@ dist/
 *.local
 *.local.md
 
+# Linux diagnosis output (machine-specific paths — never commit)
+linux-reports/
+the-cabinet-report.txt
+the-cabinet-report-shots/
+
 # Never commit ROMs or emulator binaries
 *.zip
 *.exe

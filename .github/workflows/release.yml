@@ -28,6 +28,7 @@ jobs:
             args: --target aarch64-apple-darwin --bundles dmg
           - platform: ubuntu-22.04
             args: --bundles appimage,deb
+            tauriScript: bash scripts/tauri-build.sh
           - platform: windows-latest
             args: --bundles nsis
 
@@ -99,6 +100,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+          tauriScript: ${{ matrix.tauriScript }}
 
       - name: Verify macOS bundle signature
         if: matrix.platform == 'macos-latest'

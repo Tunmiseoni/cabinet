@@ -45,8 +45,9 @@ State what you intend to do, why, and how to undo it, then wait for confirmation
 - `docs/` — investigation and design. `01`–`03` are the historical troubleshooting record; `04-design.md` is the current spec.
 - `frontend/` — Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias `@/*` -> `frontend/src/*`).
 - `src-tauri/` — Rust backend (`config`, `tailscale`, `roms`, `launcher`, `session`, `commands`).
-- `scripts/` — helper scripts (`dev.sh`, `build.sh`, `test.sh`, `clean.sh`, `setup-linux.sh`, `uninstall-linux.sh`) plus the reference per-OS launchers (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`, `fcade-lan-windows-firewall.bat`).
+- `scripts/` — helper scripts (`dev.sh`, `build.sh`, `test.sh`, `clean.sh`, `setup-linux.sh`, `uninstall-linux.sh`, `diagnose-linux.sh`, `tauri-build.sh`, `patch-appimage.sh`) plus the reference per-OS launchers (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`, `fcade-lan-windows-firewall.bat`).
 - The Tauri app is the implementation; the shell launchers remain the reference behavior.
+- **Temporary workaround — remove when upstream lands:** `scripts/patch-appimage.sh` strips the over-bundled Wayland/X11 client libraries from the Linux AppImage to fix the `EGL_BAD_PARAMETER` blank window on Mesa 25+ hosts (tauri-apps/tauri#15976). It runs from `scripts/tauri-build.sh` (the `tauriScript` used by `release.yml`) and `scripts/build.sh`, and no-ops off Linux or when those libraries are already absent. **To remove it:** once Tauri supports `bundle.linux.appimage.excludeLibraries` (PR #15662), set that in `tauri.conf.json` and delete `scripts/patch-appimage.sh`; the guarded call sites become no-ops. Full steps are in the script header and `docs/04-design.md` §3.
 
 ## Environment facts (observed)
 
