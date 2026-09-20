@@ -241,8 +241,9 @@ impl RetroArchProvider {
         }
 
         let path = self.overrides_path(role);
-        std::fs::write(&path, content)
+        std::fs::write(&path, &content)
             .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
+        log::debug!(target: "retroarch", "appendconfig {}:\n{}", path.display(), content);
         Ok(path)
     }
 }
@@ -303,6 +304,7 @@ impl Provider for RetroArchProvider {
             request.rom_path.to_string_lossy().to_string(),
             "--appendconfig".to_string(),
             overrides.to_string_lossy().to_string(),
+            "--verbose".to_string(),
         ];
         match request.role {
             Role::P1 => args.push("-H".to_string()),
@@ -509,6 +511,7 @@ mod tests {
                     .join("cfg/netplay-p1.cfg")
                     .to_str()
                     .unwrap(),
+                "--verbose",
                 "-H",
                 "--port",
                 "55435",
@@ -537,6 +540,7 @@ mod tests {
                     .join("cfg/netplay-p2.cfg")
                     .to_str()
                     .unwrap(),
+                "--verbose",
                 "-C",
                 "100.64.0.2",
                 "--port",
@@ -555,8 +559,8 @@ mod tests {
         let spec = provider
             .spec(&request(Role::Spectator, &rom, "100.64.0.2"))
             .unwrap();
-        assert_eq!(spec.args[5], "-C");
-        assert_eq!(spec.args[6], "100.64.0.2");
+        let connect = spec.args.iter().position(|arg| arg == "-C").unwrap();
+        assert_eq!(spec.args[connect + 1], "100.64.0.2");
         let overrides = std::fs::read_to_string(provider.overrides_path(Role::Spectator)).unwrap();
         assert!(overrides.contains("netplay_start_as_spectator = \"true\""));
         provider
@@ -588,7 +592,8 @@ mod tests {
         let spec = provider
             .spec(&request(Role::P2, &rom, "100.64.0.2"))
             .unwrap();
-        assert_eq!(spec.args[6], "127.0.0.1");
+        let connect = spec.args.iter().position(|arg| arg == "-C").unwrap();
+        assert_eq!(spec.args[connect + 1], "127.0.0.1");
     }
 
     #[test]

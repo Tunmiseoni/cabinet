@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Config, ProviderKind } from "@/lib/api";
+import { collectDiagnostics, openLogsDir } from "@/lib/api";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -44,6 +45,8 @@ interface FormState {
   retroarchCore: string;
   retroarchPort: string;
   retroarchNickname: string;
+  verboseLogging: boolean;
+  developerMode: boolean;
 }
 
 function toForm(config: Config | null): FormState {
@@ -63,6 +66,8 @@ function toForm(config: Config | null): FormState {
     retroarchCore: config?.retroarchCore ?? "",
     retroarchPort: String(config?.retroarchPort ?? 55435),
     retroarchNickname: config?.retroarchNickname ?? "",
+    verboseLogging: config?.verboseLogging ?? false,
+    developerMode: config?.developerMode ?? false,
   };
 }
 
@@ -78,6 +83,8 @@ export function SettingsDialog({
   const [form, setForm] = useState<FormState>(() => toForm(config));
   const [saving, setSaving] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [diagnosticsStatus, setDiagnosticsStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) setForm(toForm(config));
@@ -93,6 +100,27 @@ export function SettingsDialog({
   async function handleReset() {
     await onResetScores();
     setConfirmingReset(false);
+  }
+
+  async function handleOpenLogs() {
+    try {
+      const dir = await openLogsDir();
+      setDiagnosticsStatus(`Opened ${dir}`);
+    } catch (err) {
+      setDiagnosticsStatus(String(err));
+    }
+  }
+
+  async function handleCollectDiagnostics() {
+    setDiagnosticsBusy(true);
+    try {
+      const result = await collectDiagnostics();
+      setDiagnosticsStatus(`Wrote ${result.path}`);
+    } catch (err) {
+      setDiagnosticsStatus(String(err));
+    } finally {
+      setDiagnosticsBusy(false);
+    }
   }
 
   async function handleSave() {
@@ -114,6 +142,8 @@ export function SettingsDialog({
         retroarchCore: emptyToNull(form.retroarchCore),
         retroarchPort: Number(form.retroarchPort) || 55435,
         retroarchNickname: emptyToNull(form.retroarchNickname),
+        verboseLogging: form.verboseLogging,
+        developerMode: form.developerMode,
       });
       onOpenChange(false);
     } finally {
@@ -151,6 +181,26 @@ export function SettingsDialog({
             <p className="text-xs text-muted-foreground">
               RetroArch has no overlay results, so matches are reported manually.
             </p>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div className="grid gap-1">
+              <Label htmlFor="developerMode">Developer mode</Label>
+              <p className="text-xs text-muted-foreground">
+                Show developer tools on the home screen, like the loopback Dev pair.
+              </p>
+            </div>
+            <input
+              id="developerMode"
+              type="checkbox"
+              className="size-4 shrink-0 accent-primary"
+              checked={form.developerMode}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  developerMode: event.target.checked,
+                }))
+              }
+            />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="handle">Your handle</Label>
@@ -322,6 +372,53 @@ export function SettingsDialog({
                 setForm((prev) => ({ ...prev, cabinetMode: event.target.checked }))
               }
             />
+          </div>
+
+          <Separator />
+
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-4">
+              <div className="grid gap-1">
+                <Label htmlFor="verboseLogging">Verbose logging</Label>
+                <p className="text-xs text-muted-foreground">
+                  Raise the app log to debug level. Takes effect after a restart.
+                </p>
+              </div>
+              <input
+                id="verboseLogging"
+                type="checkbox"
+                className="size-4 shrink-0 accent-primary"
+                checked={form.verboseLogging}
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    verboseLogging: event.target.checked,
+                  }))
+                }
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleOpenLogs()}
+              >
+                Open logs folder
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={diagnosticsBusy}
+                onClick={() => void handleCollectDiagnostics()}
+              >
+                {diagnosticsBusy ? "Collecting…" : "Collect diagnostics"}
+              </Button>
+            </div>
+            {diagnosticsStatus && (
+              <p className="break-all text-xs text-muted-foreground">
+                {diagnosticsStatus}
+              </p>
+            )}
           </div>
 
           <Separator />

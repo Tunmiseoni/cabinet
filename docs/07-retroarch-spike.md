@@ -272,3 +272,29 @@ frozen-set parity check (core `GIT` + sha256, ROM sha256).
   installed frozen core is found without a Settings entry.
 - Not yet verified in-app: cross-OS core parity, managed core download (release unpublished),
   and the four-person input-feel run below.
+
+### 2026-09-20 — in-app diagnostics (netplay failures were undiagnosable)
+
+The first real in-app three-machine test surfaced two symptoms with no usable evidence trail: the
+host and client sat in the FBNeo attract screen ("insert coin") without connecting, and a
+spectator showed RetroArch's **"Failed to initialize netplay."** (a `netplay_new()` failure, i.e.
+the client could not reach the host). On a Finder-launched `.app`, RetroArch's stderr and the
+app's own `eprintln!` go nowhere retrievable.
+
+Added so the next run is diagnosable:
+
+- **App log file** via `tauri-plugin-log` in `app_log_dir` (macOS `~/Library/Logs/com.the-cabinet.app`,
+  Linux `~/.local/share/com.the-cabinet.app/logs`, Windows `%LOCALAPPDATA%\com.the-cabinet.app\logs`):
+  Info by default, `verboseLogging` (Settings) raises to Debug after restart, 5 MB rotation keep 3.
+- **Full emulator capture**: every role's stdout+stderr is piped to
+  `app_log_dir/sessions/<utc>/emulator-<role>.log` (all providers); RetroArch also runs with
+  `--verbose`. Its generated appendconfig is dumped at debug level.
+- **Blocking preflight**: non-dev RetroArch clients/spectators probe `peer:55435` (TCP, 3 s) first;
+  unreachable ⇒ launch refused with the error in the dialog (override via "Launch anyway"). Dev
+  pairs wait for the loopback host to accept before spawning the client, closing the start race.
+- **Diagnostics bundle**: Settings → Diagnostics → *Open logs folder* / *Collect diagnostics*
+  (version, config, provider, tailnet summary, last match, session index, last 200 log lines).
+
+Still open: re-run the three-machine test and read the captured netplay logs to confirm the host
+is listening and the clients connect (the likely original cause was a client connecting before the
+host bound, and/or the host's inbound TCP 55435 firewall rule).

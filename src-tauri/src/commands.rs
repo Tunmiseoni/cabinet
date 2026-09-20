@@ -7,6 +7,8 @@ use crate::launcher::macos::{MacosLauncher, DEFAULT_APP_DIR};
 #[cfg(target_os = "windows")]
 use crate::launcher::windows::WindowsLauncher;
 use crate::launcher::{retroarch, InstallInfo, Launcher};
+use crate::logging;
+use crate::probe;
 use crate::provider::{
     self, Capabilities, FightCadeProvider, MatchRequest, Provider, ProviderKind, Role,
 };
@@ -22,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
+use tauri_plugin_opener::OpenerExt;
 
 pub(crate) fn config_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = app
@@ -248,6 +251,8 @@ pub struct LaunchRequest {
     pub role: Role,
     #[serde(default)]
     pub dev: bool,
+    #[serde(default)]
+    pub force: bool,
 }
 
 fn effective_peer(dev: bool, peer_ip: &str) -> String {
@@ -267,6 +272,11 @@ fn plan_for(
 ) -> Result<Plan, String> {
     let rom_path = optional_rom_file(cfg, provider, rom)?;
     if let Some(status) = provider.parity(&rom_path)? {
+        log::info!(
+            "parity for {rom}: ok={} detail={}",
+            status.ok,
+            status.detail
+        );
         if !status.ok {
             return Err(status.detail);
         }
@@ -288,21 +298,96 @@ fn plan_for(
     })
 }
 
+fn preflight(
+    provider: &dyn Provider,
+    role: Role,
+    peer_ip: &str,
+    force: bool,
+) -> Result<(), String> {
+    if provider.kind() != ProviderKind::Retroarch {
+        return Ok(());
+    }
+    let Some(port) = provider.port(role) else {
+        return Ok(());
+    };
+    match role {
+        Role::P1 => match probe::port_is_free(port) {
+            Ok(()) => {
+                log::info!("preflight host: netplay port {port} is free");
+                Ok(())
+            }
+            Err(err) => {
+                log::warn!("preflight host: {err}");
+                if force {
+                    Ok(())
+                } else {
+                    Err(format!("{err} — is another instance already hosting?"))
+                }
+            }
+        },
+        Role::P2 | Role::Spectator => {
+            let result = probe::probe(peer_ip, port, Duration::from_secs(3));
+            log::info!(
+                "preflight {}: {peer_ip}:{port} reachable={} latency={:?} error={:?}",
+                role.label(),
+                result.reachable,
+                result.latency_ms,
+                result.error
+            );
+            if result.reachable || force {
+                Ok(())
+            } else {
+                let detail = result
+                    .error
+                    .map(|err| format!(" ({err})"))
+                    .unwrap_or_default();
+                Err(format!(
+                    "host not reachable on {peer_ip}:{port}{detail} — start the host first, confirm the peer IP, and allow inbound TCP {port} on the host"
+                ))
+            }
+        }
+    }
+}
+
 #[tauri::command(async)]
 pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState, String> {
     let cfg = Config::load(&config_file(&app)?);
     let provider = resolve_provider(&app, &cfg, request.dev)?;
+    log::info!(
+        "launch request: provider={:?} role={} rom={} peer={:?} dev={} force={}",
+        provider.kind(),
+        request.role.label(),
+        request.rom,
+        request.peer_ip,
+        request.dev,
+        request.force
+    );
     let install = provider.detect()?;
     if !install.installed {
+        log::error!("emulator not found — {}", install.detail);
         return Err(format!("emulator not found — {}", install.detail));
     }
     if request.role == Role::Spectator && !provider.capabilities().spectate {
         return Err("this provider cannot spectate".into());
     }
     let peer_ip = effective_peer(request.dev, &request.peer_ip);
+    if !request.dev {
+        preflight(provider.as_ref(), request.role, &peer_ip, request.force)?;
+    }
     let plan = plan_for(provider.as_ref(), &cfg, request.role, &request.rom, &peer_ip)?;
     let overlay = provider.capabilities().overlay_results;
-    session::launch(&app, &plan, request.dev, overlay, overlay, peer_ip)
+    let wait_for_host = request.dev
+        && provider.kind() == ProviderKind::Retroarch
+        && matches!(request.role, Role::P2 | Role::Spectator);
+    session::launch(
+        &app,
+        &plan,
+        request.dev,
+        wait_for_host,
+        overlay,
+        overlay,
+        peer_ip,
+    )
 }
 
 #[tauri::command(async)]
@@ -319,6 +404,7 @@ pub fn match_status(app: AppHandle) -> MatchState {
 pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String> {
     let cfg = Config::load(&config_file(&app)?);
     let provider = resolve_provider(&app, &cfg, true)?;
+    log::info!("launch dev pair: provider={:?} rom={rom}", provider.kind());
     let install = provider.detect()?;
     if !install.installed {
         return Err(format!("emulator not found — {}", install.detail));
@@ -330,7 +416,15 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String
         plan_for(provider.as_ref(), &cfg, Role::P1, &rom, "127.0.0.1")?,
         plan_for(provider.as_ref(), &cfg, Role::P2, &rom, "127.0.0.1")?,
     ];
-    session::launch_many(&app, &plans, true, false, false, "127.0.0.1 (P1↔P2)".to_string())
+    session::launch_many(
+        &app,
+        &plans,
+        true,
+        provider.kind() == ProviderKind::Retroarch,
+        false,
+        false,
+        "127.0.0.1 (P1↔P2)".to_string(),
+    )
 }
 
 #[tauri::command(async)]
@@ -463,6 +557,195 @@ pub fn cabinet_request_permission() -> Result<bool, String> {
     {
         Err("no permission is required on this platform".to_string())
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsResult {
+    pub path: String,
+    pub log_dir: String,
+}
+
+#[tauri::command(async)]
+pub fn probe_port(ip: String, port: u16, timeout_ms: Option<u64>) -> probe::PortProbe {
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(3000).clamp(100, 30_000));
+    probe::probe(&ip, port, timeout)
+}
+
+#[tauri::command]
+pub fn log_dir(app: AppHandle) -> Result<String, String> {
+    Ok(logging::app_log_dir(&app)?.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn open_logs_dir(app: AppHandle) -> Result<String, String> {
+    let dir = logging::app_log_dir(&app)?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|err| format!("cannot create {}: {err}", dir.display()))?;
+    app.opener()
+        .open_path(dir.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|err| format!("cannot open {}: {err}", dir.display()))?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+#[tauri::command(async)]
+pub fn collect_diagnostics(app: AppHandle) -> Result<DiagnosticsResult, String> {
+    let dir = logging::app_log_dir(&app)?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|err| format!("cannot create {}: {err}", dir.display()))?;
+    let path = dir.join(format!("diagnostics-{}.txt", logging::utc_stamp()));
+    let text = diagnostics_text(&app);
+    std::fs::write(&path, text).map_err(|err| format!("cannot write {}: {err}", path.display()))?;
+    log::info!("diagnostics written to {}", path.display());
+    let _ = app.opener().open_path(dir.to_string_lossy().to_string(), None::<&str>);
+    Ok(DiagnosticsResult {
+        path: path.to_string_lossy().to_string(),
+        log_dir: dir.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn log_frontend(level: String, message: String, context: Option<String>) {
+    use std::str::FromStr;
+    let level = log::Level::from_str(&level).unwrap_or(log::Level::Info);
+    let suffix = context
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| format!(" ({value})"))
+        .unwrap_or_default();
+    log::log!(target: "webview", level, "{message}{suffix}");
+}
+
+fn diagnostics_text(app: &AppHandle) -> String {
+    use std::fmt::Write as _;
+
+    let cfg = Config::load(&config_file(app).unwrap_or_default());
+    let mut out = String::new();
+    let _ = writeln!(out, "The Cabinet diagnostics — {}", logging::utc_stamp());
+    let _ = writeln!(out, "version: {}", env!("CARGO_PKG_VERSION"));
+    let _ = writeln!(
+        out,
+        "platform: {} {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+    match logging::app_log_dir(app) {
+        Ok(dir) => {
+            let _ = writeln!(out, "log dir: {}", dir.display());
+        }
+        Err(err) => {
+            let _ = writeln!(out, "log dir error: {err}");
+        }
+    }
+
+    let _ = writeln!(out, "\n--- config ---");
+    let _ = writeln!(
+        out,
+        "{}",
+        serde_json::to_string_pretty(&cfg).unwrap_or_else(|_| "<unavailable>".to_string())
+    );
+
+    let _ = writeln!(out, "\n--- provider ---");
+    match resolve_provider(app, &cfg, false) {
+        Ok(provider) => {
+            let _ = writeln!(out, "kind: {:?}", provider.kind());
+            match provider.detect() {
+                Ok(install) => {
+                    let _ = writeln!(
+                        out,
+                        "install: {} installed={} detail={}",
+                        install.label, install.installed, install.detail
+                    );
+                }
+                Err(err) => {
+                    let _ = writeln!(out, "install error: {err}");
+                }
+            }
+            let caps = provider.capabilities();
+            let _ = writeln!(
+                out,
+                "capabilities: spectate={} overlayResults={} devPair={}",
+                caps.spectate, caps.overlay_results, caps.dev_pair
+            );
+        }
+        Err(err) => {
+            let _ = writeln!(out, "provider error: {err}");
+        }
+    }
+
+    let _ = writeln!(out, "\n--- tailnet ---");
+    match tailscale::resolve_binary(&cfg) {
+        Ok(binary) => match tailscale::status(&binary) {
+            Ok(tailnet) => {
+                let online = tailnet.peers.iter().filter(|peer| peer.online).count();
+                let _ = writeln!(out, "backendState: {}", tailnet.backend_state);
+                let _ = writeln!(out, "peers: {} ({online} online)", tailnet.peers.len());
+            }
+            Err(err) => {
+                let _ = writeln!(out, "status error: {err}");
+            }
+        },
+        Err(err) => {
+            let _ = writeln!(out, "tailscale binary error: {err}");
+        }
+    }
+
+    let _ = writeln!(out, "\n--- last match ---");
+    let _ = writeln!(
+        out,
+        "{}",
+        serde_json::to_string_pretty(&session::status(app))
+            .unwrap_or_else(|_| "<unavailable>".to_string())
+    );
+
+    let _ = writeln!(out, "\n--- sessions ---");
+    match logging::sessions_dir(app) {
+        Ok(sessions) => match std::fs::read_dir(&sessions) {
+            Ok(entries) => {
+                let mut dirs: Vec<PathBuf> = entries
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_dir())
+                    .collect();
+                dirs.sort();
+                for dir in dirs.iter().rev().take(10) {
+                    let _ = writeln!(out, "{}", dir.display());
+                    if let Ok(files) = std::fs::read_dir(dir) {
+                        for file in files.flatten() {
+                            let size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+                            let _ = writeln!(out, "  {} ({size} bytes)", file.path().display());
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                let _ = writeln!(out, "cannot list sessions: {err}");
+            }
+        },
+        Err(err) => {
+            let _ = writeln!(out, "{err}");
+        }
+    }
+
+    let _ = writeln!(out, "\n--- recent app log (last 200 lines) ---");
+    match logging::app_log_path(app) {
+        Ok(path) => {
+            let _ = writeln!(out, "{}", tail_text(&path, 200));
+        }
+        Err(err) => {
+            let _ = writeln!(out, "{err}");
+        }
+    }
+
+    out
+}
+
+fn tail_text(path: &std::path::Path, max_lines: usize) -> String {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return format!("(no log at {})", path.display());
+    };
+    let lines: Vec<&str> = raw.lines().collect();
+    let start = lines.len().saturating_sub(max_lines);
+    lines[start..].join("\n")
 }
 
 #[cfg(test)]

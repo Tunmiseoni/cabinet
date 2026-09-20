@@ -264,10 +264,11 @@ function App() {
     peerIp: string,
     role: MatchRole,
     dev: boolean,
+    force: boolean,
   ) {
     setLaunchBusy(true);
     try {
-      setMatch(await launchMatch({ rom, peerIp, role, dev }));
+      setMatch(await launchMatch({ rom, peerIp, role, dev, force }));
       setAppError(null);
     } catch (err) {
       setAppError(String(err));

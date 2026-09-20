@@ -23,6 +23,8 @@ pub struct Config {
     pub retroarch_core: Option<String>,
     pub retroarch_port: u16,
     pub retroarch_nickname: Option<String>,
+    pub verbose_logging: bool,
+    pub developer_mode: bool,
 }
 
 impl Default for Config {
@@ -43,6 +45,8 @@ impl Default for Config {
             retroarch_core: None,
             retroarch_port: crate::launcher::retroarch::DEFAULT_PORT,
             retroarch_nickname: None,
+            verbose_logging: false,
+            developer_mode: false,
         }
     }
 }
@@ -88,6 +92,8 @@ mod tests {
         .unwrap();
         assert_eq!(config.provider, ProviderKind::Fightcade);
         assert!(config.cabinet_mode);
+        assert!(!config.verbose_logging);
+        assert!(!config.developer_mode);
     }
 
     #[test]

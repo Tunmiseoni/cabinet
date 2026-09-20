@@ -1,12 +1,14 @@
 use crate::config::{self, Config};
 use crate::launcher::{LaunchSpec, MatchConfig};
+use crate::logging;
+use crate::probe;
 use crate::provider::Role;
 use crate::results::{self, MatchResult};
 use crate::scores::{ScoreBoard, ScoreCounter, SCORES_EVENT};
 use crate::tailscale::{self, PeerHealth};
 use serde::Serialize;
-use std::path::PathBuf;
-use std::process::Child;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
@@ -111,15 +113,33 @@ fn emit(app: &AppHandle, state: &MatchState) {
     app.emit(MATCH_EVENT, state).ok();
 }
 
-fn spawn_child(plan: &Plan) -> Result<Child, String> {
+fn spawn_child(plan: &Plan, session_dir: Option<&Path>) -> Result<Child, String> {
     let mut command = crate::process::command(&plan.spec.program);
     command
         .args(&plan.spec.args)
         .current_dir(&plan.spec.cwd)
         .envs(plan.spec.envs.iter().cloned());
-    command
+    if session_dir.is_some() {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    }
+    let mut child = command
         .spawn()
-        .map_err(|err| format!("failed to launch {}: {err}", plan.spec.program.display()))
+        .map_err(|err| format!("failed to launch {}: {err}", plan.spec.program.display()))?;
+    if let Some(dir) = session_dir {
+        match logging::open_emulator_log(dir, plan.role.key()) {
+            Ok(sink) => {
+                let label = format!("{}[{}]", plan.role.key(), plan.rom);
+                if let Some(stdout) = child.stdout.take() {
+                    logging::capture_stream(stdout, format!("{label} stdout"), sink.clone());
+                }
+                if let Some(stderr) = child.stderr.take() {
+                    logging::capture_stream(stderr, format!("{label} stderr"), sink);
+                }
+            }
+            Err(err) => log::warn!("cannot capture emulator output: {err}"),
+        }
+    }
+    Ok(child)
 }
 
 fn clear_running(inner: &mut SessionInner) {
@@ -133,6 +153,7 @@ pub fn launch_many(
     app: &AppHandle,
     plans: &[Plan],
     dev: bool,
+    wait_for_host: bool,
     overlay: bool,
     track_scores: bool,
     peer_display: String,
@@ -157,13 +178,52 @@ pub fn launch_many(
         results::reset(dir);
     }
 
+    let session_dir = match logging::create_session_dir(app) {
+        Ok(dir) => {
+            log::info!("session log dir: {}", dir.display());
+            Some(dir)
+        }
+        Err(err) => {
+            log::warn!("{err}");
+            None
+        }
+    };
+
     let mut running: Vec<Running> = Vec::new();
     let mut instances = Vec::new();
 
     for plan in plans {
-        let child = match spawn_child(plan) {
+        if wait_for_host && matches!(plan.role, Role::P2 | Role::Spectator) {
+            if let Some(port) = plan.port {
+                log::info!(
+                    "waiting for host {}:{} before starting {}",
+                    plan.peer_ip,
+                    port,
+                    plan.role.label()
+                );
+                let ready = probe::wait_for_port(&plan.peer_ip, port, Duration::from_secs(20));
+                log::info!("host {}:{} reachable={ready}", plan.peer_ip, port);
+                if !ready {
+                    log::warn!(
+                        "host {}:{} did not accept connections; {} may show \"Failed to initialize netplay\"",
+                        plan.peer_ip,
+                        port,
+                        plan.role.label()
+                    );
+                }
+            }
+        }
+        log::info!(
+            "launching {} program={} cwd={} args={:?}",
+            plan.role.label(),
+            plan.spec.program.display(),
+            plan.spec.cwd.display(),
+            plan.spec.args
+        );
+        let child = match spawn_child(plan, session_dir.as_deref()) {
             Ok(child) => child,
             Err(err) => {
+                log::error!("{err}");
                 for mut started in running.drain(..) {
                     let _ = started.child.kill();
                     let _ = started.child.wait();
@@ -173,6 +233,7 @@ pub fn launch_many(
             }
         };
         let pid = child.id();
+        log::info!("spawned {} pid={}", plan.role.label(), pid);
         running.push(Running {
             child,
             role: plan.role,
@@ -224,6 +285,7 @@ pub fn launch(
     app: &AppHandle,
     plan: &Plan,
     dev: bool,
+    wait_for_host: bool,
     overlay: bool,
     track_scores: bool,
     peer_display: String,
@@ -232,6 +294,7 @@ pub fn launch(
         app,
         std::slice::from_ref(plan),
         dev,
+        wait_for_host,
         overlay,
         track_scores,
         peer_display,
@@ -297,11 +360,13 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
             match entry.child.try_wait() {
                 Ok(Some(status)) => {
                     changed = true;
+                    log::info!("{} exited with code {:?}", entry.role.label(), status.code());
                     finish_slot(&mut inner.state, entry.role, status.code());
                 }
                 Ok(None) => still.push(entry),
-                Err(_) => {
+                Err(err) => {
                     changed = true;
+                    log::warn!("{} status error: {err}", entry.role.label());
                     finish_slot(&mut inner.state, entry.role, None);
                 }
             }
@@ -312,6 +377,7 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
         if done && inner.state.status == "running" {
             inner.state.status = "finished".to_string();
             inner.state.message = Some("all instances exited".to_string());
+            log::info!("match finished: all instances exited");
             changed = true;
         }
 
@@ -380,6 +446,7 @@ pub fn stop(app: &AppHandle) -> Result<MatchState, String> {
     clear_running(&mut inner);
 
     if had_running {
+        log::info!("stopping match");
         inner.state.status = "finished".to_string();
         inner.state.message = Some("stopped by user".to_string());
         for slot in inner.state.instances.iter_mut() {

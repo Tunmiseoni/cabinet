@@ -35,7 +35,7 @@ import type {
   RomIndex,
   Tailnet,
 } from "@/lib/api";
-import { parityStatus } from "@/lib/api";
+import { parityStatus, probePort } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
 import { FlaskConical, Gamepad2, Play, Square, Trophy } from "lucide-react";
 
@@ -69,6 +69,7 @@ interface LaunchCardProps {
     peerIp: string,
     role: MatchRole,
     dev: boolean,
+    force: boolean,
   ) => Promise<void>;
   onLaunchDevPair: (rom: string) => Promise<void>;
   onStop: () => Promise<void>;
@@ -96,6 +97,7 @@ export function LaunchCard({
   const capabilities = provider?.capabilities;
   const spectate = capabilities?.spectate ?? false;
   const devPair = capabilities?.devPair ?? false;
+  const developerMode = config?.developerMode ?? false;
 
   const rttWarnMs = config?.rttWarnMs ?? 150;
   const onlinePeers = useMemo(
@@ -111,6 +113,10 @@ export function LaunchCard({
   useEffect(() => {
     if (!spectate && role === "spectator") setRole("p1");
   }, [spectate, role]);
+
+  useEffect(() => {
+    if (!developerMode && dev) setDev(false);
+  }, [developerMode, dev]);
 
   useEffect(() => {
     if (!rom || provider?.kind !== "retroarch") {
@@ -155,16 +161,32 @@ export function LaunchCard({
 
   async function beginLaunch() {
     const found = collectWarnings();
+    if (
+      provider?.kind === "retroarch" &&
+      !dev &&
+      (role === "p2" || role === "spectator") &&
+      peerIp !== ""
+    ) {
+      const port = config?.retroarchPort ?? 55435;
+      const status = await probePort(peerIp, port);
+      if (!status.reachable) {
+        found.push(
+          `host not reachable on ${peerIp}:${port}${
+            status.error ? ` (${status.error})` : ""
+          } — start the host first, confirm the peer IP, and allow inbound TCP ${port} on the host`,
+        );
+      }
+    }
     if (found.length > 0) {
       setWarnings(found);
       return;
     }
-    await onLaunch(rom, peerIp, role, dev);
+    await onLaunch(rom, peerIp, role, dev, false);
   }
 
   async function confirmLaunch() {
     setWarnings(null);
-    await onLaunch(rom, peerIp, role, dev);
+    await onLaunch(rom, peerIp, role, dev, true);
   }
 
   const parityBlocked = parity !== null && !parity.ok;
@@ -251,19 +273,21 @@ export function LaunchCard({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-2">
-            <Label>Developer mode</Label>
-            <label className="flex h-9 items-center gap-2 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                className="size-4 accent-primary"
-                checked={dev}
-                disabled={running}
-                onChange={(event) => setDev(event.target.checked)}
-              />
-              Loopback (127.0.0.1), ignore peer
-            </label>
-          </div>
+          {developerMode && (
+            <div className="grid gap-2">
+              <Label>Developer mode</Label>
+              <label className="flex h-9 items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-primary"
+                  checked={dev}
+                  disabled={running}
+                  onChange={(event) => setDev(event.target.checked)}
+                />
+                Loopback (127.0.0.1), ignore peer
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -278,15 +302,17 @@ export function LaunchCard({
                 <Play className="size-4" />
                 Launch
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => void onLaunchDevPair(rom)}
-                disabled={rom === "" || busy || !devPair}
-                title={devPair ? undefined : "This provider has no dev pair"}
-              >
-                <FlaskConical className="size-4" />
-                Dev pair
-              </Button>
+              {developerMode && (
+                <Button
+                  variant="outline"
+                  onClick={() => void onLaunchDevPair(rom)}
+                  disabled={rom === "" || busy || !devPair}
+                  title={devPair ? undefined : "This provider has no dev pair"}
+                >
+                  <FlaskConical className="size-4" />
+                  Dev pair
+                </Button>
+              )}
             </>
           )}
           {match && match.status !== "idle" && (
@@ -335,7 +361,8 @@ export function LaunchCard({
           <DialogHeader>
             <DialogTitle>Connection warning</DialogTitle>
             <DialogDescription>
-              The selected peer may not give a good match. Launch anyway?
+              The selected peer may be unreachable, or may not give a good match.
+              Launch anyway?
             </DialogDescription>
           </DialogHeader>
           <ul className="list-disc space-y-1 pl-5 text-sm">

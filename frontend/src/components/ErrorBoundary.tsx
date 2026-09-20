@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { logFrontend } from "@/lib/api";
 
 interface Props {
   children: ReactNode;
@@ -17,6 +18,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("The Cabinet UI error:", error, info.componentStack);
+    void logFrontend("error", error.message, info.componentStack ?? undefined);
   }
 
   render() {

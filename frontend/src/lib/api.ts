@@ -20,6 +20,8 @@ export interface Config {
   retroarchCore: string | null;
   retroarchPort: number;
   retroarchNickname: string | null;
+  verboseLogging: boolean;
+  developerMode: boolean;
 }
 
 export interface Peer {
@@ -223,6 +225,20 @@ export interface LaunchRequest {
   peerIp: string;
   role: MatchRole;
   dev: boolean;
+  force?: boolean;
+}
+
+export interface PortProbe {
+  ip: string;
+  port: number;
+  reachable: boolean;
+  latencyMs: number | null;
+  error: string | null;
+}
+
+export interface DiagnosticsResult {
+  path: string;
+  logDir: string;
 }
 
 export type CabinetPermission = "granted" | "denied" | "notRequired";
@@ -332,3 +348,19 @@ export const cabinetRelease = (windowId: number) =>
 
 export const cabinetRequestPermission = () =>
   invoke<boolean>("cabinet_request_permission");
+
+export const probePort = (ip: string, port: number, timeoutMs?: number) =>
+  invoke<PortProbe>("probe_port", { ip, port, timeoutMs });
+
+export const logDir = () => invoke<string>("log_dir");
+
+export const openLogsDir = () => invoke<string>("open_logs_dir");
+
+export const collectDiagnostics = () =>
+  invoke<DiagnosticsResult>("collect_diagnostics");
+
+export const logFrontend = (
+  level: "error" | "warn" | "info" | "debug",
+  message: string,
+  context?: string,
+) => invoke<void>("log_frontend", { level, message, context });

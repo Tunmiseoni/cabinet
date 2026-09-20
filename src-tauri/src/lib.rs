@@ -3,7 +3,9 @@ mod config;
 mod control;
 mod discovery;
 mod launcher;
+mod logging;
 mod player;
+mod probe;
 mod process;
 mod provider;
 mod results;
@@ -46,12 +48,42 @@ fn apply_linux_webkit_workarounds() {
     }
 }
 
+fn verbose_logging_requested(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    let Ok(dir) = app.path().app_config_dir() else {
+        return false;
+    };
+    if config::Config::load(&config::config_path(dir)).verbose_logging {
+        return true;
+    }
+    std::env::var("RUST_LOG").is_ok_and(|value| {
+        let value = value.to_ascii_lowercase();
+        value.contains("debug") || value.contains("trace")
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
     apply_linux_webkit_workarounds();
 
+    let log_plugin = tauri_plugin_log::Builder::new()
+        .level(log::LevelFilter::Debug)
+        .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+        .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout))
+        .target(tauri_plugin_log::Target::new(
+            tauri_plugin_log::TargetKind::LogDir {
+                file_name: Some(logging::APP_LOG_FILE.to_string()),
+            },
+        ))
+        .max_file_size(logging::MAX_LOG_BYTES)
+        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(
+            logging::KEEP_LOG_FILES,
+        ))
+        .build();
+
     tauri::Builder::default()
+        .plugin(log_plugin)
         .plugin(tauri_plugin_opener::init())
         .manage(session::Session::default())
         .manage(service::RoomService::default())
@@ -61,6 +93,24 @@ pub fn run() {
             let dir = app.path().app_config_dir()?;
             migrate_legacy_config_dir(&dir);
             app.manage(scores::ScoreBoard::load(dir.join("scores.json")));
+
+            let verbose = verbose_logging_requested(app.handle());
+            log::set_max_level(if verbose {
+                log::LevelFilter::Debug
+            } else {
+                log::LevelFilter::Info
+            });
+            log::info!(
+                "the-cabinet {} starting ({} {}) verbose={}",
+                env!("CARGO_PKG_VERSION"),
+                std::env::consts::OS,
+                std::env::consts::ARCH,
+                verbose
+            );
+            match logging::app_log_dir(app.handle()) {
+                Ok(dir) => log::info!("log dir: {}", dir.display()),
+                Err(err) => log::warn!("{err}"),
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -93,6 +143,11 @@ pub fn run() {
             commands::cabinet_place,
             commands::cabinet_release,
             commands::cabinet_request_permission,
+            commands::probe_port,
+            commands::log_dir,
+            commands::open_logs_dir,
+            commands::collect_diagnostics,
+            commands::log_frontend,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
