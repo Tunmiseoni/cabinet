@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -51,11 +50,9 @@ import {
   SCORES_EVENT,
 } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
+import { useAsyncTask, usePolling, useTauriEvent } from "@/lib/hooks";
+import { sameJson } from "@/lib/utils";
 import { AlertTriangle, RefreshCw, Settings, Wifi } from "lucide-react";
-
-function sameJson(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
 
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -64,15 +61,12 @@ function App() {
   const [health, setHealth] = useState<Record<string, PeerHealth>>({});
   const [launcher, setLauncher] = useState<ProviderInfo | null>(null);
   const [overlay, setOverlay] = useState<OverlayStatus | null>(null);
-  const [overlayBusy, setOverlayBusy] = useState(false);
   const [scores, setScores] = useState<ScoreSnapshot | null>(null);
   const [rooms, setRooms] = useState<DiscoveredRoom[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [room, setRoom] = useState<RoomState | null>(null);
   const [roomSecretValue, setRoomSecretValue] = useState<string | null>(null);
-  const [roomBusy, setRoomBusy] = useState(false);
   const [match, setMatch] = useState<MatchState | null>(null);
-  const [launchBusy, setLaunchBusy] = useState(false);
   const [peersLoading, setPeersLoading] = useState(true);
   const [romsLoading, setRomsLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(false);
@@ -81,6 +75,11 @@ function App() {
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showLobby, setShowLobby] = useState(false);
+
+  const launchAction = useAsyncTask(setAppError);
+  const overlayAction = useAsyncTask(setAppError);
+  const roomAction = useAsyncTask(setAppError);
+  const settingsAction = useAsyncTask(setAppError);
 
   const running = match?.status === "running";
   const cabinetActive = Boolean(config?.cabinetMode) && running && !showLobby;
@@ -144,17 +143,10 @@ function App() {
     }
   }, []);
 
-  const handleEnableOverlay = useCallback(async () => {
-    setOverlayBusy(true);
-    try {
+  const handleEnableOverlay = () =>
+    overlayAction.run(async () => {
       setOverlay(await enableOverlay());
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setOverlayBusy(false);
-    }
-  }, []);
+    });
 
   const refreshScores = useCallback(async () => {
     try {
@@ -204,191 +196,99 @@ function App() {
     refreshRooms,
   ]);
 
-  useEffect(() => {
-    const unlisten = listen<MatchState>(MATCH_EVENT, (event) =>
-      setMatch(event.payload),
-    );
-    return () => {
-      unlisten.then((dispose) => dispose());
-    };
-  }, []);
+  useTauriEvent<MatchState>(MATCH_EVENT, setMatch);
 
-  useEffect(() => {
-    const unlisten = listen<ScoreSnapshot>(SCORES_EVENT, (event) =>
-      setScores(event.payload),
-    );
-    return () => {
-      unlisten.then((dispose) => dispose());
-    };
-  }, []);
+  useTauriEvent<ScoreSnapshot>(SCORES_EVENT, setScores);
 
-  useEffect(() => {
-    const unlisten = listen<RoomState | null>(ROOM_EVENT, (event) => {
-      setRoom(event.payload);
-      if (event.payload) {
-        roomSecret()
-          .then(setRoomSecretValue)
-          .catch(() => undefined);
-      } else {
-        setRoomSecretValue(null);
-      }
-    });
-    return () => {
-      unlisten.then((dispose) => dispose());
-    };
-  }, []);
+  useTauriEvent<RoomState | null>(ROOM_EVENT, (next) => {
+    setRoom(next);
+    if (next) {
+      roomSecret()
+        .then(setRoomSecretValue)
+        .catch(() => undefined);
+    } else {
+      setRoomSecretValue(null);
+    }
+  });
 
-  useEffect(() => {
-    const seconds = config?.pollIntervalSecs ?? 10;
-    const timer = setInterval(() => {
-      refreshPeers(true);
-      refreshRooms(true);
-    }, Math.max(2, seconds) * 1000);
-    return () => clearInterval(timer);
-  }, [config?.pollIntervalSecs, refreshPeers, refreshRooms]);
+  const pollSeconds = Math.max(2, config?.pollIntervalSecs ?? 10);
+  usePolling(() => {
+    refreshPeers(true);
+    refreshRooms(true);
+  }, pollSeconds * 1000);
 
-  async function handleSaveConfig(next: Config) {
-    try {
+  const handleSaveConfig = (next: Config) =>
+    settingsAction.run(async () => {
       setConfig(await saveConfig(next));
       await refreshPeers();
       await refreshRoms();
       await refreshLauncher();
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    }
-  }
+    });
 
-  async function handleLaunch(
+  const handleLaunch = (
     rom: string,
     peerIp: string,
     role: MatchRole,
     dev: boolean,
     force: boolean,
-  ) {
-    setLaunchBusy(true);
-    try {
+  ) =>
+    launchAction.run(async () => {
       setMatch(await launchMatch({ rom, peerIp, role, dev, force }));
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setLaunchBusy(false);
-    }
-  }
+    });
 
-  async function handleStop() {
-    setLaunchBusy(true);
-    try {
+  const handleStop = () =>
+    launchAction.run(async () => {
       setMatch(await stopMatch());
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setLaunchBusy(false);
-    }
-  }
+    });
 
-  async function handleLaunchDevPair(rom: string) {
-    setLaunchBusy(true);
-    try {
+  const handleLaunchDevPair = (rom: string) =>
+    launchAction.run(async () => {
       setMatch(await launchDevPair(rom));
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setLaunchBusy(false);
-    }
-  }
+    });
 
-  async function handleResetScores() {
-    try {
+  const handleResetScores = () =>
+    settingsAction.run(async () => {
       setScores(await resetScores());
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    }
-  }
+    });
 
-  async function handleHostRoom(rom: string, secret: string | null) {
-    setRoomBusy(true);
-    try {
-      const state = await hostRoom(rom, secret);
-      setRoom(state);
+  const handleHostRoom = (rom: string, secret: string | null) =>
+    roomAction.run(async () => {
+      setRoom(await hostRoom(rom, secret));
       setRoomSecretValue(await roomSecret());
       await refreshRooms();
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setRoomBusy(false);
-    }
-  }
+    });
 
-  async function handleJoinRoom(target: DiscoveredRoom, secret: string | null) {
-    setRoomBusy(true);
-    try {
+  const handleJoinRoom = (target: DiscoveredRoom, secret: string | null) =>
+    roomAction.run(async () => {
       setRoom(await joinRoom(target.ip, target.roomId, secret));
       setRoomSecretValue(null);
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setRoomBusy(false);
-    }
-  }
+    });
 
-  async function handleLeaveRoom() {
-    setRoomBusy(true);
-    try {
+  const handleLeaveRoom = () =>
+    roomAction.run(async () => {
       await leaveRoom();
       setRoom(null);
       setRoomSecretValue(null);
       await refreshRooms();
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setRoomBusy(false);
-    }
-  }
+    });
 
-  async function handleRoomEnqueue() {
-    setRoomBusy(true);
-    try {
+  const handleRoomEnqueue = () =>
+    roomAction.run(async () => {
       await roomEnqueue();
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setRoomBusy(false);
-    }
-  }
+    });
 
-  async function handleRoomLeaveQueue() {
-    setRoomBusy(true);
-    try {
+  const handleRoomLeaveQueue = () =>
+    roomAction.run(async () => {
       await roomLeaveQueue();
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setRoomBusy(false);
-    }
-  }
+    });
 
-  async function handleReportRoomResult(won: boolean) {
-    if (!room?.currentMatch) return;
-    setRoomBusy(true);
-    try {
-      await reportRoomResult(room.currentMatch.matchId, won);
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    } finally {
-      setRoomBusy(false);
-    }
-  }
+  const handleReportRoomResult = async (won: boolean) => {
+    const matchId = room?.currentMatch?.matchId;
+    if (!matchId) return;
+    await roomAction.run(async () => {
+      await reportRoomResult(matchId, won);
+    });
+  };
 
   const warnings = (tailnet?.peers ?? [])
     .filter((peer) => peer.online)
@@ -486,7 +386,7 @@ function App() {
           romIndex={romIndex}
           provider={launcher}
           match={match}
-          busy={launchBusy}
+          busy={launchAction.busy}
           onLaunch={handleLaunch}
           onLaunchDevPair={handleLaunchDevPair}
           onStop={handleStop}
@@ -509,7 +409,7 @@ function App() {
             room={room}
             selfNodeId={tailnet?.selfPeer?.nodeId ?? null}
             secret={roomSecretValue}
-            busy={roomBusy}
+            busy={roomAction.busy}
             onEnqueue={handleRoomEnqueue}
             onLeaveQueue={handleRoomLeaveQueue}
             onLeave={handleLeaveRoom}
@@ -534,7 +434,7 @@ function App() {
           tailnet={tailnet}
           overlay={overlay}
           onEnableOverlay={handleEnableOverlay}
-          enablingOverlay={overlayBusy}
+          enablingOverlay={overlayAction.busy}
         />
 
         <SettingsDialog
