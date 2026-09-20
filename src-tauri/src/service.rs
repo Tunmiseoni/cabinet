@@ -7,6 +7,7 @@ use crate::results;
 use crate::room::{CurrentMatch, LedgerEntry, Phase, RoomState};
 use crate::scores::{Outcome as ScoreOutcome, ScoreCounter};
 use crate::session;
+use crate::sync::MutexExt;
 use crate::tailscale;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -54,16 +55,9 @@ pub struct RoomService {
     inner: Mutex<RoomInner>,
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 fn random_secret() -> String {
     const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
-    let mut seed = now_ms()
+    let mut seed = crate::time::now_ms()
         ^ ((std::process::id() as u64) << 32)
         ^ (SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -102,7 +96,8 @@ fn resolve_self_player(app: &AppHandle) -> Result<Player, String> {
     let cfg = Config::load(&commands::config_file(app)?);
     let binary = tailscale::resolve_binary(&cfg)?;
     let tailnet = tailscale::status(&binary)?;
-    player::self_player(&cfg, &tailnet).ok_or_else(|| "could not determine this machine's tailnet identity".to_string())
+    player::self_player(&cfg, &tailnet)
+        .ok_or_else(|| "could not determine this machine's tailnet identity".to_string())
 }
 
 fn ledger_path(app: &AppHandle) -> Option<PathBuf> {
@@ -136,16 +131,32 @@ fn launch_room_match(
     side: u8,
 ) -> Result<PathBuf, String> {
     let cfg = Config::load(&commands::config_file(app)?);
-    let launcher = commands::resolve_launcher(&cfg, false)?;
+    let launcher = crate::provider::resolve_launcher(&cfg, false)?;
     let config = crate::launcher::MatchConfig::new(rom.to_string(), peer_ip.to_string(), side)?;
     let spec = launcher.spec(&config)?;
     let overlay_dir = results::overlay_dir(&spec.cwd);
     let plan = session::Plan::from_fightcade(spec, config);
-    session::launch(app, &plan, false, false, true, false, peer_ip.to_string())?;
+    session::launch(
+        app,
+        &plan,
+        session::LaunchOptions {
+            dev: false,
+            wait_for_host: false,
+            overlay: true,
+            track_scores: false,
+            peer_display: peer_ip.to_string(),
+        },
+    )?;
     Ok(overlay_dir)
 }
 
-fn reconcile(app: &AppHandle, state: &RoomState, rom: &str, self_player: &Player, runtime: &MatchRuntime) {
+fn reconcile(
+    app: &AppHandle,
+    state: &RoomState,
+    rom: &str,
+    self_player: &Player,
+    runtime: &MatchRuntime,
+) {
     let self_id = self_player.node_id.as_str();
     let desired = state
         .current_match
@@ -153,25 +164,33 @@ fn reconcile(app: &AppHandle, state: &RoomState, rom: &str, self_player: &Player
         .filter(|current| current.names(self_id))
         .map(|current: &CurrentMatch| {
             if current.p1.node_id == self_id {
-                (current.match_id.clone(), current.p1.side, current.p2.ip.clone())
+                (
+                    current.match_id.clone(),
+                    current.p1.side,
+                    current.p2.ip.clone(),
+                )
             } else {
-                (current.match_id.clone(), current.p2.side, current.p1.ip.clone())
+                (
+                    current.match_id.clone(),
+                    current.p2.side,
+                    current.p1.ip.clone(),
+                )
             }
         });
 
-    let mut announced = runtime.announced.lock().unwrap();
+    let mut announced = runtime.announced.lock_or_recover();
     match desired {
         Some((match_id, side, peer_ip)) => {
             if announced.as_deref() != Some(match_id.as_str()) {
                 match launch_room_match(app, rom, &peer_ip, side) {
                     Ok(overlay_dir) => {
-                        *runtime.overlay_dir.lock().unwrap() = Some(overlay_dir);
-                        *runtime.counter.lock().unwrap() = Some(ScoreCounter::new(side));
+                        *runtime.overlay_dir.lock_or_recover() = Some(overlay_dir);
+                        *runtime.counter.lock_or_recover() = Some(ScoreCounter::new(side));
                     }
                     Err(err) => {
-                        eprintln!("room: failed to launch match: {err}");
-                        *runtime.overlay_dir.lock().unwrap() = None;
-                        *runtime.counter.lock().unwrap() = None;
+                        log::warn!("room: failed to launch match: {err}");
+                        *runtime.overlay_dir.lock_or_recover() = None;
+                        *runtime.counter.lock_or_recover() = None;
                     }
                 }
                 *announced = Some(match_id);
@@ -181,26 +200,26 @@ fn reconcile(app: &AppHandle, state: &RoomState, rom: &str, self_player: &Player
             if announced.is_some() {
                 let _ = session::stop(app);
                 *announced = None;
-                *runtime.overlay_dir.lock().unwrap() = None;
-                *runtime.counter.lock().unwrap() = None;
+                *runtime.overlay_dir.lock_or_recover() = None;
+                *runtime.counter.lock_or_recover() = None;
             }
         }
     }
 }
 
 fn auto_report(runtime: &MatchRuntime, client: &Mutex<ControlClient>) {
-    let match_id = match runtime.announced.lock().unwrap().clone() {
+    let match_id = match runtime.announced.lock_or_recover().clone() {
         Some(match_id) => match_id,
         None => return,
     };
-    let overlay_dir = match runtime.overlay_dir.lock().unwrap().clone() {
+    let overlay_dir = match runtime.overlay_dir.lock_or_recover().clone() {
         Some(dir) => dir,
         None => return,
     };
 
     let current = results::read(&overlay_dir);
     let outcomes = {
-        let mut counter = runtime.counter.lock().unwrap();
+        let mut counter = runtime.counter.lock_or_recover();
         match counter.as_mut() {
             Some(counter) => counter.observe(current.p1_score, current.p2_score),
             None => return,
@@ -213,7 +232,7 @@ fn auto_report(runtime: &MatchRuntime, client: &Mutex<ControlClient>) {
             ScoreOutcome::Loss => Outcome::Loss,
             ScoreOutcome::Draw => continue,
         };
-        let sent = client.lock().unwrap().send(&ClientMessage::Result {
+        let sent = client.lock_or_recover().send(&ClientMessage::Result {
             match_id: match_id.clone(),
             outcome: control_outcome,
             confidence: Confidence::Overlay,
@@ -230,15 +249,15 @@ impl RoomService {
     }
 
     pub fn state(&self) -> Option<RoomState> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock_or_recover();
         inner
             .active
             .as_ref()
-            .and_then(|active| active.client.lock().unwrap().state().clone().into())
+            .and_then(|active| active.client.lock_or_recover().state().clone().into())
     }
 
     pub fn secret(&self) -> Option<String> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock_or_recover();
         inner
             .active
             .as_ref()
@@ -284,7 +303,7 @@ impl RoomService {
 
         let generation = {
             let service = app.state::<RoomService>();
-            let mut inner = service.inner.lock().unwrap();
+            let mut inner = service.inner.lock_or_recover();
             inner.generation += 1;
             inner.generation
         };
@@ -292,7 +311,7 @@ impl RoomService {
         let state = client.state().clone();
         {
             let service = app.state::<RoomService>();
-            let mut inner = service.inner.lock().unwrap();
+            let mut inner = service.inner.lock_or_recover();
             inner.active = Some(ActiveRoom {
                 role: Role::Hosting,
                 self_player: self_player.clone(),
@@ -339,7 +358,7 @@ impl RoomService {
 
         let generation = {
             let service = app.state::<RoomService>();
-            let mut inner = service.inner.lock().unwrap();
+            let mut inner = service.inner.lock_or_recover();
             inner.generation += 1;
             inner.generation
         };
@@ -347,7 +366,7 @@ impl RoomService {
         let state = client.state().clone();
         {
             let service = app.state::<RoomService>();
-            let mut inner = service.inner.lock().unwrap();
+            let mut inner = service.inner.lock_or_recover();
             inner.active = Some(ActiveRoom {
                 role: Role::Joined,
                 self_player,
@@ -376,7 +395,7 @@ impl RoomService {
     fn teardown(app: &AppHandle) {
         let service = app.state::<RoomService>();
         let active = {
-            let mut inner = service.inner.lock().unwrap();
+            let mut inner = service.inner.lock_or_recover();
             inner.generation += 1;
             inner.active.take()
         };
@@ -394,14 +413,14 @@ impl RoomService {
     {
         let service = app.state::<RoomService>();
         let client = {
-            let inner = service.inner.lock().unwrap();
+            let inner = service.inner.lock_or_recover();
             inner
                 .active
                 .as_ref()
                 .map(|active| Arc::clone(&active.client))
         };
         let client = client.ok_or_else(|| "not in a room".to_string())?;
-        let mut guard = client.lock().unwrap();
+        let mut guard = client.lock_or_recover();
         action(&mut guard)
     }
 
@@ -439,7 +458,7 @@ impl RoomService {
 
             let (client, rom, self_player, advertiser, runtime, role, ledger, persisted) = {
                 let service = app.state::<RoomService>();
-                let inner = service.inner.lock().unwrap();
+                let inner = service.inner.lock_or_recover();
                 match &inner.active {
                     Some(active) if active.generation == generation => (
                         Arc::clone(&active.client),
@@ -455,10 +474,7 @@ impl RoomService {
                 }
             };
 
-            let polled = client
-                .lock()
-                .unwrap()
-                .poll(Duration::from_millis(500));
+            let polled = client.lock().unwrap().poll(Duration::from_millis(500));
 
             match polled {
                 Ok(Some(state)) => {
@@ -467,7 +483,7 @@ impl RoomService {
                             advertiser.set(Some(advert_for(&state, true)));
                         }
                         if let Some(path) = &ledger {
-                            let mut revision = persisted.lock().unwrap();
+                            let mut revision = persisted.lock_or_recover();
                             if state.revision != *revision {
                                 save_ledger(path, &state.ledger);
                                 *revision = state.revision;
@@ -479,7 +495,7 @@ impl RoomService {
                     Self::emit_state(&app, Some(&state));
                 }
                 Ok(None) => {}
-                Err(err) => eprintln!("room: control channel error: {err}"),
+                Err(err) => log::warn!("room: control channel error: {err}"),
             }
         });
     }
@@ -501,10 +517,8 @@ mod tests {
 
     #[test]
     fn ledger_round_trips_through_a_file() {
-        let path = std::env::temp_dir().join(format!(
-            "cabinet-room-ledger-{}.json",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("cabinet-room-ledger-{}.json", std::process::id()));
 
         let mut ledger = BTreeMap::new();
         ledger.insert("n-a".to_string(), entry("Tunmise", 3, 1));

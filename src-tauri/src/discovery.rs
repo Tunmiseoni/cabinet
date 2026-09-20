@@ -4,6 +4,8 @@ use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::sync::MutexExt;
+
 pub const MAGIC: &str = "cabinet/1";
 pub const KIND_PROBE: &str = "probe";
 pub const KIND_ROOM: &str = "room";
@@ -64,7 +66,10 @@ pub fn probe(ip: &str, port: u16, timeout: Duration) -> Vec<RoomAdvert> {
         Ok(socket) => socket,
         Err(_) => return Vec::new(),
     };
-    if socket.send_to(PROBE_DATAGRAM.as_bytes(), (ip, port)).is_err() {
+    if socket
+        .send_to(PROBE_DATAGRAM.as_bytes(), (ip, port))
+        .is_err()
+    {
         return Vec::new();
     }
 
@@ -137,11 +142,11 @@ impl Advertiser {
     }
 
     pub fn set(&self, advert: Option<RoomAdvert>) {
-        *self.state.lock().unwrap() = advert;
+        *self.state.lock_or_recover() = advert;
     }
 
     pub fn snapshot(&self) -> Option<RoomAdvert> {
-        self.state.lock().unwrap().clone()
+        self.state.lock_or_recover().clone()
     }
 
     pub fn serve(self: Arc<Self>) {
@@ -199,10 +204,7 @@ mod tests {
     fn ignores_wrong_magic_kind_and_garbage() {
         assert_eq!(parse_datagram(""), None);
         assert_eq!(parse_datagram("not json"), None);
-        assert_eq!(
-            parse_datagram(r#"{"magic":"other","kind":"probe"}"#),
-            None
-        );
+        assert_eq!(parse_datagram(r#"{"magic":"other","kind":"probe"}"#), None);
         assert_eq!(
             parse_datagram(r#"{"magic":"cabinet/1","kind":"wat"}"#),
             None
@@ -246,7 +248,10 @@ mod tests {
         let advertiser = Advertiser::bind(0).expect("bind ephemeral").spawn();
         let port = advertiser.local_addr().unwrap().port();
         advertiser.set(Some(advert()));
-        assert_eq!(probe("127.0.0.1", port, Duration::from_millis(500)).len(), 1);
+        assert_eq!(
+            probe("127.0.0.1", port, Duration::from_millis(500)).len(),
+            1
+        );
 
         advertiser.set(None);
         assert!(probe("127.0.0.1", port, Duration::from_millis(150)).is_empty());

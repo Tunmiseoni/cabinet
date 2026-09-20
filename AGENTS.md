@@ -42,7 +42,7 @@ State what you intend to do, why, and how to undo it, then wait for confirmation
 
 ## Repository layout
 
-- `docs/` — investigation and design. `01`–`03` are the historical troubleshooting record; `04-design.md` is the current spec.
+- `docs/` — investigation and design. `01`–`03` are the historical troubleshooting record; `04-design.md` is the current spec; `08-cleanup.md` is the cleanup backlog (applied pass + deferred refactors).
 - `frontend/` — Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias `@/*` -> `frontend/src/*`).
 - `src-tauri/` — Rust backend (`config`, `tailscale`, `roms`, `launcher`, `session`, `commands`).
 - `scripts/` — helper scripts (`dev.sh`, `build.sh`, `test.sh`, `clean.sh`, `setup-linux.sh`, `uninstall-linux.sh`, `diagnose-linux.sh`, `tauri-build.sh`, `patch-appimage.sh`) plus the reference per-OS launchers (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`, `fcade-lan-windows-firewall.bat`).
@@ -65,6 +65,9 @@ State what you intend to do, why, and how to undo it, then wait for confirmation
 - Prefer editing existing docs over creating new ones, except where `04-design.md` is the designated spec.
 - Do not add comments to code unless asked.
 - Match the existing shell-script style and the docs' use of tables.
+- Log through the `log` crate (`log::info!`/`warn!`/`error!`/`debug!`), which `tauri-plugin-log` routes to `app_log_dir`; do not use `eprintln!`/`println!` outside `#[cfg(test)]`.
+- Lock mutexes with `sync::MutexExt::lock_or_recover` (recovers from a poisoned lock) rather than `.lock().unwrap()`.
+- Shared magic values (timeouts, intervals) live in `constants.rs`; time helpers in `time.rs`.
 
 ## Environment setup
 

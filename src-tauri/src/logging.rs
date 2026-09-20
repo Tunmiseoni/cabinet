@@ -27,7 +27,7 @@ pub fn sessions_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 pub fn create_session_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = sessions_dir(app)?.join(utc_stamp());
+    let dir = sessions_dir(app)?.join(crate::time::utc_stamp());
     std::fs::create_dir_all(&dir)
         .map_err(|err| format!("cannot create {}: {err}", dir.display()))?;
     Ok(dir)
@@ -37,7 +37,10 @@ pub fn emulator_log_path(session_dir: &std::path::Path, role: &str) -> PathBuf {
     session_dir.join(format!("emulator-{role}.log"))
 }
 
-pub fn open_emulator_log(session_dir: &std::path::Path, role: &str) -> Result<Arc<Mutex<File>>, String> {
+pub fn open_emulator_log(
+    session_dir: &std::path::Path,
+    role: &str,
+) -> Result<Arc<Mutex<File>>, String> {
     let path = emulator_log_path(session_dir, role);
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -66,52 +69,9 @@ where
     });
 }
 
-pub fn utc_stamp() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0);
-    let days = secs.div_euclid(86_400);
-    let rem = secs.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days);
-    format!(
-        "{year:04}{month:02}{day:02}-{:02}{:02}{:02}",
-        rem / 3600,
-        (rem % 3600) / 60,
-        rem % 60
-    )
-}
-
-fn civil_from_days(days: i64) -> (i64, u32, u32) {
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (if month <= 2 { year + 1 } else { year }, month, day)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn civil_from_days_matches_known_dates() {
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
-        assert_eq!(civil_from_days(19_723), (2024, 1, 1));
-        assert_eq!(civil_from_days(20_089), (2025, 1, 1));
-    }
-
-    #[test]
-    fn utc_stamp_has_the_expected_shape() {
-        let stamp = utc_stamp();
-        assert_eq!(stamp.len(), 15, "got {stamp}");
-        assert_eq!(&stamp[8..9], "-");
-    }
 
     #[test]
     fn emulator_log_path_is_per_role() {

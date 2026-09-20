@@ -136,6 +136,13 @@ fn resolve_core(configured: Option<&str>, candidates: &[PathBuf], managed: PathB
         .unwrap_or(managed)
 }
 
+pub fn managed_core_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir
+        .join("cores")
+        .join(platform_tag())
+        .join(core_file_name())
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParityStatus {
@@ -169,10 +176,7 @@ impl RetroArchProvider {
             .filter(|value| !value.trim().is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(DEFAULT_PROGRAM));
-        let managed_core = app_data_dir
-            .join("cores")
-            .join(platform_tag())
-            .join(core_file_name());
+        let managed_core = managed_core_path(app_data_dir);
         let home = home_dir();
         let candidates = core_candidates(&program, home.as_deref());
         let core = resolve_core(cfg.retroarch_core.as_deref(), &candidates, managed_core);
@@ -180,7 +184,11 @@ impl RetroArchProvider {
             .retroarch_nickname
             .as_deref()
             .filter(|value| !value.trim().is_empty())
-            .or_else(|| cfg.handle.as_deref().filter(|value| !value.trim().is_empty()))
+            .or_else(|| {
+                cfg.handle
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+            })
             .unwrap_or("player")
             .to_string();
         Self {
@@ -204,7 +212,8 @@ impl RetroArchProvider {
     }
 
     fn overrides_path(&self, role: Role) -> PathBuf {
-        self.overrides_dir.join(format!("netplay-{}.cfg", role.key()))
+        self.overrides_dir
+            .join(format!("netplay-{}.cfg", role.key()))
     }
 
     fn write_overrides(&self, role: Role) -> Result<PathBuf, String> {
@@ -229,14 +238,8 @@ impl RetroArchProvider {
         content.push_str("netplay_max_connections = \"8\"\n");
         content.push_str(&format!("netplay_ip_port = \"{}\"\n", self.port));
         content.push_str(&format!("netplay_nickname = \"{}\"\n", self.nickname));
-        content.push_str(&format!(
-            "savefile_directory = \"{}\"\n",
-            saves.display()
-        ));
-        content.push_str(&format!(
-            "savestate_directory = \"{}\"\n",
-            states.display()
-        ));
+        content.push_str(&format!("savefile_directory = \"{}\"\n", saves.display()));
+        content.push_str(&format!("savestate_directory = \"{}\"\n", states.display()));
         if role == Role::Spectator {
             content.push_str("netplay_start_as_spectator = \"true\"\n");
         }
@@ -674,6 +677,18 @@ mod tests {
     }
 
     #[test]
+    fn managed_core_path_uses_the_platform_tag_and_file_name() {
+        let path = managed_core_path(Path::new("/data/the-cabinet"));
+        assert_eq!(
+            path,
+            PathBuf::from("/data/the-cabinet")
+                .join("cores")
+                .join(platform_tag())
+                .join(core_file_name())
+        );
+    }
+
+    #[test]
     fn core_candidates_start_with_the_program_directory() {
         let program = Path::new("/opt/RetroArch/retroarch");
         let candidates = core_candidates(program, Some(Path::new("/home/player")));
@@ -701,6 +716,22 @@ mod tests {
             .any(|path| path.to_string_lossy().contains("RetroArch-Win64")));
     }
 
+    fn managed_core_on_this_machine() -> Option<PathBuf> {
+        let home = std::env::var_os("HOME").map(PathBuf::from)?;
+        let app_dir = if cfg!(target_os = "macos") {
+            home.join("Library/Application Support/com.the-cabinet.app")
+        } else if cfg!(target_os = "windows") {
+            PathBuf::from(std::env::var_os("APPDATA")?).join("com.the-cabinet.app")
+        } else {
+            std::env::var_os("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join(".local/share"))
+                .join("com.the-cabinet.app")
+        };
+        let core = managed_core_path(&app_dir);
+        core.is_file().then_some(core)
+    }
+
     #[test]
     #[ignore = "reads the app-managed frozen core and FightCade ROM on this machine"]
     fn live_managed_core_matches_the_frozen_set() {
@@ -713,18 +744,10 @@ mod tests {
             eprintln!("skipping: {} not present", rom.display());
             return;
         }
-        let Some(home) = std::env::var_os("HOME") else {
-            eprintln!("skipping: no HOME");
+        let Some(core) = managed_core_on_this_machine() else {
+            eprintln!("skipping: managed core not present on this machine");
             return;
         };
-        let core = PathBuf::from(home)
-            .join("Library/Application Support/com.the-cabinet.app/cores")
-            .join(platform_tag())
-            .join(core_file_name());
-        if !core.is_file() {
-            eprintln!("skipping: managed core not present at {}", core.display());
-            return;
-        }
         let scratch = Scratch::new("live-managed-parity");
         let cfg = Config {
             retroarch_core: Some(core.to_string_lossy().to_string()),
@@ -737,10 +760,7 @@ mod tests {
             .expect("retroarch has a parity gate");
         eprintln!(
             "core={} git={:?} rom={} detail={}",
-            status.core_path,
-            status.core_git,
-            status.rom_path,
-            status.detail
+            status.core_path, status.core_git, status.rom_path, status.detail
         );
         assert!(
             status.ok,

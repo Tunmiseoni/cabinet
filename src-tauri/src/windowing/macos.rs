@@ -1,10 +1,10 @@
 use super::{HostStatus, Permission, PlacementMode, Rect, WindowHost, WindowInfo};
 use accessibility_sys::{
-    kAXErrorSuccess, kAXPositionAttribute, kAXRaiseAction, kAXSizeAttribute, kAXTrustedCheckOptionPrompt,
-    kAXValueTypeCGPoint, kAXValueTypeCGSize, kAXWindowsAttribute, AXIsProcessTrusted,
-    AXIsProcessTrustedWithOptions, AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
-    AXUIElementPerformAction, AXUIElementRef, AXUIElementSetAttributeValue, AXValueCreate,
-    AXValueGetType, AXValueGetValue, AXValueRef,
+    kAXErrorSuccess, kAXPositionAttribute, kAXRaiseAction, kAXSizeAttribute,
+    kAXTrustedCheckOptionPrompt, kAXValueTypeCGPoint, kAXValueTypeCGSize, kAXWindowsAttribute,
+    AXIsProcessTrusted, AXIsProcessTrustedWithOptions, AXUIElementCopyAttributeValue,
+    AXUIElementCreateApplication, AXUIElementPerformAction, AXUIElementRef,
+    AXUIElementSetAttributeValue, AXValueCreate, AXValueGetType, AXValueGetValue, AXValueRef,
 };
 use core_foundation::array::{CFArray, CFArrayRef};
 use core_foundation::base::{CFRelease, CFType, CFTypeRef, TCFType};
@@ -63,7 +63,8 @@ impl WindowHost for MacosWindowHost {
                 PlacementMode::FrameFollow
             },
             detail: if trusted {
-                "Accessibility granted — the emulator window can be placed into the cabinet".to_string()
+                "Accessibility granted — the emulator window can be placed into the cabinet"
+                    .to_string()
             } else {
                 "Accessibility not granted — the game stays in its own window (grant access to host it here)"
                     .to_string()
@@ -335,7 +336,11 @@ unsafe fn ax_size(element: AXUIElementRef, attribute: &str) -> Option<CGSize> {
     }
 }
 
-unsafe fn ax_set_point(element: AXUIElementRef, attribute: &str, point: CGPoint) -> Result<(), String> {
+unsafe fn ax_set_point(
+    element: AXUIElementRef,
+    attribute: &str,
+    point: CGPoint,
+) -> Result<(), String> {
     let value = AXValueCreate(
         kAXValueTypeCGPoint,
         &point as *const CGPoint as *const c_void,
@@ -344,7 +349,8 @@ unsafe fn ax_set_point(element: AXUIElementRef, attribute: &str, point: CGPoint)
         return Err("AXValueCreate(point) failed".to_string());
     }
     let attribute = CFString::new(attribute);
-    let error = AXUIElementSetAttributeValue(element, attribute.as_concrete_TypeRef(), value as CFTypeRef);
+    let error =
+        AXUIElementSetAttributeValue(element, attribute.as_concrete_TypeRef(), value as CFTypeRef);
     CFRelease(value as CFTypeRef);
     if error == kAXErrorSuccess {
         Ok(())
@@ -353,13 +359,18 @@ unsafe fn ax_set_point(element: AXUIElementRef, attribute: &str, point: CGPoint)
     }
 }
 
-unsafe fn ax_set_size(element: AXUIElementRef, attribute: &str, size: CGSize) -> Result<(), String> {
+unsafe fn ax_set_size(
+    element: AXUIElementRef,
+    attribute: &str,
+    size: CGSize,
+) -> Result<(), String> {
     let value = AXValueCreate(kAXValueTypeCGSize, &size as *const CGSize as *const c_void);
     if value.is_null() {
         return Err("AXValueCreate(size) failed".to_string());
     }
     let attribute = CFString::new(attribute);
-    let error = AXUIElementSetAttributeValue(element, attribute.as_concrete_TypeRef(), value as CFTypeRef);
+    let error =
+        AXUIElementSetAttributeValue(element, attribute.as_concrete_TypeRef(), value as CFTypeRef);
     CFRelease(value as CFTypeRef);
     if error == kAXErrorSuccess {
         Ok(())
@@ -434,7 +445,10 @@ unsafe fn apply_position_and_size(
         ));
     };
     let Some(element) = match_ax_element(&windows, window) else {
-        return Err(format!("no Accessibility window matched {:?}", window.title));
+        return Err(format!(
+            "no Accessibility window matched {:?}",
+            window.title
+        ));
     };
     ax_set_point(
         element,
@@ -555,7 +569,10 @@ mod tests {
         std::thread::sleep(Duration::from_secs(8));
 
         let descendants = descendant_pids(&[child.id() as i32]);
-        eprintln!("windowing: spawned pid={} descendants={descendants:?}", child.id());
+        eprintln!(
+            "windowing: spawned pid={} descendants={descendants:?}",
+            child.id()
+        );
 
         let mut target: Option<WindowInfo> = None;
         for _ in 0..15 {
@@ -609,19 +626,21 @@ mod tests {
 
         let moved = after
             .map(|window| {
-                (window.bounds.x - 120.0).abs() < 40.0
-                    && (window.bounds.width - 720.0).abs() < 40.0
+                (window.bounds.x - 120.0).abs() < 40.0 && (window.bounds.width - 720.0).abs() < 40.0
             })
             .unwrap_or(false);
-        assert!(moved, "expected the emulator window to be moved and resized");
+        assert!(
+            moved,
+            "expected the emulator window to be moved and resized"
+        );
     }
 
     #[test]
     #[ignore = "launches native RetroArch and moves its window"]
     fn live_places_retroarch_window() {
         use crate::config::Config;
-        use crate::launcher::retroarch::RetroArchProvider;
         use crate::provider::{MatchRequest, Provider, Role};
+        use crate::retroarch::RetroArchProvider;
         use std::path::PathBuf;
         use std::time::Duration;
 
@@ -636,10 +655,8 @@ mod tests {
             return;
         }
 
-        let dir = std::env::temp_dir().join(format!(
-            "cabinet-retroarch-window-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("cabinet-retroarch-window-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let cfg = Config {
             retroarch_core: Some(core.to_string_lossy().to_string()),
@@ -698,7 +715,10 @@ mod tests {
             let _ = child.kill();
             let _ = child.wait();
             std::fs::remove_dir_all(&dir).ok();
-            eprintln!("windowing: no RetroArch window found for pid {}", child.id());
+            eprintln!(
+                "windowing: no RetroArch window found for pid {}",
+                child.id()
+            );
             return;
         };
 
@@ -728,10 +748,12 @@ mod tests {
 
         let moved = after
             .map(|window| {
-                (window.bounds.x - 120.0).abs() < 40.0
-                    && (window.bounds.width - 720.0).abs() < 40.0
+                (window.bounds.x - 120.0).abs() < 40.0 && (window.bounds.width - 720.0).abs() < 40.0
             })
             .unwrap_or(false);
-        assert!(moved, "expected the RetroArch window to be moved and resized");
+        assert!(
+            moved,
+            "expected the RetroArch window to be moved and resized"
+        );
     }
 }

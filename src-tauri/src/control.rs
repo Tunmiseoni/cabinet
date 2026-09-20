@@ -1,5 +1,6 @@
 use crate::player::Player;
 use crate::room::{RoomError, RoomState};
+use crate::sync::MutexExt;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -7,7 +8,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 pub const VERSION: u32 = 1;
 pub const DEFAULT_PORT: u16 = 47811;
@@ -58,16 +59,9 @@ pub enum ClientMessage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ServerMessage {
-    Welcome {
-        player_id: String,
-        state: RoomState,
-    },
-    State {
-        state: RoomState,
-    },
-    Error {
-        message: String,
-    },
+    Welcome { player_id: String, state: RoomState },
+    State { state: RoomState },
+    Error { message: String },
     Ping,
 }
 
@@ -79,13 +73,6 @@ pub fn encode_line<T: Serialize>(message: &T) -> std::io::Result<String> {
 
 pub fn decode_line<T: DeserializeOwned>(line: &str) -> Result<T, serde_json::Error> {
     serde_json::from_str(line.trim_end())
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 type ClientWriters = Mutex<HashMap<u64, Arc<Mutex<TcpStream>>>>;
@@ -116,7 +103,7 @@ impl ControlServer {
     }
 
     pub fn state(&self) -> RoomState {
-        self.room.lock().unwrap().clone()
+        self.room.lock_or_recover().clone()
     }
 
     pub fn spawn(self) -> Arc<Self> {
@@ -131,7 +118,7 @@ impl ControlServer {
             let server = Arc::clone(&self);
             std::thread::spawn(move || {
                 if let Err(err) = server.handle(stream) {
-                    eprintln!("control client error: {err}");
+                    log::warn!("control client error: {err}");
                 }
             });
         }
@@ -161,7 +148,7 @@ impl ControlServer {
                     Self::send_error(&writer, &format!("unsupported protocol version {v}"))?;
                     return Ok(());
                 }
-                let expected_room = self.room.lock().unwrap().room_id.clone();
+                let expected_room = self.room.lock_or_recover().room_id.clone();
                 if room_id != expected_room {
                     Self::send_error(&writer, &format!("unknown room {room_id}"))?;
                     return Ok(());
@@ -192,7 +179,7 @@ impl ControlServer {
         let player = Player::new(node_id.clone(), handle, String::new());
         let result = self.session(&mut reader, &writer, &player);
 
-        self.clients.lock().unwrap().remove(&client_id);
+        self.clients.lock_or_recover().remove(&client_id);
         result
     }
 
@@ -205,10 +192,14 @@ impl ControlServer {
         while let Some(message) = Self::read_client(reader)? {
             match message {
                 ClientMessage::Enqueue => {
-                    self.mutate(writer, |room| room.enqueue(player.clone(), now_ms()))?;
+                    self.mutate(writer, |room| {
+                        room.enqueue(player.clone(), crate::time::now_ms())
+                    })?;
                 }
                 ClientMessage::Leave => {
-                    self.mutate(writer, |room| room.leave(&player.node_id, now_ms()))?;
+                    self.mutate(writer, |room| {
+                        room.leave(&player.node_id, crate::time::now_ms())
+                    })?;
                 }
                 ClientMessage::Result {
                     match_id,
@@ -225,7 +216,7 @@ impl ControlServer {
                                 .map(|slot| slot.node_id.clone())
                                 .ok_or_else(|| RoomError::UnknownPlayer(player.node_id.clone()))?,
                         };
-                        room.report_result(&match_id, &winner, now_ms())
+                        room.report_result(&match_id, &winner, crate::time::now_ms())
                     })?;
                 }
                 ClientMessage::Pong => {}
@@ -240,7 +231,7 @@ impl ControlServer {
         F: FnOnce(&mut RoomState) -> Result<(), RoomError>,
     {
         let outcome = {
-            let mut room = self.room.lock().unwrap();
+            let mut room = self.room.lock_or_recover();
             action(&mut room)
         };
         match outcome {
@@ -252,7 +243,7 @@ impl ControlServer {
     fn broadcast(self: &Arc<Self>) -> std::io::Result<()> {
         let state = self.state();
         let message = ServerMessage::State { state };
-        let clients = self.clients.lock().unwrap();
+        let clients = self.clients.lock_or_recover();
         let mut dead = Vec::new();
         for (id, writer) in clients.iter() {
             if Self::write(writer, &message).is_err() {
@@ -261,7 +252,7 @@ impl ControlServer {
         }
         drop(clients);
         if !dead.is_empty() {
-            let mut clients = self.clients.lock().unwrap();
+            let mut clients = self.clients.lock_or_recover();
             for id in dead {
                 clients.remove(&id);
             }
@@ -282,15 +273,12 @@ impl ControlServer {
 
     fn write(writer: &Arc<Mutex<TcpStream>>, message: &ServerMessage) -> std::io::Result<()> {
         let line = encode_line(message)?;
-        let mut stream = writer.lock().unwrap();
+        let mut stream = writer.lock_or_recover();
         stream.write_all(line.as_bytes())?;
         stream.flush()
     }
 
-    fn send_error(
-        writer: &Arc<Mutex<TcpStream>>,
-        message: &str,
-    ) -> std::io::Result<()> {
+    fn send_error(writer: &Arc<Mutex<TcpStream>>, message: &str) -> std::io::Result<()> {
         Self::write(
             writer,
             &ServerMessage::Error {
@@ -346,9 +334,7 @@ impl ControlClient {
                 player_id,
                 state,
             }),
-            ServerMessage::Error { message } => {
-                Err(std::io::Error::other(message))
-            }
+            ServerMessage::Error { message } => Err(std::io::Error::other(message)),
             _ => Err(std::io::Error::other("unexpected greeting")),
         }
     }
@@ -367,10 +353,7 @@ impl ControlClient {
     }
 
     pub fn poll(&mut self, timeout: Duration) -> std::io::Result<Option<RoomState>> {
-        self.reader
-            .get_ref()
-            .set_read_timeout(Some(timeout))
-            .ok();
+        self.reader.get_ref().set_read_timeout(Some(timeout)).ok();
         let mut line = String::new();
         let read = self.reader.read_line(&mut line)?;
         if read == 0 {
@@ -416,7 +399,11 @@ mod tests {
             .spawn()
     }
 
-    fn connect(server: &ControlServer, node: &str, secret: Option<&str>) -> std::io::Result<ControlClient> {
+    fn connect(
+        server: &ControlServer,
+        node: &str,
+        secret: Option<&str>,
+    ) -> std::io::Result<ControlClient> {
         let port = server.local_addr().unwrap().port();
         let player = Player::new(node, format!("handle-{node}"), String::new());
         ControlClient::connect(

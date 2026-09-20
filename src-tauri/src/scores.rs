@@ -5,6 +5,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use crate::sync::MutexExt;
+
 pub const SCORES_EVENT: &str = "scores-changed";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,7 +148,7 @@ impl ScoreBoard {
         if opponent.is_empty() {
             return;
         }
-        let mut ledger = self.inner.lock().unwrap();
+        let mut ledger = self.inner.lock_or_recover();
         ledger
             .entries
             .entry(opponent.to_string())
@@ -156,11 +158,11 @@ impl ScoreBoard {
     }
 
     pub fn snapshot(&self) -> Snapshot {
-        self.inner.lock().unwrap().snapshot()
+        self.inner.lock_or_recover().snapshot()
     }
 
     pub fn reset(&self) -> Snapshot {
-        let mut ledger = self.inner.lock().unwrap();
+        let mut ledger = self.inner.lock_or_recover();
         *ledger = Ledger::default();
         let _ = ledger.save(&self.path);
         ledger.snapshot()
@@ -213,10 +215,7 @@ mod tests {
     use super::*;
 
     fn temp_path(tag: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "cabinet-scores-{}-{tag}.json",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("cabinet-scores-{}-{tag}.json", std::process::id()))
     }
 
     #[test]

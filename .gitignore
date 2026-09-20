@@ -32,6 +32,10 @@ linux-reports/
 the-cabinet-report.txt
 the-cabinet-report-shots/
 
+# Local scratch / captured diagnostic logs (tailnet IPs — never commit)
+misc/
+logs-*/
+
 # Never commit ROMs or emulator binaries
 *.zip
 *.exe

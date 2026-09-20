@@ -5,7 +5,6 @@ use std::path::PathBuf;
 pub mod linux;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub mod macos;
-pub mod retroarch;
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub mod windows;
 

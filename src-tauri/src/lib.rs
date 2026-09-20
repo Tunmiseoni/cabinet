@@ -1,6 +1,8 @@
 mod commands;
 mod config;
+mod constants;
 mod control;
+mod diagnostics;
 mod discovery;
 mod launcher;
 mod logging;
@@ -9,19 +11,25 @@ mod probe;
 mod process;
 mod provider;
 mod results;
-mod room;
+mod retroarch;
 mod roms;
+mod room;
 mod scores;
 mod service;
 mod session;
+mod sync;
 mod tailscale;
+mod time;
 mod windowing;
 
 const LEGACY_IDENTIFIER: &str = "com.cabinet.app";
 const MIGRATED_FILES: [&str; 3] = ["config.json", "scores.json", "room-ledger.json"];
 
 fn migrate_legacy_config_dir(current: &std::path::Path) {
-    let Some(legacy) = current.parent().map(|parent| parent.join(LEGACY_IDENTIFIER)) else {
+    let Some(legacy) = current
+        .parent()
+        .map(|parent| parent.join(LEGACY_IDENTIFIER))
+    else {
         return;
     };
     if !legacy.is_dir() {
@@ -35,7 +43,7 @@ fn migrate_legacy_config_dir(current: &std::path::Path) {
                 let _ = std::fs::create_dir_all(parent);
             }
             if let Err(err) = std::fs::copy(&src, &dst) {
-                eprintln!("failed to migrate {src:?}: {err}");
+                log::warn!("failed to migrate {src:?}: {err}");
             }
         }
     }
@@ -70,7 +78,9 @@ pub fn run() {
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Debug)
         .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
-        .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout))
+        .target(tauri_plugin_log::Target::new(
+            tauri_plugin_log::TargetKind::Stdout,
+        ))
         .target(tauri_plugin_log::Target::new(
             tauri_plugin_log::TargetKind::LogDir {
                 file_name: Some(logging::APP_LOG_FILE.to_string()),
@@ -144,10 +154,10 @@ pub fn run() {
             commands::cabinet_release,
             commands::cabinet_request_permission,
             commands::probe_port,
-            commands::log_dir,
-            commands::open_logs_dir,
-            commands::collect_diagnostics,
-            commands::log_frontend,
+            diagnostics::log_dir,
+            diagnostics::open_logs_dir,
+            diagnostics::collect_diagnostics,
+            diagnostics::log_frontend,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -158,10 +168,8 @@ mod tests {
     use super::*;
 
     fn scratch(tag: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
-        let root = std::env::temp_dir().join(format!(
-            "the-cabinet-migrate-{tag}-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("the-cabinet-migrate-{tag}-{}", std::process::id()));
         std::fs::remove_dir_all(&root).ok();
         let legacy = root.join(LEGACY_IDENTIFIER);
         let current = root.join("com.the-cabinet.app");

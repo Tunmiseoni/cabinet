@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::process;
+use crate::sync::MutexExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
@@ -140,10 +141,18 @@ pub fn resolve_binary(cfg: &Config) -> Result<PathBuf, String> {
     }
     if cfg!(target_os = "windows") {
         if let Ok(program_files) = std::env::var("ProgramFiles") {
-            candidates.push(PathBuf::from(program_files).join("Tailscale").join("tailscale.exe"));
+            candidates.push(
+                PathBuf::from(program_files)
+                    .join("Tailscale")
+                    .join("tailscale.exe"),
+            );
         }
         if let Ok(program_files) = std::env::var("ProgramFiles(x86)") {
-            candidates.push(PathBuf::from(program_files).join("Tailscale").join("tailscale.exe"));
+            candidates.push(
+                PathBuf::from(program_files)
+                    .join("Tailscale")
+                    .join("tailscale.exe"),
+            );
         }
     }
 
@@ -211,7 +220,7 @@ fn status_cache() -> &'static Mutex<Option<(PathBuf, Instant, Tailnet)>> {
 }
 
 pub fn status(binary: &PathBuf) -> Result<Tailnet, String> {
-    if let Some((cached_binary, at, tailnet)) = status_cache().lock().unwrap().as_ref() {
+    if let Some((cached_binary, at, tailnet)) = status_cache().lock_or_recover().as_ref() {
         if cached_binary == binary && at.elapsed() < STATUS_CACHE_TTL {
             return Ok(tailnet.clone());
         }
@@ -219,7 +228,7 @@ pub fn status(binary: &PathBuf) -> Result<Tailnet, String> {
 
     let raw = run(binary, &["status", "--json"])?;
     let tailnet = parse_status(&raw)?;
-    *status_cache().lock().unwrap() = Some((binary.clone(), Instant::now(), tailnet.clone()));
+    *status_cache().lock_or_recover() = Some((binary.clone(), Instant::now(), tailnet.clone()));
     Ok(tailnet)
 }
 
@@ -389,9 +398,7 @@ mod tests {
     #[test]
     fn leaves_cli_mode_unset_off_macos() {
         let command = cli_command(&PathBuf::from("/fake/tailscale"));
-        assert!(command
-            .get_envs()
-            .all(|(key, _)| key != "TAILSCALE_BE_CLI"));
+        assert!(command.get_envs().all(|(key, _)| key != "TAILSCALE_BE_CLI"));
     }
 
     #[test]

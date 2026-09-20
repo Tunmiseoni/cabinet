@@ -1,20 +1,21 @@
 use crate::config::{self, Config};
+use crate::constants;
 use crate::launcher::{LaunchSpec, MatchConfig};
 use crate::logging;
 use crate::probe;
 use crate::provider::Role;
 use crate::results::{self, MatchResult};
 use crate::scores::{ScoreBoard, ScoreCounter, SCORES_EVENT};
+use crate::sync::MutexExt;
 use crate::tailscale::{self, PeerHealth};
+use crate::time;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub const MATCH_EVENT: &str = "match-state-changed";
-const HEALTH_INTERVAL: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,13 +103,6 @@ pub struct Session {
     inner: Mutex<SessionInner>,
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 fn emit(app: &AppHandle, state: &MatchState) {
     app.emit(MATCH_EVENT, state).ok();
 }
@@ -149,28 +143,35 @@ fn clear_running(inner: &mut SessionInner) {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct LaunchOptions {
+    pub dev: bool,
+    pub wait_for_host: bool,
+    pub overlay: bool,
+    pub track_scores: bool,
+    pub peer_display: String,
+}
+
 pub fn launch_many(
     app: &AppHandle,
     plans: &[Plan],
-    dev: bool,
-    wait_for_host: bool,
-    overlay: bool,
-    track_scores: bool,
-    peer_display: String,
+    options: LaunchOptions,
 ) -> Result<MatchState, String> {
     if plans.is_empty() {
         return Err("nothing to launch".into());
     }
-    let overlay = overlay && !dev;
+    let overlay = options.overlay && !options.dev;
 
     let session = app.state::<Session>();
-    let mut inner = session.inner.lock().unwrap();
+    let mut inner = session.inner.lock_or_recover();
     clear_running(&mut inner);
     inner.generation += 1;
     let generation = inner.generation;
 
     let overlay_dir = if overlay {
-        plans.first().map(|plan| results::overlay_dir(&plan.spec.cwd))
+        plans
+            .first()
+            .map(|plan| results::overlay_dir(&plan.spec.cwd))
     } else {
         None
     };
@@ -193,7 +194,7 @@ pub fn launch_many(
     let mut instances = Vec::new();
 
     for plan in plans {
-        if wait_for_host && matches!(plan.role, Role::P2 | Role::Spectator) {
+        if options.wait_for_host && matches!(plan.role, Role::P2 | Role::Spectator) {
             if let Some(port) = plan.port {
                 log::info!(
                     "waiting for host {}:{} before starting {}",
@@ -201,7 +202,7 @@ pub fn launch_many(
                     port,
                     plan.role.label()
                 );
-                let ready = probe::wait_for_port(&plan.peer_ip, port, Duration::from_secs(20));
+                let ready = probe::wait_for_port(&plan.peer_ip, port, constants::HOST_WAIT_TIMEOUT);
                 log::info!("host {}:{} reachable={ready}", plan.peer_ip, port);
                 if !ready {
                     log::warn!(
@@ -251,9 +252,9 @@ pub fn launch_many(
     let state = MatchState {
         status: "running".to_string(),
         rom: plans.first().map(|plan| plan.rom.clone()),
-        peer_ip: Some(peer_display),
-        dev,
-        started_at_ms: Some(now_ms()),
+        peer_ip: Some(options.peer_display),
+        dev: options.dev,
+        started_at_ms: Some(time::now_ms()),
         instances,
         result: None,
         peer_health: None,
@@ -263,7 +264,7 @@ pub fn launch_many(
     inner.running = running;
     inner.overlay_dir = overlay_dir;
     inner.last_result = MatchResult::default();
-    if overlay && track_scores && plans[0].side.is_some() {
+    if overlay && options.track_scores && plans[0].side.is_some() {
         inner.score_counter = Some(ScoreCounter::new(plans[0].side.unwrap()));
         inner.score_opponent = Some(plans[0].peer_ip.clone());
     } else {
@@ -275,30 +276,14 @@ pub fn launch_many(
 
     emit(app, &state);
     spawn_monitor(app.clone(), generation);
-    if !dev && !plans[0].peer_ip.trim().is_empty() {
+    if !options.dev && !plans[0].peer_ip.trim().is_empty() {
         spawn_health(app.clone(), generation, plans[0].peer_ip.clone());
     }
     Ok(state)
 }
 
-pub fn launch(
-    app: &AppHandle,
-    plan: &Plan,
-    dev: bool,
-    wait_for_host: bool,
-    overlay: bool,
-    track_scores: bool,
-    peer_display: String,
-) -> Result<MatchState, String> {
-    launch_many(
-        app,
-        std::slice::from_ref(plan),
-        dev,
-        wait_for_host,
-        overlay,
-        track_scores,
-        peer_display,
-    )
+pub fn launch(app: &AppHandle, plan: &Plan, options: LaunchOptions) -> Result<MatchState, String> {
+    launch_many(app, std::slice::from_ref(plan), options)
 }
 
 fn spawn_health(app: AppHandle, generation: u64, ip: String) {
@@ -322,7 +307,7 @@ fn spawn_health(app: AppHandle, generation: u64, ip: String) {
             }
             let state = {
                 let session = app.state::<Session>();
-                let mut inner = session.inner.lock().unwrap();
+                let mut inner = session.inner.lock_or_recover();
                 if inner.generation != generation {
                     break;
                 }
@@ -330,23 +315,23 @@ fn spawn_health(app: AppHandle, generation: u64, ip: String) {
                 inner.state.clone()
             };
             emit(&app, &state);
-            std::thread::sleep(HEALTH_INTERVAL);
+            std::thread::sleep(constants::HEALTH_INTERVAL);
         }
     });
 }
 
 fn running(app: &AppHandle, generation: u64) -> bool {
     let session = app.state::<Session>();
-    let inner = session.inner.lock().unwrap();
+    let inner = session.inner.lock_or_recover();
     inner.generation == generation && !inner.running.is_empty()
 }
 
 fn spawn_monitor(app: AppHandle, generation: u64) {
     std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(300));
+        std::thread::sleep(constants::MONITOR_INTERVAL);
 
         let session = app.state::<Session>();
-        let mut inner = session.inner.lock().unwrap();
+        let mut inner = session.inner.lock_or_recover();
         if inner.generation != generation || inner.running.is_empty() {
             break;
         }
@@ -360,7 +345,11 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
             match entry.child.try_wait() {
                 Ok(Some(status)) => {
                     changed = true;
-                    log::info!("{} exited with code {:?}", entry.role.label(), status.code());
+                    log::info!(
+                        "{} exited with code {:?}",
+                        entry.role.label(),
+                        status.code()
+                    );
                     finish_slot(&mut inner.state, entry.role, status.code());
                 }
                 Ok(None) => still.push(entry),
@@ -408,7 +397,7 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
         if !outcomes.is_empty() {
             if let Some(opponent) = opponent {
                 let board = app.state::<ScoreBoard>();
-                let now = now_ms();
+                let now = time::now_ms();
                 for outcome in &outcomes {
                     board.record(&opponent, *outcome, now);
                 }
@@ -440,7 +429,7 @@ fn finish_slot(state: &mut MatchState, role: Role, code: Option<i32>) {
 
 pub fn stop(app: &AppHandle) -> Result<MatchState, String> {
     let session = app.state::<Session>();
-    let mut inner = session.inner.lock().unwrap();
+    let mut inner = session.inner.lock_or_recover();
     inner.generation += 1;
     let had_running = !inner.running.is_empty();
     clear_running(&mut inner);
@@ -467,5 +456,5 @@ pub fn stop(app: &AppHandle) -> Result<MatchState, String> {
 }
 
 pub fn status(app: &AppHandle) -> MatchState {
-    app.state::<Session>().inner.lock().unwrap().state.clone()
+    app.state::<Session>().inner.lock_or_recover().state.clone()
 }

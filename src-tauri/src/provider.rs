@@ -1,7 +1,16 @@
-use crate::launcher::retroarch::{ParityStatus, RetroArchProvider};
+use crate::config::Config;
 use crate::launcher::{InstallInfo, LaunchSpec, Launcher, MatchConfig};
+use crate::retroarch::{ParityStatus, RetroArchProvider};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Manager};
+
+#[cfg(target_os = "linux")]
+use crate::launcher::linux;
+#[cfg(target_os = "macos")]
+use crate::launcher::macos;
+#[cfg(target_os = "windows")]
+use crate::launcher::windows;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -118,13 +127,70 @@ impl Provider for FightCadeProvider {
     }
 }
 
-pub fn retroarch_provider(
-    cfg: &crate::config::Config,
-    app_config_dir: &Path,
-    app_data_dir: &Path,
+#[cfg(target_os = "macos")]
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+    let app_dir = cfg
+        .fightcade_dir
+        .clone()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(macos::DEFAULT_APP_DIR));
+    let launcher = if dev {
+        macos::MacosLauncher::loopback_with(app_dir)
+    } else {
+        macos::MacosLauncher::new(app_dir)
+    };
+    Ok(Box::new(launcher))
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+    let override_dir = cfg.fightcade_dir.clone().map(PathBuf::from);
+    let rom_dir = crate::roms::resolve_rom_dir(cfg);
+    let launcher = linux::LinuxLauncher::detect(override_dir, rom_dir);
+    let launcher = if dev { launcher.loopback() } else { launcher };
+    Ok(Box::new(launcher))
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+    let override_dir = cfg.fightcade_dir.clone().map(PathBuf::from);
+    let launcher = windows::WindowsLauncher::detect(override_dir);
+    let launcher = if dev { launcher.loopback() } else { launcher };
+    Ok(Box::new(launcher))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+    let _ = (cfg, dev);
+    Err("this build only ships the macOS, Linux, and Windows launchers".into())
+}
+
+pub(crate) fn resolve_provider(
+    app: &AppHandle,
+    cfg: &Config,
     dev: bool,
-) -> RetroArchProvider {
-    RetroArchProvider::new(cfg, app_config_dir, app_data_dir, dev)
+) -> Result<Box<dyn Provider>, String> {
+    match cfg.provider {
+        ProviderKind::Fightcade => Ok(Box::new(FightCadeProvider::new(resolve_launcher(
+            cfg, dev,
+        )?))),
+        ProviderKind::Retroarch => {
+            let config_dir = app
+                .path()
+                .app_config_dir()
+                .map_err(|err| format!("cannot resolve config dir: {err}"))?;
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|err| format!("cannot resolve data dir: {err}"))?;
+            Ok(Box::new(RetroArchProvider::new(
+                cfg,
+                &config_dir,
+                &data_dir,
+                dev,
+            )))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -159,8 +225,13 @@ mod tests {
         let p1 = provider
             .spec(&request(Role::P1, &path, "100.64.0.2"))
             .unwrap();
-        assert_eq!(p1.args[1], "quark:direct,sfiii3nr1,7001,100.64.0.2,7000,0,0");
-        assert!(provider.spec(&request(Role::Spectator, &path, "100.64.0.2")).is_err());
+        assert_eq!(
+            p1.args[1],
+            "quark:direct,sfiii3nr1,7001,100.64.0.2,7000,0,0"
+        );
+        assert!(provider
+            .spec(&request(Role::Spectator, &path, "100.64.0.2"))
+            .is_err());
     }
 
     #[test]
@@ -182,6 +253,9 @@ mod tests {
         let provider = FightCadeProvider::new(Box::new(MacosLauncher::new(PathBuf::from(
             "/Applications/FightCade2.app",
         ))));
-        assert!(provider.parity(Path::new("/tmp/rom.zip")).unwrap().is_none());
+        assert!(provider
+            .parity(Path::new("/tmp/rom.zip"))
+            .unwrap()
+            .is_none());
     }
 }
