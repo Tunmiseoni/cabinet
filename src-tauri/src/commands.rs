@@ -105,7 +105,8 @@ pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launch
 #[cfg(target_os = "linux")]
 pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
     let override_dir = cfg.fightcade_dir.clone().map(PathBuf::from);
-    let launcher = LinuxLauncher::detect(override_dir);
+    let rom_dir = roms::resolve_rom_dir(cfg);
+    let launcher = LinuxLauncher::detect(override_dir, rom_dir);
     let launcher = if dev { launcher.loopback() } else { launcher };
     Ok(Box::new(launcher))
 }

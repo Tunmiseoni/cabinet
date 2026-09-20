@@ -40,9 +40,9 @@ impl LinuxLauncher {
         }
     }
 
-    pub fn detect(override_dir: Option<PathBuf>) -> Self {
+    pub fn detect(override_dir: Option<PathBuf>, rom_dir: Option<PathBuf>) -> Self {
         if let Some(dir) = override_dir {
-            if let Some(launcher) = Self::from_native_dir(&dir) {
+            if let Some(launcher) = Self::from_any_dir(&dir) {
                 return launcher;
             }
         }
@@ -57,13 +57,44 @@ impl LinuxLauncher {
             }
         }
 
+        if let Some(launcher) = rom_dir.as_deref().and_then(Self::from_rom_dir) {
+            return launcher;
+        }
+
         Self {
             layout: Layout::Unavailable {
-                detail: "no FightCade Flatpak or native install found — set one in settings"
+                detail: "no FightCade Flatpak or native install found (checked Flatpak, native \
+                         candidates, and your ROM directory) — set one in settings"
                     .to_string(),
             },
             peer_override: None,
         }
+    }
+
+    fn from_any_dir(dir: &Path) -> Option<Self> {
+        if let Some(launcher) = Self::from_native_dir(dir) {
+            return Some(launcher);
+        }
+        as_flatpak_data_dir(dir).map(Self::flatpak)
+    }
+
+    fn from_rom_dir(rom_dir: &Path) -> Option<Self> {
+        if rom_dir.ends_with("ROMs") {
+            if let Some(fb_dir) = rom_dir.parent().filter(|dir| dir.ends_with("fbneo")) {
+                if let Some(launcher) = Self::from_native_dir(fb_dir) {
+                    return Some(launcher);
+                }
+            }
+        }
+
+        let mut current = Some(rom_dir);
+        while let Some(path) = current {
+            if looks_like_flatpak_data_dir(path) {
+                return Some(Self::flatpak(path.to_path_buf()));
+            }
+            current = path.parent();
+        }
+        None
     }
 
     pub fn loopback(mut self) -> Self {
@@ -184,6 +215,18 @@ fn shell_single_quote(value: &str) -> String {
 }
 
 fn flatpak_data_dir() -> Option<PathBuf> {
+    if let Some(data_dir) = flatpak_data_dir_via_cli() {
+        return Some(data_dir);
+    }
+    let home = env::var_os("HOME")?;
+    let data_dir = PathBuf::from(home)
+        .join(".var/app")
+        .join(FLATPAK_APP)
+        .join("data");
+    data_dir.is_dir().then_some(data_dir)
+}
+
+fn flatpak_data_dir_via_cli() -> Option<PathBuf> {
     let flatpak = find_on_path("flatpak", "flatpak")?;
     let ok = process::command(flatpak)
         .args(["info", FLATPAK_APP])
@@ -202,6 +245,25 @@ fn flatpak_data_dir() -> Option<PathBuf> {
     )
 }
 
+fn looks_like_flatpak_data_dir(dir: &Path) -> bool {
+    dir.file_name().and_then(|name| name.to_str()) == Some("data")
+        && dir
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            == Some(FLATPAK_APP)
+}
+
+fn as_flatpak_data_dir(dir: &Path) -> Option<PathBuf> {
+    if looks_like_flatpak_data_dir(dir) || dir.join("ROMs").is_dir() {
+        return Some(dir.to_path_buf());
+    }
+    if dir.file_name().and_then(|name| name.to_str()) == Some(FLATPAK_APP) {
+        return Some(dir.join("data"));
+    }
+    None
+}
+
 fn native_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(dir) = env::var("FC_DIR") {
@@ -215,10 +277,23 @@ fn native_candidates() -> Vec<PathBuf> {
             candidates.push(home.join(name));
         }
         candidates.push(home.join(".local/share/fightcade"));
+        candidates.extend(game_subdirs(&home.join("Games")));
     }
     candidates.push(PathBuf::from("/opt/fightcade"));
     candidates.push(PathBuf::from("/opt/FightCade2"));
     candidates
+}
+
+fn game_subdirs(games: &Path) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(games)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    dirs.sort();
+    dirs
 }
 
 fn find_on_path(primary: &str, fallback: &str) -> Option<String> {
@@ -319,6 +394,53 @@ mod tests {
         let launcher = LinuxLauncher::from_native_dir(&dir).expect("native layout");
         let spec = launcher.spec(&config()).unwrap();
         assert_eq!(spec.cwd, fb);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn recognizes_a_flatpak_data_dir_override() {
+        let data = PathBuf::from("/home/u/.var/app/com.fightcade.Fightcade/data");
+        assert_eq!(as_flatpak_data_dir(&data), Some(data.clone()));
+        assert_eq!(
+            as_flatpak_data_dir(&PathBuf::from("/home/u/.var/app/com.fightcade.Fightcade")),
+            Some(data.clone())
+        );
+        assert_eq!(as_flatpak_data_dir(&PathBuf::from("/home/u/roms")), None);
+
+        let launcher = LinuxLauncher::detect(Some(data), None);
+        assert_eq!(launcher.spec(&config()).unwrap().program, PathBuf::from("flatpak"));
+    }
+
+    #[test]
+    fn derives_a_native_install_from_the_rom_dir() {
+        let dir = std::env::temp_dir().join(format!("cabinet-linux-roms-{}", std::process::id()));
+        let fb = dir.join("emulator/fbneo");
+        std::fs::create_dir_all(fb.join("ROMs")).expect("create rom dir");
+        std::fs::write(fb.join("fcadefbneo"), b"#!/bin/sh\n").expect("write binary");
+
+        let launcher = LinuxLauncher::from_rom_dir(&fb.join("ROMs")).expect("native layout");
+        assert_eq!(launcher.spec(&config()).unwrap().cwd, fb);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn derives_a_flatpak_install_from_the_rom_dir() {
+        let roms = PathBuf::from("/home/u/.var/app/com.fightcade.Fightcade/data/ROMs/fbneo");
+        let launcher = LinuxLauncher::from_rom_dir(&roms).expect("flatpak layout");
+        assert_eq!(launcher.spec(&config()).unwrap().program, PathBuf::from("flatpak"));
+    }
+
+    #[test]
+    fn games_subdirs_are_sorted_and_directory_only() {
+        let dir = std::env::temp_dir().join(format!("cabinet-linux-games-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("zeta")).expect("create zeta");
+        std::fs::create_dir_all(dir.join("alpha")).expect("create alpha");
+        std::fs::write(dir.join("file.txt"), b"ignore").expect("write file");
+
+        let found = game_subdirs(&dir);
+        assert_eq!(found, vec![dir.join("alpha"), dir.join("zeta")]);
 
         std::fs::remove_dir_all(&dir).ok();
     }

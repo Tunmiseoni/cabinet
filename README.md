@@ -85,6 +85,11 @@ ROM directory is auto-detected. If detection fails, set the FightCade directory
 in Settings. Ensure Tailscale is running and ports `47810/47811` (UDP/TCP) are
 allowed through the local firewall.
 
+On Linux the app prefers the FightCade Flatpak (`com.fightcade.Fightcade`), falls
+back to a native/Wine install (including `~/Games/*`), and can derive the install
+from an already-detected ROM directory. Host tools are spawned with the AppImage's
+bundled `LD_LIBRARY_PATH` stripped, so `flatpak`/`wine` load the system libraries.
+
 Bundling applies a Linux-only post-build step: `scripts/patch-appimage.sh`
 strips over-bundled Wayland/X11 libraries that break EGL on Mesa 25+ hosts
 (`EGL_BAD_PARAMETER`) and repacks the AppImage. It is a no-op once upstream Tauri
