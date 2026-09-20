@@ -17,6 +17,7 @@ The network problem this solves, and the full design, are documented in [`docs/0
 - **Lifetime scores** — a local per-opponent win/loss ledger (plus overall totals, win rate, and streaks), persisted to the app config dir. Game counts come from overlay score increments; loopback Dev-pair games are excluded. Resettable from Settings.
 - **Rooms (Phase 2)** — host a king-of-the-hill room or discover and join a peer's room over the tailnet (UDP discovery + a secret-gated TCP control channel). The room card shows champion/challenger/queue and the host-persisted shared scoreboard, and the app auto-launches your `quark:direct` match when the host assigns it to you. Results are auto-reported from the emulator overlay, with manual "I won"/"I lost" buttons as fallback; the match peer's RTT/path is re-pinged during play.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
+- **RetroArch provider (Phase 0, opt-in)** — a selectable match provider beside FightCade that drives RetroArch netplay for host/client/**spectator**, with a parity gate on the frozen FBNeo core + ROM. Verified live across macOS/Linux/Windows (2026-09-20) at ~55–83 ms; this is the spectator path. See [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md).
 - **Cabinet mode (off by default, macOS)** — with the setting enabled, launching a match opens a full-screen cabinet bezel and hosts the emulator window inside it via the macOS Accessibility API. Needs a one-time Accessibility grant; without it the game stays a separate window. See [`docs/06-redesign.md`](docs/06-redesign.md).
 
 ## Download
@@ -32,7 +33,7 @@ On Windows, run `scripts/fcade-lan-windows-firewall.bat` once (elevated) to allo
 
 ## Priorities
 
-The next step is the 4-person live test (Phase 2.7): the GitHub Actions per-OS release pipeline and the **Windows launcher adapter** are now in place, so all four machines can play from released builds. After that: spectating (Phase 3, gated on a RetroArch spike). See `docs/04-design.md` §7 for the open items.
+The next step is the 4-person live test (Phase 2.7): the GitHub Actions per-OS release pipeline and the **Windows launcher adapter** are now in place, so all four machines can play from released builds. Spectating has since cleared its Phase 0 gate — the RetroArch netplay/spectator spike passed live on the tailnet (2026-09-20: a macOS host + Linux client + Windows spectator stayed synced ~11 min at ~55–83 ms, feel rated acceptable), so RetroArch is the primary spectator path and the `ggponet.dll` shim is skipped. Phase 3 integration follows; the two-concurrent-spectator tailnet run is deferred. See `docs/04-design.md` §7 and [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md) for the open items.
 
 A UX redesign is also proposed — **Cabinet mode**, hosting the emulator inside the app so a match is one window, plus a single-window information architecture. It is gated on a `/grill-me` session; the proposal, per-OS feasibility, and the required grill agenda are in [`docs/06-redesign.md`](docs/06-redesign.md).
 

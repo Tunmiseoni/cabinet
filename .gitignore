@@ -36,6 +36,8 @@ the-cabinet-report-shots/
 *.zip
 *.exe
 *.dll
+*.dylib
+*.so
 *.wine32/
 
 # OS

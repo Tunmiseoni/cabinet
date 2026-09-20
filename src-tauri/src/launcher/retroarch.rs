@@ -13,7 +13,7 @@ pub const FROZEN_ROM_SHA256: &str =
 
 #[allow(dead_code)]
 const FROZEN_CORE_SHA256_MACOS: &str =
-    "674e76fbe4980b716214e7bb2b5a6e06b9489cc08e7472bcd676b5f1dfcb8488";
+    "6472c6312fe6ad49a8001efabbdc4d2b542848a7c964d0a082cd736e01e8a4eb";
 #[allow(dead_code)]
 const FROZEN_CORE_SHA256_LINUX: &str =
     "a154a08d0f97ff1c66e6ec22a5c209854f31eb2ed7d831b2cb4c0101d48a2448";
@@ -702,8 +702,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "reads the real standard RetroArch core and FightCade ROM on this machine"]
-    fn live_auto_detects_the_frozen_core() {
+    #[ignore = "reads the app-managed frozen core and FightCade ROM on this machine"]
+    fn live_managed_core_matches_the_frozen_set() {
         let Some(rom_dir) = crate::roms::resolve_rom_dir(&Config::default()) else {
             eprintln!("skipping: no ROM directory found");
             return;
@@ -713,13 +713,24 @@ mod tests {
             eprintln!("skipping: {} not present", rom.display());
             return;
         }
-        let scratch = Scratch::new("live-parity");
-        let provider = RetroArchProvider::new(
-            &Config::default(),
-            &scratch.dir,
-            &scratch.dir,
-            false,
-        );
+        let Some(home) = std::env::var_os("HOME") else {
+            eprintln!("skipping: no HOME");
+            return;
+        };
+        let core = PathBuf::from(home)
+            .join("Library/Application Support/com.the-cabinet.app/cores")
+            .join(platform_tag())
+            .join(core_file_name());
+        if !core.is_file() {
+            eprintln!("skipping: managed core not present at {}", core.display());
+            return;
+        }
+        let scratch = Scratch::new("live-managed-parity");
+        let cfg = Config {
+            retroarch_core: Some(core.to_string_lossy().to_string()),
+            ..Config::default()
+        };
+        let provider = RetroArchProvider::new(&cfg, &scratch.dir, &scratch.dir, false);
         let status = provider
             .parity(&rom)
             .unwrap()
@@ -733,7 +744,7 @@ mod tests {
         );
         assert!(
             status.ok,
-            "expected the auto-detected frozen core to match: {}",
+            "expected the app-managed frozen core to match: {}",
             status.detail
         );
     }
