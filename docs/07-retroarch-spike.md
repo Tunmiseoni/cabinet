@@ -135,7 +135,9 @@ scripts/retroarch-spike.sh stop
 ## 5. Per-role commands and machine prep
 
 Every machine needs: RetroArch 1.22.2, the frozen FBNeo core for its OS, and the byte-identical
-ROM. A host (only) must accept inbound **TCP 55435**.
+ROM. A host (only) must accept inbound **TCP 55435**. The netplay port must match on every machine:
+a client connects to the host's port, and the preflight only proves TCP reachability, so a
+mismatched `retroarchPort` still fails the join.
 
 An overrides file adds the spike settings on top of the normal config (keep NAT traversal and
 public announce off; we are on the tailnet, not the public lobby):
@@ -150,6 +152,9 @@ netplay_require_slaves = "false"
 netplay_check_frames = "600"
 netplay_ping_show = "true"
 netplay_nickname = "<your-nick>"
+input_libretro_device_p1 = "5"
+input_libretro_device_p2 = "5"
+savestate_auto_load = "false"
 # spectators only:
 netplay_start_as_spectator = "true"
 ```
@@ -229,6 +234,9 @@ public repo vs. manual copy). Nothing has been published yet.
   warning. The macOS core was rebuilt from the same commit with the date forced (§2), so all
   three now report one string.
 - **Host-as-spectator** (a non-playing server) was not exercised; only a player-hosts topology.
+  **Decision (2026-09-21): non-goal** — the app exposes only P1 / P2 / Spectator and the host also
+  plays (P1), so a dedicated non-playing server is not planned. Revisit only if a machine ever
+  needs to host without playing.
 - **`netplay_spectate_password`** (spectator-only password) was not exercised.
 - **Two concurrent spectators on the tailnet** — proven on loopback (§3), deferred live (needs
   all four machines online at once).
@@ -393,9 +401,9 @@ min — but the logs surfaced the items below.
 | F15 | The diagnostics bundle embeds tailnet IPs and absolute home/config paths (`config`, provider detail, last match) with no redaction or warning. | Redact identifiers or warn that the bundle is not for public sharing. | Med — **fixed 2026-09-21 (cleanup): home paths + IPv4/IPv6 + `*.ts.net` names + configured handle/peer redacted, warning header added** |
 | F16 | Session dirs and `emulator-*.log` were never pruned; only the app log rotates. | Add retention (count/age/size cap). | Med — **fixed 2026-09-21 (cleanup): session dirs pruned to the newest `SESSION_KEEP`** |
 | F17 | Each spectator renders its own audio locally, which echoes in a voice call; the task list doesn't address it (§9). | Default spectators to muted, or add a setting. | Med |
-| F18 | Host-as-spectator (non-playing server) was not exercised; the app exposes only P1/P2/Spectator. | Decide whether to support and test it. | Low |
-| F19 | A client issued `NETPLAY_CMD_LOAD_SAVESTATE`, followed by `Failed to load state` against the empty per-role savestate dirs. | Confirm netplay state sync cannot pull a stale/wrong state. | Low |
-| F20 | Per-machine `retroarchPort` isn't validated against peers; preflight only proves TCP reachability. | Validate the expected netplay port or document "host's port must match on all peers". | Low |
+| F18 | Host-as-spectator (non-playing server) was not exercised; the app exposes only P1/P2/Spectator. | Decide whether to support and test it. | Low — **Decided 2026-09-21: non-goal, recorded in §9; the host also plays (P1) and the GUI exposes only P1/P2/Spectator** |
+| F19 | A client issued `NETPLAY_CMD_LOAD_SAVESTATE`, followed by `Failed to load state` against the empty per-role savestate dirs. | Confirm netplay state sync cannot pull a stale/wrong state. | Low — **Done 2026-09-21: `write_overrides` pins `savestate_auto_load = "false"`, so netplay's state sync always starts from a fresh state instead of auto-loading a stale per-role savestate** |
+| F20 | Per-machine `retroarchPort` isn't validated against peers; preflight only proves TCP reachability. | Validate the expected netplay port or document "host's port must match on all peers". | Low — **Done 2026-09-21: §5 documents that the netplay port must match on every machine, and the preflight/force error text now says "use the same netplay port on both peers"** |
 
 Not selected this session: **F8** (a `netplay_max_ping` cap / spectate password) and **F17**. Deferred:
 **F10** (needs a live controller retest) and **F11** (needs all four machines online). See each row.

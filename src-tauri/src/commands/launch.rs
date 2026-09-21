@@ -163,7 +163,7 @@ fn preflight(
                     .map(|err| format!(" ({err})"))
                     .unwrap_or_default();
                 Err(format!(
-                    "host not reachable on {peer_ip}:{port}{detail} — start the host first, confirm the peer IP, and allow inbound TCP {port} on the host"
+                    "host not reachable on {peer_ip}:{port}{detail} — start the host first, confirm the peer IP, use the same netplay port on both peers, and allow inbound TCP {port} on the host"
                 ).into())
             }
         }

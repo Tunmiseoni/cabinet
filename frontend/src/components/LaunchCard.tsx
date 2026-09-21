@@ -144,7 +144,7 @@ export function LaunchCard({
         found.push(
           `host not reachable on ${peerIp}:${port}${
             status.error ? ` (${status.error})` : ""
-          } — start the host first, confirm the peer IP, and allow inbound TCP ${port} on the host`,
+          } — start the host first, confirm the peer IP, use the same netplay port on both peers, and allow inbound TCP ${port} on the host`,
         );
       }
     }

@@ -70,6 +70,7 @@ pub(super) fn write_overrides(
     content.push_str("input_libretro_device_p2 = \"5\"\n");
     content.push_str(&format!("netplay_ip_port = \"{}\"\n", provider.port));
     content.push_str(&format!("netplay_nickname = \"{}\"\n", nickname));
+    content.push_str("savestate_auto_load = \"false\"\n");
     content.push_str(&format!("savefile_directory = \"{}\"\n", saves.display()));
     content.push_str(&format!("savestate_directory = \"{}\"\n", states.display()));
     if role == Role::Spectator {
@@ -192,6 +193,7 @@ mod tests {
         assert!(overrides.contains("netplay_nat_traversal = \"false\""));
         assert!(overrides.contains("input_libretro_device_p1 = \"5\""));
         assert!(overrides.contains("input_libretro_device_p2 = \"5\""));
+        assert!(overrides.contains("savestate_auto_load = \"false\""));
     }
 
     #[test]
