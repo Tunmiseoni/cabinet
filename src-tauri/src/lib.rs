@@ -70,7 +70,7 @@ pub fn run() {
 
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Debug)
-        .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+        .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseUtc)
         .target(tauri_plugin_log::Target::new(
             tauri_plugin_log::TargetKind::Stdout,
         ))

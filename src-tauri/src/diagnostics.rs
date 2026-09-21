@@ -69,6 +69,10 @@ fn diagnostics_text(app: &AppHandle) -> String {
         "The Cabinet diagnostics — {}",
         crate::time::utc_stamp()
     );
+    let _ = writeln!(
+        out,
+        "NOTE: the raw app-log tail at the end is not redacted; review this bundle before sharing it publicly."
+    );
     let _ = writeln!(out, "version: {}", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(
         out,
@@ -174,17 +178,111 @@ fn diagnostics_text(app: &AppHandle) -> String {
         }
     }
 
-    let _ = writeln!(out, "\n--- recent app log (last 200 lines) ---");
-    match logging::app_log_path(app) {
-        Ok(path) => {
-            let _ = writeln!(out, "{}", tail_text(&path, 200));
-        }
-        Err(err) => {
-            let _ = writeln!(out, "{err}");
+    if let Ok(sessions) = logging::sessions_dir(app) {
+        if let Some(latest) = latest_session_dir(&sessions) {
+            let logs = emulator_logs(&latest);
+            if !logs.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "\n--- latest session emulator logs ({}) ---",
+                    latest.display()
+                );
+                for log in logs {
+                    let name = log
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("emulator");
+                    let _ = writeln!(out, "\n### {name} (last 200 lines)");
+                    let _ = writeln!(out, "{}", tail_text(&log, 200));
+                }
+            }
         }
     }
 
+    let tail = match logging::app_log_path(app) {
+        Ok(path) => tail_text(&path, 200),
+        Err(err) => err.to_string(),
+    };
+    format!(
+        "{}\n--- recent app log (last 200 lines) ---\n{tail}",
+        redact(&out)
+    )
+}
+
+fn latest_session_dir(sessions: &Path) -> Option<PathBuf> {
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(sessions)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    dirs.sort();
+    dirs.pop()
+}
+
+fn emulator_logs(dir: &Path) -> Vec<PathBuf> {
+    let mut logs: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.starts_with("emulator-"))
+                .unwrap_or(false)
+        })
+        .collect();
+    logs.sort();
+    logs
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+pub fn redact(text: &str) -> String {
+    redact_ipv4(&redact_home(text))
+}
+
+fn redact_home(text: &str) -> String {
+    let Some(home) = home_dir() else {
+        return text.to_string();
+    };
+    let home = home.to_string_lossy();
+    if home.is_empty() {
+        return text.to_string();
+    }
+    text.replace(home.as_ref(), "~")
+}
+
+fn redact_ipv4(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut token = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_digit() || ch == '.' {
+            token.push(ch);
+        } else {
+            push_redacted_token(&mut token, &mut out);
+            out.push(ch);
+        }
+    }
+    push_redacted_token(&mut token, &mut out);
     out
+}
+
+fn push_redacted_token(token: &mut String, out: &mut String) {
+    if token.is_empty() {
+        return;
+    }
+    if token.parse::<std::net::Ipv4Addr>().is_ok() {
+        out.push_str("100.x.x.x");
+    } else {
+        out.push_str(token);
+    }
+    token.clear();
 }
 
 fn tail_text(path: &Path, max_lines: usize) -> String {
@@ -213,5 +311,53 @@ mod tests {
     fn tail_text_reports_a_missing_file() {
         let path = std::env::temp_dir().join("cabinet-definitely-missing.txt");
         assert!(tail_text(&path, 5).starts_with("(no log at"));
+    }
+
+    #[test]
+    fn redacts_ipv4_addresses() {
+        assert_eq!(
+            redact_ipv4("connected to 100.64.0.11:41641 via 192.168.1.101"),
+            "connected to 100.x.x.x:41641 via 100.x.x.x"
+        );
+    }
+
+    #[test]
+    fn leaves_version_like_tokens_alone() {
+        assert_eq!(redact_ipv4("v1.0.0.03 GIT6bb3167"), "v1.0.0.03 GIT6bb3167");
+        assert_eq!(redact_ipv4("RetroArch 1.22.2"), "RetroArch 1.22.2");
+    }
+
+    #[test]
+    fn latest_session_dir_picks_the_newest() {
+        let root = std::env::temp_dir().join(format!("cabinet-latest-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        for name in ["20260101-000000", "20260103-000000", "20260102-000000"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+        }
+        std::fs::write(root.join("stray.txt"), b"x").unwrap();
+
+        assert_eq!(
+            latest_session_dir(&root),
+            Some(root.join("20260103-000000"))
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn emulator_logs_filters_and_sorts() {
+        let root = std::env::temp_dir().join(format!("cabinet-logs-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::create_dir_all(&root).unwrap();
+        for name in ["emulator-p2.log", "emulator-p1.log", "notes.txt"] {
+            std::fs::write(root.join(name), b"x").unwrap();
+        }
+
+        let logs = emulator_logs(&root);
+        assert_eq!(logs.len(), 2);
+        assert!(logs[0].ends_with("emulator-p1.log"));
+        assert!(logs[1].ends_with("emulator-p2.log"));
+
+        std::fs::remove_dir_all(&root).ok();
     }
 }

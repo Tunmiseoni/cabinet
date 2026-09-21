@@ -166,6 +166,7 @@ pub struct RetroArchProvider {
     nickname: String,
     overrides_dir: PathBuf,
     peer_override: Option<String>,
+    verbose: bool,
 }
 
 impl RetroArchProvider {
@@ -202,6 +203,7 @@ impl RetroArchProvider {
             nickname: sanitize_value(&nickname),
             overrides_dir: app_config_dir.join("retroarch"),
             peer_override: dev.then(|| "127.0.0.1".to_string()),
+            verbose: cfg.verbose_logging,
         }
     }
 
@@ -300,8 +302,10 @@ impl Provider for RetroArchProvider {
             request.rom_path.to_string_lossy().to_string(),
             "--appendconfig".to_string(),
             overrides.to_string_lossy().to_string(),
-            "--verbose".to_string(),
         ];
+        if self.verbose {
+            args.push("--verbose".to_string());
+        }
         match request.role {
             Role::P1 => args.push("-H".to_string()),
             Role::P2 | Role::Spectator => {
@@ -475,6 +479,7 @@ mod tests {
             nickname: "spike".to_string(),
             overrides_dir: scratch.dir.join("cfg"),
             peer_override: None,
+            verbose: true,
         }
     }
 
@@ -580,6 +585,18 @@ mod tests {
         assert!(overrides.contains("pause_nonactive = \"false\""));
         assert!(overrides.contains("config_save_on_exit = \"false\""));
         assert!(overrides.contains("netplay_nat_traversal = \"false\""));
+    }
+
+    #[test]
+    fn verbose_flag_is_gated_on_the_setting() {
+        let scratch = Scratch::new("verbose-off");
+        let rom = scratch.rom();
+        let mut provider = provider(&scratch);
+        provider.verbose = false;
+        let spec = provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        assert!(!spec.args.iter().any(|arg| arg == "--verbose"));
     }
 
     #[test]

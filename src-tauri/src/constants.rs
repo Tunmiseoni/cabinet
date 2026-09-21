@@ -7,3 +7,4 @@ pub const PROBE_TIMEOUT_MAX_MS: u64 = 30_000;
 pub const HOST_WAIT_TIMEOUT: Duration = Duration::from_secs(20);
 pub const HEALTH_INTERVAL: Duration = Duration::from_secs(4);
 pub const MONITOR_INTERVAL: Duration = Duration::from_millis(300);
+pub const SESSION_KEEP: usize = 20;

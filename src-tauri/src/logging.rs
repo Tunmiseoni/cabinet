@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -33,8 +33,40 @@ pub fn create_session_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+pub fn prune_sessions(app: &AppHandle) -> Result<usize, String> {
+    prune_session_dirs(&sessions_dir(app)?, crate::constants::SESSION_KEEP)
+}
+
+pub fn prune_session_dirs(dir: &Path, keep: usize) -> Result<usize, String> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(0),
+    };
+    let mut dirs: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    dirs.sort();
+    if dirs.len() <= keep {
+        return Ok(0);
+    }
+    let remove = dirs.len() - keep;
+    let mut removed = 0;
+    for path in dirs.into_iter().take(remove) {
+        if std::fs::remove_dir_all(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 pub fn emulator_log_path(session_dir: &std::path::Path, role: &str) -> PathBuf {
     session_dir.join(format!("emulator-{role}.log"))
+}
+
+pub fn stamp_line(line: &str) -> String {
+    format!("[{}] {line}", crate::time::utc_stamp())
 }
 
 pub fn open_emulator_log(
@@ -61,7 +93,7 @@ where
                 break;
             };
             if let Ok(mut file) = sink.lock() {
-                let _ = writeln!(file, "{line}");
+                let _ = writeln!(file, "{}", stamp_line(&line));
                 let _ = file.flush();
             }
             log::debug!(target: EMULATOR_TARGET, "{label} {line}");
@@ -83,6 +115,49 @@ mod tests {
         assert_eq!(
             emulator_log_path(dir, "spectator"),
             std::path::PathBuf::from("/tmp/session/emulator-spectator.log")
+        );
+    }
+
+    #[test]
+    fn stamp_line_prefixes_a_utc_stamp() {
+        let line = stamp_line("hello");
+        assert!(line.starts_with('['), "got {line}");
+        assert!(line.ends_with("] hello"), "got {line}");
+    }
+
+    #[test]
+    fn prunes_oldest_session_dirs() {
+        let root = std::env::temp_dir().join(format!("cabinet-sessions-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        for name in ["20260101-000000", "20260102-000000", "20260103-000000"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+        }
+
+        assert_eq!(prune_session_dirs(&root, 2).unwrap(), 1);
+        assert!(!root.join("20260101-000000").exists());
+        assert!(root.join("20260103-000000").exists());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn prune_keeps_everything_under_the_cap() {
+        let root =
+            std::env::temp_dir().join(format!("cabinet-sessions-keep-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::create_dir_all(root.join("20260101-000000")).unwrap();
+
+        assert_eq!(prune_session_dirs(&root, 5).unwrap(), 0);
+        assert!(root.join("20260101-000000").exists());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn prune_tolerates_a_missing_dir() {
+        assert_eq!(
+            prune_session_dirs(Path::new("/nonexistent/cabinet/sessions"), 3).unwrap(),
+            0
         );
     }
 }

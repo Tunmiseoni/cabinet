@@ -144,6 +144,13 @@ pub fn launch_many(
     let session_dir = match logging::create_session_dir(app) {
         Ok(dir) => {
             log::info!("session log dir: {}", dir.display());
+            match logging::prune_sessions(app) {
+                Ok(removed) if removed > 0 => {
+                    log::info!("pruned {removed} old session dir(s)")
+                }
+                Ok(_) => {}
+                Err(err) => log::warn!("cannot prune old session dirs: {err}"),
+            }
             Some(dir)
         }
         Err(err) => {
