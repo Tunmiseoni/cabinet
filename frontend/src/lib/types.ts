@@ -101,6 +101,11 @@ export interface ParityStatus {
   detail: string;
 }
 
+export interface DownloadedCore {
+  path: string;
+  sha256: string;
+}
+
 export type NetplayConnection =
   | "connecting"
   | "connected"

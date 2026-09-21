@@ -52,8 +52,48 @@ pub(super) fn platform_tag() -> &'static str {
     }
 }
 
-pub(super) fn frozen_core_sha256() -> &'static str {
+pub(crate) fn frozen_core_sha256() -> &'static str {
     FROZEN_CORE_SHA256
+}
+
+pub(super) const CORES_RELEASE_TAG: &str = "retroarch-cores-v1";
+
+const CORES_RELEASE_BASE: &str = "https://github.com/Tunmiseoni/the-cabinet/releases/download";
+
+pub(super) fn is_published_platform() -> bool {
+    matches!(
+        platform_tag(),
+        "macos-arm64" | "linux-x86_64" | "windows-x86_64"
+    )
+}
+
+pub(super) fn core_asset_name() -> String {
+    let extension = core_file_name().rsplit('.').next().unwrap_or("");
+    format!("fbneo_libretro-{}.{}", platform_tag(), extension)
+}
+
+pub(super) fn core_download_url() -> String {
+    format!(
+        "{CORES_RELEASE_BASE}/{CORES_RELEASE_TAG}/{}",
+        core_asset_name()
+    )
+}
+
+pub(super) fn sha256_file(path: &Path) -> crate::error::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path).map_err(|err| err.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|err| err.to_string())?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn standard_core_dirs(home: Option<&Path>) -> Vec<PathBuf> {
@@ -175,6 +215,45 @@ pub(super) fn managed_core_path(app_data_dir: &Path) -> PathBuf {
         .join(core_file_name())
 }
 
+pub(crate) fn download_managed_core(app_data_dir: &Path) -> crate::error::Result<PathBuf> {
+    if !is_published_platform() {
+        return Err(format!("no published frozen core for {}", platform_tag()).into());
+    }
+    let dest = managed_core_path(app_data_dir);
+    let parent = dest
+        .parent()
+        .ok_or_else(|| "invalid core destination".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|err| format!("cannot create {}: {err}", parent.display()))?;
+
+    let url = core_download_url();
+    log::info!("downloading frozen core from {url}");
+    let response = ureq::get(&url)
+        .call()
+        .map_err(|err| format!("download failed: {err}"))?;
+    let mut body = response.into_body();
+
+    let temp = dest.with_extension("download");
+    {
+        let mut file = std::fs::File::create(&temp)
+            .map_err(|err| format!("cannot create {}: {err}", temp.display()))?;
+        let mut reader = body.as_reader();
+        std::io::copy(&mut reader, &mut file)
+            .map_err(|err| format!("cannot write {}: {err}", temp.display()))?;
+    }
+
+    let actual = sha256_file(&temp)?;
+    let expected = frozen_core_sha256();
+    if actual != expected {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("core sha256 mismatch: expected {expected}, got {actual}").into());
+    }
+    std::fs::rename(&temp, &dest)
+        .map_err(|err| format!("cannot install {}: {err}", dest.display()))?;
+    log::info!("installed frozen core at {}", dest.display());
+    Ok(dest)
+}
+
 pub(super) fn is_on_path(program: &Path) -> bool {
     crate::env::path_program_on_path(program)
 }
@@ -294,5 +373,54 @@ mod tests {
         let home = scratch.dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
         assert!(resolve_autoconfig_dir(&program, Some(&home)).is_none());
+    }
+
+    #[test]
+    fn core_asset_name_combines_the_platform_tag_and_extension() {
+        let name = core_asset_name();
+        let extension = core_file_name().rsplit('.').next().unwrap();
+        assert!(name.starts_with("fbneo_libretro-"));
+        assert!(name.contains(platform_tag()));
+        assert!(name.ends_with(&format!(".{extension}")));
+    }
+
+    #[test]
+    fn core_download_url_points_at_the_cores_release_asset() {
+        let url = core_download_url();
+        assert!(url.contains(CORES_RELEASE_TAG));
+        assert!(url.ends_with(&core_asset_name()));
+    }
+
+    #[test]
+    fn download_rejects_unpublished_platforms() {
+        if is_published_platform() {
+            return;
+        }
+        let scratch = Scratch::new("download-unsupported");
+        assert!(download_managed_core(&scratch.dir).is_err());
+    }
+
+    #[test]
+    fn sha256_file_matches_a_known_digest() {
+        let scratch = Scratch::new("sha");
+        let path = scratch.dir.join("blob");
+        std::fs::write(&path, b"abc").unwrap();
+        assert_eq!(
+            sha256_file(&path).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    #[ignore = "downloads the published frozen core for this platform from GitHub"]
+    fn live_downloads_the_frozen_core() {
+        if !is_published_platform() {
+            eprintln!("skipping: no published core for {}", platform_tag());
+            return;
+        }
+        let scratch = Scratch::new("live-download");
+        let core = download_managed_core(&scratch.dir).expect("download core");
+        assert!(core.is_file());
+        assert_eq!(sha256_file(&core).unwrap(), frozen_core_sha256());
     }
 }

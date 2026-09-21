@@ -4,6 +4,7 @@ mod spec;
 #[cfg(test)]
 mod test_support;
 
+pub(crate) use core::{download_managed_core, frozen_core_sha256};
 pub use parity::ParityStatus;
 
 use super::{Capabilities, MatchRequest, Provider, ProviderKind, Role};

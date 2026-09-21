@@ -3,6 +3,7 @@ mod retroarch;
 
 pub use retroarch::ParityStatus;
 pub(crate) use retroarch::RetroArchProvider;
+pub(crate) use retroarch::{download_managed_core, frozen_core_sha256};
 
 use crate::config::Config;
 use crate::contracts::{InstallInfo, LaunchSpec};

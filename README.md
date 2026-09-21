@@ -14,7 +14,7 @@ The network problem this solves, and the full design, are documented in [`docs/0
 - ROM index from the configured emulator's ROM directory.
 - **Launcher** for macOS FightCade (bundled Wine), **Linux FightCade** (Flatpak `com.fightcade.Fightcade`, or a native/Wine install), and **Windows FightCade** (native `fcadefbneo.exe`) with spawn/stop and process-exit detection.
 - A **Dev pair** button that starts both sides on `127.0.0.1` for single-machine testing.
-- **RetroArch provider (Phase 0, opt-in)** — a selectable match provider beside FightCade that drives RetroArch netplay for host/client/**spectator**, with a parity gate on the frozen FBNeo core + ROM. Verified live across macOS/Linux/Windows (2026-09-20) at ~55–83 ms; this is the spectator path. See [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md).
+- **RetroArch provider (Phase 0, opt-in)** — a selectable match provider beside FightCade that drives RetroArch netplay for host/client/**spectator**, with a parity gate on the frozen FBNeo core + ROM. Verified live across macOS/Linux/Windows (2026-09-20) at ~55–83 ms; this is the spectator path. Settings adds a netplay **max-ping cap**, **spectator mute** (on), and an opt-in **isolated session config**; a **Download frozen core** button fetches and sha256-verifies the frozen core for your OS. See [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md).
 - **Cabinet mode (off by default, macOS)** — with the setting enabled, launching a match opens a full-screen cabinet bezel and hosts the emulator window inside it via the macOS Accessibility API. Needs a one-time Accessibility grant; without it the game stays a separate window. See [`docs/06-redesign.md`](docs/06-redesign.md).
 
 
@@ -31,7 +31,7 @@ On Windows, run `scripts/fcade-lan-windows-firewall.bat` once (elevated) to allo
 
 ## Priorities
 
-Spectating has cleared its Phase 0 gate — the RetroArch netplay/spectator spike passed live on the tailnet (2026-09-20: a macOS host + Linux client + Windows spectator stayed synced ~11 min at ~55–83 ms, feel rated acceptable), so RetroArch is the primary spectator path and the `ggponet.dll` shim is skipped. Phase 3 integration follows; the two-concurrent-spectator tailnet run is deferred. See `docs/04-design.md` §7 and [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md) for the open items.
+Spectating has cleared its Phase 0 gate — the RetroArch netplay/spectator spike passed live on the tailnet (2026-09-20: a macOS host + Linux client + Windows spectator stayed synced ~11 min at ~55–83 ms, feel rated acceptable), so RetroArch is the primary spectator path and the `ggponet.dll` shim is skipped. Phase 3 integration follows; the two-concurrent-spectator tailnet run is deferred. Recently landed: a netplay max-ping cap, default-on spectator mute, an opt-in isolated session config, and an in-app frozen-core download (the `retroarch-cores-v1` release is not published yet, and the isolated-config default waits on a live controller retest). See `docs/04-design.md` §7 and [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md) for the open items.
 
 A UX redesign is also proposed — **Cabinet mode**, hosting the emulator inside the app so a match is one window, plus a single-window information architecture. It is gated on a `/grill-me` session; the proposal, per-OS feasibility, and the required grill agenda are in [`docs/06-redesign.md`](docs/06-redesign.md).
 

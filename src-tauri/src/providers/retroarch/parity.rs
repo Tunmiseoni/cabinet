@@ -1,8 +1,7 @@
-use super::core::frozen_core_sha256;
+use super::core::{frozen_core_sha256, sha256_file};
 use super::RetroArchProvider;
 use serde::Serialize;
 use std::collections::BTreeSet;
-use std::io::Read;
 use std::path::Path;
 
 pub const FROZEN_CORE_GIT: &str = "GIT6bb3167";
@@ -75,22 +74,6 @@ pub(super) fn status(
         expected_rom_sha256: expected_rom,
         detail,
     }))
-}
-
-fn sha256_file(path: &Path) -> crate::error::Result<String> {
-    use sha2::{Digest, Sha256};
-
-    let mut file = std::fs::File::open(path).map_err(|err| err.to_string())?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer).map_err(|err| err.to_string())?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn core_git(path: &Path) -> crate::error::Result<Option<String>> {

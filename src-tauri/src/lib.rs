@@ -127,6 +127,7 @@ pub fn run() {
             commands::launch::parity_status,
             commands::launch::launch_match,
             commands::launch::launch_dev_pair,
+            commands::launch::download_retroarch_core,
             commands::launch::stop_match,
             commands::launch::match_status,
             commands::cabinet::cabinet_status,

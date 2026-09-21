@@ -1,5 +1,8 @@
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { downloadRetroArchCore } from "@/lib/api";
 
 export type RetroArchField =
   | "retroarchPath"
@@ -23,6 +26,7 @@ interface RetroArchSettingsProps {
   isolatedConfig: boolean;
   onChange: (key: RetroArchField, value: string) => void;
   onToggle: (key: RetroArchToggle, value: boolean) => void;
+  onCoreDownloaded: (path: string) => void;
 }
 
 export function RetroArchSettings({
@@ -36,7 +40,24 @@ export function RetroArchSettings({
   isolatedConfig,
   onChange,
   onToggle,
+  onCoreDownloaded,
 }: RetroArchSettingsProps) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function handleDownload() {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const core = await downloadRetroArchCore();
+      onCoreDownloaded(core.path);
+    } catch (error) {
+      setDownloadError(String(error));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <>
       <div className="grid gap-2">
@@ -50,16 +71,31 @@ export function RetroArchSettings({
       </div>
       <div className="grid gap-2">
         <Label htmlFor="retroarchCore">FBNeo core (frozen)</Label>
-        <Input
-          id="retroarchCore"
-          value={core}
-          placeholder="/Users/you/Library/Application Support/RetroArch/cores/fbneo_libretro.dylib"
-          onChange={(event) => onChange("retroarchCore", event.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          Leave blank to auto-detect the standard RetroArch core folder. Netplay
-          refuses to sync if every machine's core revision does not match.
-        </p>
+        <div className="flex gap-2">
+          <Input
+            id="retroarchCore"
+            value={core}
+            placeholder="/Users/you/Library/Application Support/RetroArch/cores/fbneo_libretro.dylib"
+            onChange={(event) => onChange("retroarchCore", event.target.value)}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDownload}
+            disabled={downloading}
+          >
+            {downloading ? "Downloading…" : "Download frozen core"}
+          </Button>
+        </div>
+        {downloadError ? (
+          <p className="text-xs text-destructive">{downloadError}</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Leave blank to auto-detect the standard RetroArch core folder, or
+            download the frozen build into the app data directory. Netplay
+            refuses to sync if every machine's core revision does not match.
+          </p>
+        )}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="grid gap-2">

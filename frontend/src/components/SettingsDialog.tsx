@@ -75,6 +75,29 @@ function toForm(config: Config | null): FormState {
 
 const emptyToNull = (value: string) => (value.trim() === "" ? null : value.trim());
 
+function buildConfig(form: FormState): Config {
+  return {
+    handle: emptyToNull(form.handle),
+    fightcadeDir: emptyToNull(form.fightcadeDir),
+    romDir: emptyToNull(form.romDir),
+    tailscalePath: emptyToNull(form.tailscalePath),
+    defaultPeerIp: emptyToNull(form.defaultPeerIp),
+    rttWarnMs: Number(form.rttWarnMs) || 150,
+    pollIntervalSecs: Math.max(2, Number(form.pollIntervalSecs) || 10),
+    cabinetMode: form.cabinetMode,
+    provider: form.provider,
+    retroarchPath: emptyToNull(form.retroarchPath),
+    retroarchCore: emptyToNull(form.retroarchCore),
+    retroarchPort: Number(form.retroarchPort) || 55435,
+    retroarchNickname: emptyToNull(form.retroarchNickname),
+    retroarchMuteSpectators: form.retroarchMuteSpectators,
+    retroarchMaxPingMs: Math.max(0, Number(form.retroarchMaxPingMs) || 0),
+    retroarchIsolatedConfig: form.retroarchIsolatedConfig,
+    verboseLogging: form.verboseLogging,
+    developerMode: form.developerMode,
+  };
+}
+
 export function SettingsDialog({
   open,
   onOpenChange,
@@ -100,30 +123,17 @@ export function SettingsDialog({
   async function handleSave() {
     setSaving(true);
     try {
-      await onSave({
-        handle: emptyToNull(form.handle),
-        fightcadeDir: emptyToNull(form.fightcadeDir),
-        romDir: emptyToNull(form.romDir),
-        tailscalePath: emptyToNull(form.tailscalePath),
-        defaultPeerIp: emptyToNull(form.defaultPeerIp),
-        rttWarnMs: Number(form.rttWarnMs) || 150,
-        pollIntervalSecs: Math.max(2, Number(form.pollIntervalSecs) || 10),
-        cabinetMode: form.cabinetMode,
-        provider: form.provider,
-        retroarchPath: emptyToNull(form.retroarchPath),
-        retroarchCore: emptyToNull(form.retroarchCore),
-        retroarchPort: Number(form.retroarchPort) || 55435,
-        retroarchNickname: emptyToNull(form.retroarchNickname),
-        retroarchMuteSpectators: form.retroarchMuteSpectators,
-        retroarchMaxPingMs: Math.max(0, Number(form.retroarchMaxPingMs) || 0),
-        retroarchIsolatedConfig: form.retroarchIsolatedConfig,
-        verboseLogging: form.verboseLogging,
-        developerMode: form.developerMode,
-      });
+      await onSave(buildConfig(form));
       onOpenChange(false);
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleCoreDownloaded(path: string) {
+    const next = { ...form, retroarchCore: path };
+    setForm(next);
+    await onSave(buildConfig(next));
   }
 
   return (
@@ -213,6 +223,7 @@ export function SettingsDialog({
               isolatedConfig={form.retroarchIsolatedConfig}
               onChange={setField}
               onToggle={setToggle}
+              onCoreDownloaded={handleCoreDownloaded}
             />
           )}
           <div className="grid gap-2">

@@ -220,8 +220,15 @@ deferred. So: take RetroArch as the **primary spectator path**, skip the `ggpone
 4. Host only: allow inbound **TCP 55435**.
 5. Run `parity` and confirm `PARITY OK`.
 
-**Distribution of the frozen cores is still an open decision** (GitHub pre-release assets on the
-public repo vs. manual copy). Nothing has been published yet.
+**Distribution (resolved 2026-09-21): published GitHub Release assets + in-app download.** The
+three frozen cores are uploaded to a dedicated **published** release `retroarch-cores-v1` on the
+public repo (never the repo tree) by [`scripts/publish-cores.sh`](../scripts/publish-cores.sh),
+together with `parity-manifest.txt` and `CORE-NOTICE.txt` (licensing + source offer). The app's
+Settings → RetroArch section has a **Download frozen core** button: it fetches the asset for the
+host platform (`macos-arm64`, `linux-x86_64`, `windows-x86_64`), verifies the sha256 above, and
+installs it into `<app_data_dir>/cores/<platform>/`, then points `retroarchCore` at it. The release
+has not been published yet — publishing is a deliberate manual step, so a core bump never happens
+silently.
 
 ## 9. Remaining unknowns
 
@@ -238,13 +245,19 @@ public repo vs. manual copy). Nothing has been published yet.
   plays (P1), so a dedicated non-playing server is not planned. Revisit only if a machine ever
   needs to host without playing.
 - **`netplay_spectate_password`** (spectator-only password) was not exercised.
+  **Decision (2026-09-21): dropped.** The tailnet is already invite-only, so a second shared
+  password guarding the spectate role added little; the app ships no password field (see F8).
 - **Two concurrent spectators on the tailnet** — proven on loopback (§3), deferred live (needs
   all four machines online at once).
 - **Spectator audio.** Each spectator runs its own emulator and plays sound; the group may want
-  to mute spectators.
+  to mute spectators. **Resolved (2026-09-21):** spectators launch muted by default
+  (`retroarchMuteSpectators`, on), via `audio_mute_enable = "true"` in the spectator overrides;
+  it can be turned off in Settings. Live audio confirmation is pending (F17).
 - **Core updates.** The buildbot `latest` channel is rolling; the frozen sha256s must be
   re-frozen deliberately, never silently. The macOS core is now a local rebuild (§2), so a core
-  bump must be rebuilt the same way on macOS, not re-downloaded.
+  bump must be rebuilt the same way on macOS, not re-downloaded. A re-freeze also means bumping
+  the release tag in `scripts/publish-cores.sh` + `core.rs` and re-running the script, so the
+  in-app download never fetches a stale asset.
 
 ## 10. Licensing
 
@@ -260,8 +273,9 @@ sale), not a drop-in. The spike's harness uses stock RetroArch, so none of this 
 ## 11. Publication scrub reminder
 
 The repo is public. Use placeholders only: `100.x.x.x`, `203.0.113.x`, `example-tailnet.ts.net`.
-Never commit ROMs, cores, or emulator binaries. The frozen cores live outside the repo; the
-`parity-manifest` may be committed (hashes and URLs only).
+Never commit ROMs, cores, or emulator binaries. The frozen cores live outside the repo and are
+distributed as release assets (§8); the `parity-manifest` is uploaded there too (hashes and URLs
+only).
 
 ## 12. References
 
@@ -391,22 +405,24 @@ min — but the logs surfaced the items below.
 | F5 | Session dirs were UTC (`time::utc_stamp`) while the app log timestamped locally. | Unify timestamps or record the offset so app and emulator events correlate without arithmetic. | Low — **fixed 2026-09-21 (cleanup): app log, capture, and session dirs are all UTC** |
 | F6 | The app logs only spawn/exit — connection status, player slot, and ping live only inside the captured log. | Parse the captured netplay lines (`Connected to`, `joined as player N (ping X)`, `Netplay disconnected`) into `MatchState` and show netplay health in the UI. | High — **Done 2026-09-21: `netplay.rs` parses the captured lines into `MatchState.instances[].netplay`; the UI shows a per-instance badge (status/ping) with a capped event log** |
 | F7 | Nickname falls back to the literal `"player"` (`RetroArchProvider::new`) when `retroarchNickname`/`handle` are unset — the macOS machine showed as `player` beside peers' handles. | Default to the user's handle / tailnet hostname and prompt once. | Med — **Done 2026-09-21: silent fallback chain `retroarchNickname → handle → tailnet self hostname → OS hostname → "player"`, resolved lazily per launch in `spec()` (no prompt)** |
-| F8 | Appendconfig sets no `netplay_max_ping` (`retroarch::write_overrides`); first-join pings reached 266–309 ms before settling. | Decide on a `netplay_max_ping` cap (and whether `netplay_spectate_password` is wanted) and apply/document it. | Low |
+| F8 | Appendconfig sets no `netplay_max_ping` (`retroarch::write_overrides`); first-join pings reached 266–309 ms before settling. | Decide on a `netplay_max_ping` cap (and whether `netplay_spectate_password` is wanted) and apply/document it. | Low — **Done 2026-09-21 (cap half):** a new `retroarchMaxPingMs` setting (0 = off) emits `netplay_max_ping` for every role when > 0. The `netplay_spectate_password` half was **dropped** (invite-only tailnet; see §9). |
 | F9 | `scripts/fcade-lan-windows-firewall.bat` adds a rule only for `fcadefbneo.exe` with no port; no inbound TCP 55435 rule for `retroarch.exe`, though §5 requires one for a host. | Add/document a Windows firewall rule for RetroArch's netplay TCP port. | High — **Done 2026-09-21: the script now detects `retroarch.exe` (`%RETROARCH%`, common dirs, `where`) and adds a `RetroArch Netplay LAN` inbound TCP 55435 rule, skipping cleanly if not found** |
-| F10 | The app launches RetroArch without `-c`, so it inherits the user's real `retroarch.cfg`; logs show `[GLSL] Stock GLSL shaders will be used` ×14, `[GL] none shader…` ×3, and playlist/`App Intents` scanning. | Decide whether to pass a minimal generated base config so sessions are reproducible and per-machine config doesn't leak in. | Med — **Deferred 2026-09-21: `--appendconfig` only layers overrides over the user's base config. Passing `-c <generated.cfg>` would isolate the session, but it drops controller bindings unless `input_autoconfig_dir` is re-pointed, so it needs a live controller retest before applying** |
+| F10 | The app launches RetroArch without `-c`, so it inherits the user's real `retroarch.cfg`; logs show `[GLSL] Stock GLSL shaders will be used` ×14, `[GL] none shader…` ×3, and playlist/`App Intents` scanning. | Decide whether to pass a minimal generated base config so sessions are reproducible and per-machine config doesn't leak in. | Med — **Implemented 2026-09-21, opt-in:** `retroarchIsolatedConfig` (default **off**) writes a minimal `base.cfg` and passes `-c` ahead of `--appendconfig`, re-pointing `input_autoconfig_dir` at the host's real autoconfig folder. `--appendconfig` alone only layered overrides over the user's config, so this isolates the session. **A live controller retest is still required before flipping the default on** |
 | F11 | Live runs had one spectator at a time; the 2-concurrent-spectator criterion is proven only on loopback. | Run a 2-spectator tailnet session (deferred — needs all four machines online). | Deferred |
 | F12 | The untracked handoffs (`handoff-cabinet-mode-2026-09-20.md`, `handoff-retroarch-provider-2026-09-20.md`) still describe pre-live state. | Refresh or delete them so they don't mislead. | Low — **Done 2026-09-21 (cleanup): both handoffs deleted** |
 | F13 | ~~Rooms/KotH bypass the provider seam: `service.rs:139` calls `commands::resolve_launcher` (always FightCade) and always reads overlay results.~~ | ~~Gate room hosting/joining on `overlay_results`…~~ **Moot — the rooms/KotH/overlay subsystem was removed 2026-09-21** ([`04-design.md`](04-design.md) §5). | Dropped |
 | F14 | The diagnostics bundle (`diagnostics.rs`) lists session dirs/files with sizes and tails the app log, but omitted the per-session `emulator-*.log` contents — exactly where the netplay lines live. | Include the latest session's emulator-log tail in the bundle. | High — **fixed 2026-09-21 (cleanup)** |
 | F15 | The diagnostics bundle embeds tailnet IPs and absolute home/config paths (`config`, provider detail, last match) with no redaction or warning. | Redact identifiers or warn that the bundle is not for public sharing. | Med — **fixed 2026-09-21 (cleanup): home paths + IPv4/IPv6 + `*.ts.net` names + configured handle/peer redacted, warning header added** |
 | F16 | Session dirs and `emulator-*.log` were never pruned; only the app log rotates. | Add retention (count/age/size cap). | Med — **fixed 2026-09-21 (cleanup): session dirs pruned to the newest `SESSION_KEEP`** |
-| F17 | Each spectator renders its own audio locally, which echoes in a voice call; the task list doesn't address it (§9). | Default spectators to muted, or add a setting. | Med |
+| F17 | Each spectator renders its own audio locally, which echoes in a voice call; the task list doesn't address it (§9). | Default spectators to muted, or add a setting. | Med — **Done 2026-09-21:** the spectator overrides add `audio_mute_enable = "true"` by default via a `retroarchMuteSpectators` setting (on); live audio check pending |
 | F18 | Host-as-spectator (non-playing server) was not exercised; the app exposes only P1/P2/Spectator. | Decide whether to support and test it. | Low — **Decided 2026-09-21: non-goal, recorded in §9; the host also plays (P1) and the GUI exposes only P1/P2/Spectator** |
 | F19 | A client issued `NETPLAY_CMD_LOAD_SAVESTATE`, followed by `Failed to load state` against the empty per-role savestate dirs. | Confirm netplay state sync cannot pull a stale/wrong state. | Low — **Done 2026-09-21: `write_overrides` pins `savestate_auto_load = "false"`, so netplay's state sync always starts from a fresh state instead of auto-loading a stale per-role savestate** |
 | F20 | Per-machine `retroarchPort` isn't validated against peers; preflight only proves TCP reachability. | Validate the expected netplay port or document "host's port must match on all peers". | Low — **Done 2026-09-21: §5 documents that the netplay port must match on every machine, and the preflight/force error text now says "use the same netplay port on both peers"** |
 
-Not selected this session: **F8** (a `netplay_max_ping` cap / spectate password) and **F17**. Deferred:
-**F10** (needs a live controller retest) and **F11** (needs all four machines online). See each row.
+F8 (netplay max-ping cap), F10 (opt-in config isolation), and F17 (spectator mute) are implemented
+as of 2026-09-21; the password half of F8 was dropped and the live controller retest for F10's
+default remains. F11 (2 concurrent spectators on the tailnet) is still deferred until all four
+machines are online. See each row.
 
 ### Confirmed benign
 

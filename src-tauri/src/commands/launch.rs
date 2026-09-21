@@ -220,6 +220,27 @@ pub fn launch_match(
     .map_err(Into::into)
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedCore {
+    pub path: String,
+    pub sha256: String,
+}
+
+#[tauri::command(async)]
+pub fn download_retroarch_core(app: AppHandle) -> crate::error::CommandResult<DownloadedCore> {
+    use tauri::Manager;
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("cannot resolve data dir: {err}"))?;
+    let core = providers::download_managed_core(&data_dir)?;
+    Ok(DownloadedCore {
+        path: core.to_string_lossy().to_string(),
+        sha256: providers::frozen_core_sha256().to_string(),
+    })
+}
+
 #[tauri::command(async)]
 pub fn stop_match(app: AppHandle) -> crate::error::CommandResult<MatchState> {
     Ok(session::stop(&app)?)

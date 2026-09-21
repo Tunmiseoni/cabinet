@@ -5,6 +5,7 @@ import type {
   CabinetStatus,
   Config,
   DiagnosticsResult,
+  DownloadedCore,
   LaunchRequest,
   MatchState,
   ParityStatus,
@@ -38,6 +39,9 @@ export const launchMatch = (request: LaunchRequest) =>
 
 export const launchDevPair = (rom: string) =>
   invoke<MatchState>("launch_dev_pair", { rom });
+
+export const downloadRetroArchCore = () =>
+  invoke<DownloadedCore>("download_retroarch_core");
 
 export const stopMatch = () => invoke<MatchState>("stop_match");
 
