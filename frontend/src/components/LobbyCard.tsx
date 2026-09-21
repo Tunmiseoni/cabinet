@@ -39,6 +39,12 @@ import { DoorOpen, Eye, Server, Square, Users } from "lucide-react";
 
 const FIRST_TO = [1, 2, 3];
 
+type HostSeat = "1" | "2" | "spectate";
+
+function hostSeatValue(seat: HostSeat): number | null {
+  return seat === "spectate" ? null : Number(seat);
+}
+
 function roomSummary(room: Room): string {
   return `${room.rom} · ${room.phase} · ${room.players}/2 players`;
 }
@@ -62,6 +68,7 @@ export function LobbyCard({
 }: LobbyCardProps) {
   const [rom, setRom] = useState("");
   const [firstTo, setFirstTo] = useState("2");
+  const [hostSeat, setHostSeat] = useState<HostSeat>("1");
   const [manualHost, setManualHost] = useState("");
   const [manualRom, setManualRom] = useState("");
 
@@ -86,7 +93,11 @@ export function LobbyCard({
   const busy = action.busy;
 
   async function host() {
-    const room = await lobbyStart({ rom, firstTo: Number(firstTo) });
+    const room = await lobbyStart({
+      rom,
+      firstTo: Number(firstTo),
+      hostSeat: hostSeatValue(hostSeat),
+    });
     roomQuery.mutate(room);
     onMatch(await matchStatus());
   }
@@ -180,7 +191,7 @@ export function LobbyCard({
               </Button>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
               <div className="grid gap-2">
                 <Label>ROM</Label>
                 <Select value={rom} onValueChange={setRom} disabled={running || busy}>
@@ -208,6 +219,23 @@ export function LobbyCard({
                         {n}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Play as</Label>
+                <Select
+                  value={hostSeat}
+                  onValueChange={(value) => setHostSeat(value as HostSeat)}
+                  disabled={running || busy}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Player 1</SelectItem>
+                    <SelectItem value="2">Player 2</SelectItem>
+                    <SelectItem value="spectate">Spectate (table)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

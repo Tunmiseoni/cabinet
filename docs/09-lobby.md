@@ -118,16 +118,21 @@ players is unknown; it is deferred behind a spike (§7.11).
 host has the core + ROM loaded and is listening, so there is no such thing as a metadata-only room
 without inventing a signaling service (which is the v1 shape we are deliberately not rebuilding).
 
-- Creating a room **launches** the host instance. By default the host runs as a **non-playing
-  spectator server** (the "table"), so the host machine is not forced onto a controller and can
-  rotate players freely.
+- Creating a room **launches** the host instance. The host picks its own seat when creating the
+  room: **`Player 1` (default) / `Player 2` / `Spectate (table)`** (`hostSeat` on `lobby_start`). A
+  seated host plays; the **Spectate** choice is the non-playing spectator server (the "table") for
+  rotation, so the host machine is not forced onto a controller when it is only arbitrating.
+  (Corrected 2026-09-21: the built version originally *always* hosted as a non-playing spectator,
+  which left a two-person session with a single player — the host had no way to take a seat because
+  the live toggle below is not built yet.)
 - "Waiting in the lobby" = the host emulator sits at attract / character-select until a client joins.
 - The host chooses the **ROM** and the **first-to-N** when creating the room. Both are fixed for the
   room's lifetime.
 - The room dies when the host emulator dies (§7.8). There is no persistence and no idle state.
-- The host may toggle *into* play later (it is just another instance using the same control path),
-  and can toggle back out — this is what makes winner-stays rotation possible when the host is one of
-  the two players.
+- The host **may toggle between play and spectator later** (it is just another instance using the
+  same control path) — this is what makes winner-stays rotation possible when the host is one of the
+  two players. The switch is the B4 `NETPLAY_GAME_WATCH` control; until it lands, the seat is chosen
+  at creation and cannot change.
 
 Consequences accepted: a joiner must already own a **matching ROM + core**, so the join flow runs the
 existing parity gate *before* spawning the joiner's emulator (§5), not after.
@@ -191,14 +196,15 @@ or join a room, and the room assigns you a seat." Three seat types remain:
 
 | Seat | Instance | Notes |
 |---|---|---|
-| Server | The room's host instance | Default: non-playing. May toggle into/out of play. |
-| Player | A client claiming a device slot | Two player slots (P1/P2-equivalent). |
+| Server | The room's host instance | Plays a seat by default; `Spectate (table)` keeps it non-playing. May toggle into/out of play (later, §7.4). |
+| Player | A client claiming a device slot | Two player slots (P1/P2-equivalent). Host and joiners each hold one. |
 | Spectator | A client with `netplay_start_as_spectator = "true"` | Sends no input; many allowed. |
 
 ### 7.2 Room lifecycle
 
-1. Host creates a room: picks ROM + first-to-N; app launches the host instance as a non-playing
-   server and starts the beacon.
+1. Host creates a room: picks ROM + first-to-N + its own seat (default Player 1); the app launches
+   the host instance seated (or as a non-playing server for `Spectate`) and starts the beacon. The
+   beacon's `players` counts the host's seat, so the first joiner is seated in the free slot.
 2. Joiners connect (client or spectator). First two *players* are seated; everyone else spectates.
 3. The room is `waiting` until two players are seated, then `playing`.
 4. On set end (automatic detection, §7.6): winner stays **and keeps their slot/side**; the loser
@@ -370,6 +376,12 @@ frontend/src/components/
   2026-09-21:** seat is split from role via `player_slot` on the launch request (§5); the
   `lobby_join` command assigns it from room occupancy. The host updates the beacon's occupancy from
   its netplay observer so joiners can see free seats (spectators are not counted yet).
+- **Host seat:** ~~does hosting always mean spectating?~~ **Resolved 2026-09-21:** `lobby_start`
+  takes a `hostSeat` (`1`/`2`, or none for the table mode), defaulting to `1`. The room advertises
+  its `hostSeat` and the host's held seat is included in the advertised `players`, so a joiner is
+  seated in the free slot (host on 1 → joiner takes 2, and vice versa). Manual join-by-address has
+  no beacon, so a manual joiner defaults to seat 1 and can collide with a host playing seat 1 — use
+  the beacon path, or the host's `Spectate`/seat-2 choice.
 - **Parity timing:** run the parity gate before spawning the joiner (recommended) or after? (Before —
   fail fast, no window churn.)
 - **Slot race:** exact ordering/acknowledgement between the loser's release and the challenger's
@@ -427,8 +439,8 @@ fallback. Steps 2–4 build order:
    gate open.)
 2. **Lobby core** — room lifecycle, beacon (+ manual join), parity pre-check, control-socket plumbing.
    **Done 2026-09-21:** control-socket plumbing (`providers/retroarch/command.rs`); the room model
-   (`lobby/room.rs`), the HTTP beacon (`lobby/beacon.rs`), the host-as-a-non-playing-server launch
-   path, the `lobby_*` commands, and the **client join flow** (`lobby_join`, with the seat/bind split
+   (`lobby/room.rs`), the HTTP beacon (`lobby/beacon.rs`), the host launch path (seated by default,
+   `Spectate` for the non-playing server), the `lobby_*` commands, and the **client join flow** (`lobby_join`, with the seat/bind split
    of §5 and host occupancy advertised from the netplay observer). `LobbyCard.tsx` hosts/joins rooms
    and joins by address. `RoomView.tsx` (seats/set score) still belongs to step 3.
 3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher. **Result

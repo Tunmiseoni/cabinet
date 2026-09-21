@@ -208,6 +208,7 @@ export interface Room {
   phase: RoomPhase;
   players: number;
   spectators: number;
+  hostSeat: number | null;
   revision: number;
 }
 
@@ -220,6 +221,7 @@ export interface DiscoveredRoom {
 export interface LobbyStartRequest {
   rom: string;
   firstTo?: number;
+  hostSeat?: number | null;
 }
 
 export interface LobbyJoinRequest {

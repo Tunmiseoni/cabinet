@@ -111,6 +111,7 @@ mod tests {
             "player-one",
             "sfiii3nr1",
             2,
+            None,
         )));
         room.lock_or_recover().set_occupancy(players, spectators);
         let beacon = Beacon::start_on((Ipv4Addr::LOCALHOST, 0), Arc::clone(&room)).unwrap();

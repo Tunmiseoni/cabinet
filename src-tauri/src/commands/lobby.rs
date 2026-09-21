@@ -50,12 +50,12 @@ fn host_identity(cfg: &Config) -> (String, String) {
 
 /// Resolve the launch role and input seat for a joiner. A player always connects as a client
 /// (`Role::P2`); the server assigns the seat at connect time, so the *seat* is what varies, not
-/// the connect direction. Without an explicit seat, occupancy decides: the first player takes
-/// seat 1, the second seat 2, and a full room must spectate.
+/// the connect direction. Without an explicit seat, the room's advertised occupancy decides,
+/// filling the slots the host has not taken.
 fn assign_join(
     spectate: bool,
     requested: Option<u8>,
-    players: u8,
+    room: Option<&Room>,
 ) -> crate::error::Result<(Role, Option<u8>)> {
     if spectate {
         return Ok((Role::Spectator, None));
@@ -66,11 +66,16 @@ fn assign_join(
         }
         return Ok((Role::P2, Some(slot)));
     }
-    match players.min(2) {
-        0 => Ok((Role::P2, Some(1))),
-        1 => Ok((Role::P2, Some(2))),
-        _ => Err("the room is full — join as a spectator, or wait for a seat".into()),
-    }
+    let Some(room) = room else {
+        // No beacon answered (a manual join by address), so occupancy is unknown. Assume the
+        // room is empty; a host that is playing player 1 will refuse the duplicate seat.
+        return Ok((Role::P2, Some(1)));
+    };
+    let held = room.host_seat.is_some() as u8;
+    let joiners = room.players.saturating_sub(held);
+    room.next_free_seat(joiners)
+        .map(|seat| (Role::P2, Some(seat)))
+        .ok_or_else(|| "the room is full — join as a spectator, or wait for a seat".into())
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,6 +84,10 @@ pub struct LobbyStartRequest {
     pub rom: String,
     #[serde(default = "default_first_to")]
     pub first_to: u8,
+    /// The seat the host itself takes (`1`/`2`), or `None` to host as a non-playing spectator
+    /// (the "table"). Defaults to seat 1 so a one-friend session is host-vs-joiner.
+    #[serde(default)]
+    pub host_seat: Option<u8>,
 }
 
 #[tauri::command(async)]
@@ -100,12 +109,26 @@ pub fn lobby_start(
         return Err("choose a ROM for the room".into());
     }
     let first_to = request.first_to.clamp(1, 9);
+    let host_seat = match request.host_seat {
+        Some(slot) if (1..=2).contains(&slot) => Some(slot),
+        Some(slot) => {
+            return Err(format!("invalid host seat {slot}: expected 1 or 2").into());
+        }
+        None => None,
+    };
     let (node_id, handle) = host_identity(&cfg);
-    let room = Room::new(new_room_id(), node_id, handle, rom.clone(), first_to);
+    let room = Room::new(
+        new_room_id(),
+        node_id,
+        handle,
+        rom.clone(),
+        first_to,
+        host_seat,
+    );
     let room = lobby.start(room, beacon_port(&cfg))?;
 
     log::info!(
-        "hosting room {} ({} first to {first_to})",
+        "hosting room {} ({} first to {first_to}, host seat {host_seat:?})",
         room.room_id,
         room.rom
     );
@@ -115,10 +138,10 @@ pub fn lobby_start(
             rom,
             peer_ip: String::new(),
             role: Role::P1,
-            player_slot: None,
+            player_slot: host_seat,
             dev: false,
             force: false,
-            host_spectating: true,
+            host_spectating: host_seat.is_none(),
         },
     ) {
         lobby.stop();
@@ -176,10 +199,10 @@ pub fn lobby_join(
             "no room answered at that address — enter the ROM to join directly".to_string()
         })?;
     let players = room.as_ref().map(|room| room.players).unwrap_or(0);
-    let (role, player_slot) = assign_join(request.spectate, request.player_slot, players)?;
+    let (role, player_slot) = assign_join(request.spectate, request.player_slot, room.as_ref())?;
 
     log::info!(
-        "joining {host} room={:?} rom={rom} role={} seat={player_slot:?}",
+        "joining {host} room={:?} rom={rom} role={} seat={player_slot:?} (advertised players {players})",
         room.as_ref().map(|room| room.room_id.as_str()),
         role.label(),
     );
@@ -266,30 +289,71 @@ pub fn lobby_discover(app: AppHandle) -> crate::error::CommandResult<Vec<Discove
 mod tests {
     use super::*;
 
+    fn room(host_seat: Option<u8>, players: u8) -> Room {
+        let mut room = Room::new("r", "node", "player-one", "sfiii3nr1", 2, host_seat);
+        room.set_occupancy(players, 0);
+        room
+    }
+
     #[test]
     fn the_first_player_joins_on_seat_one() {
-        assert_eq!(assign_join(false, None, 0).unwrap(), (Role::P2, Some(1)));
+        let room = room(None, 0);
+        assert_eq!(
+            assign_join(false, None, Some(&room)).unwrap(),
+            (Role::P2, Some(1))
+        );
     }
 
     #[test]
     fn the_second_player_joins_on_seat_two() {
-        assert_eq!(assign_join(false, None, 1).unwrap(), (Role::P2, Some(2)));
+        let room = room(None, 1);
+        assert_eq!(
+            assign_join(false, None, Some(&room)).unwrap(),
+            (Role::P2, Some(2))
+        );
+    }
+
+    #[test]
+    fn a_joiner_avoids_a_playing_hosts_seat() {
+        assert_eq!(
+            assign_join(false, None, Some(&room(Some(1), 1))).unwrap(),
+            (Role::P2, Some(2))
+        );
+        assert_eq!(
+            assign_join(false, None, Some(&room(Some(2), 1))).unwrap(),
+            (Role::P2, Some(1))
+        );
     }
 
     #[test]
     fn a_full_room_must_spectate() {
-        assert!(assign_join(false, None, 2).is_err());
-        assert_eq!(assign_join(true, None, 2).unwrap(), (Role::Spectator, None));
+        let full = room(None, 2);
+        assert!(assign_join(false, None, Some(&full)).is_err());
+        assert_eq!(
+            assign_join(true, None, Some(&full)).unwrap(),
+            (Role::Spectator, None)
+        );
+        let seated_host = room(Some(1), 2);
+        assert!(assign_join(false, None, Some(&seated_host)).is_err());
+    }
+
+    #[test]
+    fn a_manual_join_without_a_beacon_falls_back_to_seat_one() {
+        assert_eq!(assign_join(false, None, None).unwrap(), (Role::P2, Some(1)));
     }
 
     #[test]
     fn an_explicit_seat_wins_over_occupancy() {
-        assert_eq!(assign_join(false, Some(2), 0).unwrap(), (Role::P2, Some(2)));
+        let room = room(None, 0);
+        assert_eq!(
+            assign_join(false, Some(2), Some(&room)).unwrap(),
+            (Role::P2, Some(2))
+        );
     }
 
     #[test]
     fn an_out_of_range_seat_is_rejected() {
-        assert!(assign_join(false, Some(0), 0).is_err());
-        assert!(assign_join(false, Some(3), 0).is_err());
+        assert!(assign_join(false, Some(0), None).is_err());
+        assert!(assign_join(false, Some(3), None).is_err());
     }
 }

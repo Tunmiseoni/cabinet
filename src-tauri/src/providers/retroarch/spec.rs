@@ -571,6 +571,20 @@ mod tests {
     }
 
     #[test]
+    fn a_host_seated_as_player_one_plays_instead_of_spectating() {
+        let scratch = Scratch::new("seat-host-p1");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        let mut request = request(Role::P1, &rom, "100.64.0.2");
+        request.player_slot = Some(1);
+        let spec = provider.spec(&request).unwrap();
+        assert!(spec.args.iter().any(|arg| arg == "-H"));
+        let content = overrides(&provider, Role::P1);
+        assert!(content.contains("input_player1_y = \"u\""));
+        assert!(!content.contains("netplay_start_as_spectator"));
+    }
+
+    #[test]
     fn an_invalid_seat_is_rejected() {
         let scratch = Scratch::new("seat-invalid");
         let rom = scratch.rom();
