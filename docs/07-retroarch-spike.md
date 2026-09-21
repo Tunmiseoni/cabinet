@@ -170,7 +170,9 @@ retroarch.exe -L cores\fbneo_libretro.dll roms\sfiii3nr1.zip --appendconfig over
 Firewall (host only): allow inbound TCP 55435 for `retroarch.exe` (Windows: `netsh advfirewall
 firewall add rule name="RetroArch Netplay" dir=in action=allow program="<path>\retroarch.exe"
 protocol=TCP localport=55435`; macOS: allow RetroArch when prompted, or add it to the firewall
-allow list).
+allow list). On Windows, `scripts/fcade-lan-windows-firewall.bat` adds this rule alongside the
+FBNeo one: it finds `retroarch.exe` via `%RETROARCH%`, the common install dirs, or `where`, and
+skips cleanly when RetroArch is absent.
 
 ## 6. Live 4-person test protocol
 
@@ -382,7 +384,7 @@ min — but the logs surfaced the items below.
 | F6 | The app logs only spawn/exit — connection status, player slot, and ping live only inside the captured log. | Parse the captured netplay lines (`Connected to`, `joined as player N (ping X)`, `Netplay disconnected`) into `MatchState` and show netplay health in the UI. | High — **Done 2026-09-21: `netplay.rs` parses the captured lines into `MatchState.instances[].netplay`; the UI shows a per-instance badge (status/ping) with a capped event log** |
 | F7 | Nickname falls back to the literal `"player"` (`RetroArchProvider::new`) when `retroarchNickname`/`handle` are unset — the macOS machine showed as `player` beside peers' handles. | Default to the user's handle / tailnet hostname and prompt once. | Med — **Done 2026-09-21: silent fallback chain `retroarchNickname → handle → tailnet self hostname → OS hostname → "player"`, resolved lazily per launch in `spec()` (no prompt)** |
 | F8 | Appendconfig sets no `netplay_max_ping` (`retroarch::write_overrides`); first-join pings reached 266–309 ms before settling. | Decide on a `netplay_max_ping` cap (and whether `netplay_spectate_password` is wanted) and apply/document it. | Low |
-| F9 | `scripts/fcade-lan-windows-firewall.bat` adds a rule only for `fcadefbneo.exe` with no port; no inbound TCP 55435 rule for `retroarch.exe`, though §5 requires one for a host. | Add/document a Windows firewall rule for RetroArch's netplay TCP port. | High |
+| F9 | `scripts/fcade-lan-windows-firewall.bat` adds a rule only for `fcadefbneo.exe` with no port; no inbound TCP 55435 rule for `retroarch.exe`, though §5 requires one for a host. | Add/document a Windows firewall rule for RetroArch's netplay TCP port. | High — **Done 2026-09-21: the script now detects `retroarch.exe` (`%RETROARCH%`, common dirs, `where`) and adds a `RetroArch Netplay LAN` inbound TCP 55435 rule, skipping cleanly if not found** |
 | F10 | The app launches RetroArch without `-c`, so it inherits the user's real `retroarch.cfg`; logs show `[GLSL] Stock GLSL shaders will be used` ×14, `[GL] none shader…` ×3, and playlist/`App Intents` scanning. | Decide whether to pass a minimal generated base config so sessions are reproducible and per-machine config doesn't leak in. | Med — **Deferred 2026-09-21: `--appendconfig` only layers overrides over the user's base config. Passing `-c <generated.cfg>` would isolate the session, but it drops controller bindings unless `input_autoconfig_dir` is re-pointed, so it needs a live controller retest before applying** |
 | F11 | Live runs had one spectator at a time; the 2-concurrent-spectator criterion is proven only on loopback. | Run a 2-spectator tailnet session (deferred — needs all four machines online). | Deferred |
 | F12 | The untracked handoffs (`handoff-cabinet-mode-2026-09-20.md`, `handoff-retroarch-provider-2026-09-20.md`) still describe pre-live state. | Refresh or delete them so they don't mislead. | Low — **Done 2026-09-21 (cleanup): both handoffs deleted** |
