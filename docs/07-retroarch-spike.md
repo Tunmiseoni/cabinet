@@ -11,10 +11,9 @@ The one criterion not exercised live is **2 concurrent spectators** (the live ru
 watcher at a time); the 4-instance loopback soak in §3 covers that topology. A 2-spectator
 tailnet run is deferred (needs all four machines online), not blocked.
 
-This is the Phase 0 gate in [`04-design.md`](04-design.md) §6, and the evidence that decides
-the deferred "Path B" question in [`06-redesign.md`](06-redesign.md) §7 (in-app libretro
-rendering + netplay, which is the only route that would remove the FightCade install
-dependency; see `06-redesign.md` §2).
+This is the Phase 0 gate in [`04-design.md`](04-design.md) §6, and the evidence for the
+FightCade-dependency question in [`06-redesign.md`](06-redesign.md) §2 (whether the RetroArch
+netplay route can replace the FightCade install entirely).
 
 > Not to be confused with the redesign's **R0 window-topology spike** (`06-redesign.md` §3.5).
 
@@ -195,14 +194,14 @@ allow list).
 
 | Outcome | Decision |
 |---|---|
-| Feel acceptable at <100 ms, 2 spectators stable | **RetroArch primary** for the spectator path; skip the `ggponet.dll` shim; proceed to Phase 3 integration and revisit `06-redesign.md` Path B |
+| Feel acceptable at <100 ms, 2 spectators stable | **RetroArch primary** for the spectator path; skip the `ggponet.dll` shim; proceed to Phase 3 integration and revisit the RetroArch migration in `06-redesign.md` §2 |
 | Feel marginal | Try tuning first (input latency frames, `netplay_max_ping`); then a hard-time-boxed shim (Phase 0b), else defer |
 | Feel unacceptable | Keep `quark:direct`/GGPO; document spectate as deferred (or pursue the FightCade `ggponet.dll` shim) |
 
 **Chosen (2026-09-20): row 1.** Live feel was acceptable and the cross-OS session stayed synced;
 the 2-concurrent-spectator half of the criterion is proven on loopback and its tailnet run is
 deferred. So: take RetroArch as the **primary spectator path**, skip the `ggponet.dll` shim
-(Phase 0b), and revisit `06-redesign.md` Path B.
+(Phase 0b), and revisit the RetroArch migration in `06-redesign.md` §2.
 
 ## 8. Friend-machine prep (one-time)
 
@@ -244,7 +243,7 @@ public repo vs. manual copy). Nothing has been published yet.
 - The FBNeo libretro core's `.info` declares `license = "Non-commercial"` (the
   `06-redesign.md` §2 shorthand "FBNeo is open (GPL)" is imprecise for the libretro core).
 
-Implication for `06-redesign.md` Path B: embedding a GPLv3 frontend and a non-commercial core in
+Implication for the `06-redesign.md` §2 RetroArch-migration route: embedding a GPLv3 frontend and a non-commercial core in
 an MIT app is a real packaging/compliance task (source offer, license files, no commercial
 sale), not a drop-in. The spike's harness uses stock RetroArch, so none of this applies yet.
 
@@ -257,7 +256,7 @@ Never commit ROMs, cores, or emulator binaries. The frozen cores live outside th
 ## 12. References
 
 - [`04-design.md`](04-design.md) §2/§6 — RetroArch rationale and the Phase 0 gate.
-- [`06-redesign.md`](06-redesign.md) §2/§7 — FightCade dependency and Path B.
+- [`06-redesign.md`](06-redesign.md) §2 — the FightCade dependency and the RetroArch migration.
 - [`scripts/retroarch-spike.sh`](../scripts/retroarch-spike.sh) — the harness.
 - RetroArch netplay (user): <https://www.retroarch.com/netplay.php>
 - RetroArch netplay protocol: <https://docs.libretro.com/development/retroarch/netplay/>
@@ -372,21 +371,21 @@ min — but the logs surfaced the items below.
 | # | Finding (evidence) | Task | Priority |
 |---|---|---|---|
 | F1 | Host logs `Failed to connect to client.` + `A netplay client has disconnected` twice per join (32× each; Windows + macOS hosts); never blocked play. The string is not in `network/netplay/netplay_frontend.c`. | Confirm it is expected with `netplay_nat_traversal=false` (host reverse-probe), then document it and/or drop it from captured logs. | Med |
-| F2 | `[FBNeo] Unknown device type for port 0/1, forcing "Classic" instead` — 18–36× per session on all OSes; the appendconfig (`retroarch.rs:219`) sets no `input_libretro_device_p*`. | Pin the libretro input device (6-button Classic) so mappings are deterministic and the warning stops. | High |
+| F2 | `[FBNeo] Unknown device type for port 0/1, forcing "Classic" instead` — 18–36× per session on all OSes; the appendconfig (`retroarch::write_overrides`) sets no `input_libretro_device_p*`. | Pin the libretro input device (6-button Classic) so mappings are deterministic and the warning stops. | High |
 | F3 | Force-launching a client before the host binds produces `Failed to set up netplay sockets` / `Failed to initialize netplay` and exits in 6–9 s (linux `205008`/`205023`). | Improve the force path: wait/retry for the host, or clearly label a force-launch as likely to fail. | Med |
-| F4 | `--verbose` is always passed (`retroarch.rs:308/516/546`); `capture_stream` (`logging.rs`) writes untimestamped, uncapped lines — spectator logs run 600+ lines, dominated by Metal `mvk-warn` noise. | Gate `--verbose` behind `verboseLogging`, timestamp captured lines, and/or skip known-noisy lines. | High |
-| F5 | Session dirs are UTC (`logging.rs:30 utc_stamp()`) while the app log timestamps locally (1 h offset on this machine). | Unify timestamps or record the offset so app and emulator events correlate without arithmetic. | Low |
+| F4 | `--verbose` was always passed (`retroarch::spec`); `logging::capture_stream` wrote untimestamped, uncapped lines — spectator logs ran 600+ lines, dominated by Metal `mvk-warn` noise. | Gate `--verbose` behind `verboseLogging`; timestamp captured lines. | High — **fixed 2026-09-21 (cleanup)** |
+| F5 | Session dirs were UTC (`time::utc_stamp`) while the app log timestamped locally. | Unify timestamps or record the offset so app and emulator events correlate without arithmetic. | Low — **fixed 2026-09-21 (cleanup): app log, capture, and session dirs are all UTC** |
 | F6 | The app logs only spawn/exit — connection status, player slot, and ping live only inside the captured log. | Parse the captured netplay lines (`Connected to`, `joined as player N (ping X)`, `Netplay disconnected`) into `MatchState` and show netplay health in the UI. | High |
-| F7 | Nickname falls back to the literal `"player"` (`retroarch.rs:180-185`) when `retroarchNickname`/`handle` are unset — the macOS machine showed as `player` beside peers' handles. | Default to the user's handle / tailnet hostname and prompt once. | Med |
-| F8 | Appendconfig sets no `netplay_max_ping` (`retroarch.rs:219`); first-join pings reached 266–309 ms before settling. | Decide on a `netplay_max_ping` cap (and whether `netplay_spectate_password` is wanted) and apply/document it. | Low |
+| F7 | Nickname falls back to the literal `"player"` (`RetroArchProvider::new`) when `retroarchNickname`/`handle` are unset — the macOS machine showed as `player` beside peers' handles. | Default to the user's handle / tailnet hostname and prompt once. | Med |
+| F8 | Appendconfig sets no `netplay_max_ping` (`retroarch::write_overrides`); first-join pings reached 266–309 ms before settling. | Decide on a `netplay_max_ping` cap (and whether `netplay_spectate_password` is wanted) and apply/document it. | Low |
 | F9 | `scripts/fcade-lan-windows-firewall.bat` adds a rule only for `fcadefbneo.exe` with no port; no inbound TCP 55435 rule for `retroarch.exe`, though §5 requires one for a host. | Add/document a Windows firewall rule for RetroArch's netplay TCP port. | High |
 | F10 | The app launches RetroArch without `-c`, so it inherits the user's real `retroarch.cfg`; logs show `[GLSL] Stock GLSL shaders will be used` ×14, `[GL] none shader…` ×3, and playlist/`App Intents` scanning. | Decide whether to pass a minimal generated base config so sessions are reproducible and per-machine config doesn't leak in. | Med |
 | F11 | Live runs had one spectator at a time; the 2-concurrent-spectator criterion is proven only on loopback. | Run a 2-spectator tailnet session (deferred — needs all four machines online). | Deferred |
 | F12 | The untracked handoffs (`handoff-cabinet-mode-2026-09-20.md`, `handoff-retroarch-provider-2026-09-20.md`) still describe pre-live state. | Refresh or delete them so they don't mislead. | Low |
-| F13 | Rooms/KotH bypass the provider seam: `service.rs:139` calls `commands::resolve_launcher` (always FightCade) and always reads overlay results, so with `provider=retroarch` a room match launches the wrong emulator and can never auto-report. | Gate room hosting/joining on `overlay_results`, or launch via the provider seam and fall back to manual results with a clear notice. | High |
-| F14 | The diagnostics bundle (`commands.rs`) lists session dirs/files with sizes and tails the app log, but omits the per-session `emulator-*.log` contents — exactly where the netplay lines live. | Include the latest session's emulator-log tail in the bundle. | High |
-| F15 | The diagnostics bundle embeds tailnet IPs and absolute home/config paths (`config`, `tailnet` sections) with no redaction or warning. | Redact identifiers or warn that the bundle is not for public sharing. | Med |
-| F16 | Session dirs and `emulator-*.log` are never pruned; only the app log rotates (`logging.rs:10-11`). | Add retention (count/age/size cap). | Med |
+| F13 | ~~Rooms/KotH bypass the provider seam: `service.rs:139` calls `commands::resolve_launcher` (always FightCade) and always reads overlay results.~~ | ~~Gate room hosting/joining on `overlay_results`…~~ **Moot — the rooms/KotH/overlay subsystem was removed 2026-09-21** ([`04-design.md`](04-design.md) §5). | Dropped |
+| F14 | The diagnostics bundle (`diagnostics.rs`) lists session dirs/files with sizes and tails the app log, but omitted the per-session `emulator-*.log` contents — exactly where the netplay lines live. | Include the latest session's emulator-log tail in the bundle. | High — **fixed 2026-09-21 (cleanup)** |
+| F15 | The diagnostics bundle embeds tailnet IPs and absolute home/config paths (`config`, provider detail, last match) with no redaction or warning. | Redact identifiers or warn that the bundle is not for public sharing. | Med — **fixed 2026-09-21 (cleanup): home paths + IPv4 redacted, warning header added** |
+| F16 | Session dirs and `emulator-*.log` were never pruned; only the app log rotates. | Add retention (count/age/size cap). | Med — **fixed 2026-09-21 (cleanup): session dirs pruned to the newest `SESSION_KEEP`** |
 | F17 | Each spectator renders its own audio locally, which echoes in a voice call; the task list doesn't address it (§9). | Default spectators to muted, or add a setting. | Med |
 | F18 | Host-as-spectator (non-playing server) was not exercised; the app exposes only P1/P2/Spectator. | Decide whether to support and test it. | Low |
 | F19 | A client issued `NETPLAY_CMD_LOAD_SAVESTATE`, followed by `Failed to load state` against the empty per-role savestate dirs. | Confirm netplay state sync cannot pull a stale/wrong state. | Low |

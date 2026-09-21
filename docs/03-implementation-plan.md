@@ -20,7 +20,7 @@ What this proves: the emulator parses the direct string, binds the right port, a
 
 What is **still not available on this route** (see [`04-design.md`](04-design.md)):
 - **Spectating.** FightCade's spectator is server-brokered over a closed TCP protocol and cannot be reached from `quark:direct`. This is the main open design problem; RetroArch netplay or a `ggponet.dll` shim are the candidate solutions.
-- Automatic match-result/overlay files in direct mode are **unverified** (`bVidSaveOverlayFiles 1`), which matters for KotH and score tracking.
+- Automatic match-result/overlay files in direct mode are **unverified** (`bVidSaveOverlayFiles 1`); they mattered only for the KotH/score tracking that was **removed 2026-09-21** (see [`04-design.md`](04-design.md) §5).
 
 ## Path status (updated 2026-09-18) — important
 

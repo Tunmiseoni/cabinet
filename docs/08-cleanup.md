@@ -1,7 +1,10 @@
 # Cleanup: applied refactors and deferred proposals
 
-Status: **applied pass done 2026-09-20** (balanced, behavior-preserving). The heavier refactors
-below are **proposed and deferred**; none block Phases 3. This file is the backlog for a
+Status: **applied pass done 2026-09-20** (balanced, behavior-preserving). A **second pass done
+2026-09-21** cleared the post-removal drift (docs, `uninstall-linux.sh`), removed dead frontend/Rust
+code, deleted the two stale `handoff-*.md` docs, added `cargo fmt --check` to the gate, and applied
+the logging/diagnostics follow-ups (§6 F4/F5/F14/F15/F16). The heavier refactors (§2–§5, §7) are
+**proposed and deferred**; none block Phase 3. This file is the backlog for a
 future cleanup session, so day-to-day feature work has a written target instead of ad-hoc churn.
 
 > **Removed 2026-09-21:** the rooms/lobbies/KotH subsystem, the local lifetime score ledger, and
@@ -74,13 +77,13 @@ and would give retries/staleness for free. `lib/hooks.ts` is the seam this would
 `docs/07-retroarch-spike.md` §14 already tracks the live-run findings (F1–F20). Of those, these
 belong to a logging/diagnostics cleanup:
 
-| Ref | Task |
-|---|---|
-| F4 | Gate `--verbose` behind `verboseLogging`; timestamp captured emulator lines instead of writing them raw. |
-| F5 | Session dirs are UTC while the app log is local; unify or record the offset. |
-| F14 | Include the latest session's `emulator-*.log` tail in the diagnostics bundle. |
-| F15 | Redact tailnet IPs / home paths from the diagnostics bundle (repo is public). |
-| F16 | Prune session dirs / `emulator-*.log` (only the app log rotates today). |
+| Ref | Task | Status |
+|---|---|---|
+| F4 | Gate `--verbose` behind `verboseLogging`; timestamp captured emulator lines instead of writing them raw. | **Done 2026-09-21** |
+| F5 | Session dirs are UTC while the app log is local; unify or record the offset. | **Done 2026-09-21** (app log, capture, and session dirs all UTC) |
+| F14 | Include the latest session's `emulator-*.log` tail in the diagnostics bundle. | **Done 2026-09-21** |
+| F15 | Redact tailnet IPs / home paths from the diagnostics bundle (repo is public). | **Done 2026-09-21** (structured sections redacted; raw log tail carries a warning) |
+| F16 | Prune session dirs / `emulator-*.log` (only the app log rotates today). | **Done 2026-09-21** (`SESSION_KEEP` in `constants.rs`) |
 
 ## 7. Deferred — `time` crate
 
@@ -91,7 +94,7 @@ lines and a class of date bugs, at the cost of a new dependency. Deferred under 
 ## 8. Constraints and verification
 
 - Repo is **public**: placeholders only (`100.x.x.x`), never commit logs, cores, or ROMs.
-- Any change must pass `./scripts/test.sh` (frontend build + `cargo test` +
+- Any change must pass `./scripts/test.sh` (frontend build + `cargo fmt --check` + `cargo test` +
   `cargo clippy --all-targets -- -D warnings`) on macOS, Linux, and Windows.
 - Prefer `git mv` for moves so history is preserved.
 

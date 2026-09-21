@@ -1,6 +1,8 @@
-# FightCade 2 on macOS — Online Challenge Failure
+# Docs — The Cabinet
 
-Investigation and remediation options for: **"Test game, tutorial, and spectating work, but challenging (or being challenged by) another player leaves me stuck in the chat interface."**
+The Cabinet is a cross-platform launcher for playing FightCade 2 FBNeo over Tailscale. `04-design.md`
+is the current spec; `01`–`03` are the original investigation into
+**"Test game, tutorial, and spectating work, but challenging (or being challenged by) another player leaves me stuck in the chat interface."**
 
 > Working assumption: "Fight Kid" = **FightCade 2** (v2.1.45) on macOS, installed at `/Applications/FightCade2.app`.
 
@@ -22,9 +24,10 @@ Investigation and remediation options for: **"Test game, tutorial, and spectatin
 | [`02-options.md`](02-options.md) | All remediation routes with pros/cons/cost |
 | [`03-implementation-plan.md`](03-implementation-plan.md) | Step-by-step plan for the chosen (free, Tailscale) route |
 | [`04-design.md`](04-design.md) | Current spec: The Cabinet Tauri app, network health, spectating (rooms/KotH and score tracking removed 2026-09-21) |
+| [`05-ggst-tailnet-enforcement.md`](05-ggst-tailnet-enforcement.md) | Separate companion-tool research: keeping Guilty Gear Strive on the tailnet — ToS boundary, firewall enforcement feasibility, phased plan |
 | [`06-redesign.md`](06-redesign.md) | Proposal (gated on a /grill-me session): Cabinet mode (the emulator hosted inside the app) and the wider redesign pass. Also answers "does FightCade need to be installed?" |
 | [`07-retroarch-spike.md`](07-retroarch-spike.md) | Phase 0 RetroArch netplay/spectator spike: frozen core/ROM parity, harness, local loopback verification (2 players + 2 spectators), and the live feel-test protocol |
-| [`05-ggst-tailnet-enforcement.md`](05-ggst-tailnet-enforcement.md) | Separate companion-tool research: keeping Guilty Gear Strive on the tailnet — ToS boundary, firewall enforcement feasibility, phased plan |
+| [`08-cleanup.md`](08-cleanup.md) | Cleanup backlog: the applied refactor pass and the deferred proposals |
 
 ## Environment (as observed)
 

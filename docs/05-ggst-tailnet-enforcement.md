@@ -111,7 +111,7 @@ Chosen direction: **A → B now; C as an optional elevated power-user mode.** D�
 Reasons:
 
 - The Cabinet's peer IP is an *input* to `quark:direct`; GGST needs OS-level enforcement with
-  elevated privileges — a different risk class from a cross-platform GUI lobby.
+  elevated privileges — a different risk class from a cross-platform GUI launcher.
 - Keeps The Cabinet's committed FightCade/FBNeo scope and phase plan intact.
 - The tool can still reuse this repo's Tailscale logic: `src-tauri/src/tailscale.rs` already parses
   `tailscale status --json` including `CurAddr` (the peer's public endpoint) and `Relay`, plus

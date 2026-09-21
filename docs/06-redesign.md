@@ -6,7 +6,9 @@ does not block Phases 1–4. This document captures (a) the two questions raised
 release — whether the emulator can open **inside** The Cabinet, and whether FightCade needs to stay
 installed at all — and (b) the wider UX redesign this repo needs. The remaining feature work
 (R3/R4) is **gated on a `/grill-me` session** (see §6), in keeping with the repo's convention for
-gated proposals in [`04-design.md`](04-design.md) §3/§6.
+gated proposals in [`04-design.md`](04-design.md) §3/§6. Note: the rooms/lobbies/KotH subsystem and
+score tracking were **removed 2026-09-21** ([`04-design.md`](04-design.md) §5), so the redesign no
+longer has a lobby/rooms/ladder to fold in.
 
 Companion to [`04-design.md`](04-design.md), which remains the spec for everything already built.
 This file is the spec for the redesign and Cabinet mode until it is folded back in.
@@ -15,13 +17,13 @@ This file is the spec for the redesign and Cabinet mode until it is folded back 
 
 Today The Cabinet is a coordination layer that *spawns a separate emulator window*. The app and
 the game sit side by side: the user launches a match, then alt-tabs to a Wine window to play, and
-the lobby/ladder/HUD live in a different window. It works, but it does not feel like "a system" —
+the match HUD lives in a different window. It works, but it does not feel like "a system" —
 it feels like a launcher next to an emulator.
 
 Two asks:
 
 1. **Open the emulator within The Cabinet**, so a match is one window: a cabinet bezel/HUD framing
-   the game, with the lobby, ladder, and connection health around it.
+   the game, with connection health around it.
 2. **Does FightCade even need to be installed?** (Answer in §2: yes, as the provider — the client
    is never launched.)
 
@@ -40,7 +42,7 @@ FightCade installation**:
 | `fcadefbneo.exe` — the only build with `quark:direct` (upstream FBNeo lacks it) | FightCade install | `launcher/macos.rs`, `launcher/linux.rs`, `launcher/windows.rs` |
 | `wine32on64` + `.wine32` prefix (macOS) | `FightCade2.app/Contents/Resources/` | `launcher/macos.rs:26-33` |
 | Flatpak sandbox / Wine entry (Linux) | `com.fightcade.Fightcade` | `launcher/linux.rs:6-8` |
-| ROMs, `fcadefbneo.ini`, `fbneo/fightcade/` overlays | FightCade data dir | `roms.rs`, `results.rs` |
+| ROMs, `fcadefbneo.ini` | FightCade data dir | `roms.rs` |
 
 **Consequences:**
 
@@ -111,7 +113,7 @@ cabinet_release()           -> Result<(), String>   // restore the emulator to a
 The frontend renders a `MatchView` (full-screen bezel + HUD around a viewport), measures the
 viewport with a `ResizeObserver`, and calls `cabinet_place` on change. `session.rs` attaches on
 spawn and releases on stop/exit; `MatchState.status` drives enter/leave of Cabinet mode. The
-lobby/HUD must sit in the **bezel**, not over the game, since the emulator window will cover the
+HUD must sit in the **bezel**, not over the game, since the emulator window will cover the
 viewport.
 
 ### 3.4 macOS permission reality (to verify in the spike)
@@ -129,7 +131,7 @@ viewport.
 **R0 window-topology spike (macOS, 2026-09-19).** The `windowing` skeleton is implemented
 (`src-tauri/src/windowing/`, `WindowHost` trait mirroring `launcher/`), with the debug commands
 (`cabinet_status`, `cabinet_place`, `cabinet_release`, `cabinet_request_permission`) and a
-throwaway `CabinetCard` in the lobby that measures a viewport and places a chosen window into it.
+throwaway `CabinetCard` (since removed) that measures a viewport and places a chosen window into it.
 
 Findings so far:
 
@@ -158,24 +160,22 @@ Findings so far:
 
 ## 4. Scope of the redesign (beyond embedding)
 
-The single-window IA makes the current card grid (`LaunchCard`, `PeersCard`, `RomsCard`,
-`RoomCard`, `RoomsCard`, `LifetimeCard`) insufficient. The grill should decide the target
-information architecture. Candidate directions:
+The single-window IA makes the current card grid (`LaunchCard`, `PeersCard`, `RomsCard`)
+insufficient. The grill should decide the target information architecture. Candidate directions:
 
-- **Two surfaces:** a **Lobby** (peers, rooms, ladder, history — the current cards, reorganized)
-  and a **Match** (the cabinet bezel: game viewport, live score/health/RTT, queue/champion, and
-  after-match actions).
+- **Two surfaces:** a **Launcher** (peers + ROMs + launch controls — the current cards,
+  reorganized) and a **Match** (the cabinet bezel: game viewport, live health/RTT, and
+  stop/after-match actions).
 - **Bezel as the identity:** the cabinet frame carries marquee (game/ROM, players), a control
-  panel (score, streaks, health, ping), and side rails (queue/ladder) — using the vertical and
-  horizontal space a full-screen match window gives us.
-- **Transitions:** launching enters Match automatically; exit/stop returns to Lobby. Room-driven
-  (authority-pull) launches must enter Match without user action.
+  panel (health, ping), and side rails — using the vertical and horizontal space a full-screen
+  match window gives us.
+- **Transitions:** launching enters Match automatically; exit/stop returns to the Launcher.
 - **Overlay discipline:** nothing is drawn over the game; the emulator may need to be hidden while
   dialogs are open and restored afterwards (or dialogs rendered in the bezel).
 - **Consistency:** one window, one navigation model, one visual language; remove the "launcher
   next to emulator" feel.
 
-Deliberately **out of scope** for this pass (still gated, per `04.md` §3/§6): emotes/reactions,
+Deliberately **out of scope** for this pass (still gated, per `04-design.md` §3/§6): emotes/reactions,
 voice, input recording / match history, and the RetroArch migration.
 
 ## 5. Risks and open questions
@@ -203,12 +203,12 @@ Per `04-design.md` §3, gated work needs a `/grill-me` session. Proposed agenda:
 
 1. **Cabinet mode:** placement vs. frame-follow as default on macOS; is the Accessibility prompt
    acceptable to the group; what happens on Wayland and on the Windows friend's machine.
-2. **Information architecture:** two surfaces (Lobby/Match) vs. one; what lives in the bezel vs.
+2. **Information architecture:** two surfaces (Launcher/Match) vs. one; what lives in the bezel vs.
    the side rails; how the post-match result/next-match flow works.
 3. **FightCade dependency:** confirm the "installed but never launched" framing; is the RetroArch
-   migration worth revisiting to remove the dependency (ties to `04.md` §2/§3)?
+   migration worth revisiting to remove the dependency (ties to `04-design.md` §2/§3)?
 4. **Failure UX:** no permission, no window found, emulator crashes, peer disconnects mid-match.
-5. **Scope:** what of the redesign lands now vs. after Phase 2.7/3; does the redesign delay the
+5. **Scope:** what of the redesign lands now vs. after Phase 3/4; does the redesign delay the
    4-person live test?
 6. **The existing deferred gates** (emotes/voice/recording): fold into the same session or leave
    separate.
@@ -220,7 +220,7 @@ Per `04-design.md` §3, gated work needs a `/grill-me` session. Proposed agenda:
 | R0 | **Window-topology spike (macOS)** — `windowing` skeleton + debug commands; place a Dev-pair emulator into a measured rect; measure AX permission persistence across rebuild/reinstall; confirm z-order/focus; validate frame-follow | **Partially done 2026-09-19** — window enumeration + AX placement verified end-to-end (§3.5); grant persistence, z-order, and frame-follow still open |
 | R1 | Design/grill session: IA + Cabinet mode decisions | Agenda §6 resolved — **pending** |
 | R2 | Cabinet mode implementation (macOS-first): config toggle, placement ladder, session attach/release, `MatchView` | **Implemented 2026-09-19, off by default** — Settings → Cabinet mode; needs a live match run before "done" |
-| R3 | Redesign the Lobby/Match IA per R1 | Group agrees it is streamlined — pending R1 |
+| R3 | Redesign the Launcher/Match IA per R1 | Group agrees it is streamlined — pending R1 |
 | R4 | Windows/Linux `WindowHost` implementations + verification by their owners | Cross-platform parity or documented fallback — pending |
 
 **Implementation notes (R2).** `src-tauri/src/windowing/` defines the `WindowHost` trait; macOS
@@ -263,7 +263,7 @@ surfaces as the "unsupported" message after a Retry.
 ## 8. References
 
 - `04-design.md` §2/§3 — RetroArch vs. FightCade decision, gated proposals.
-- `04-design.md` §5 — room protocol the Match surface must reflect.
+- `04-design.md` §4 — architecture the Match surface reflects.
 - [`launcher/mod.rs`](../src-tauri/src/launcher/mod.rs) — the abstraction `windowing/` mirrors.
 - [`session.rs`](../src-tauri/src/session.rs) — process lifecycle Cabinet mode hooks into.
 - `scripts/fcade-lan-macos.sh` — reference launch (Wine + `quark:direct`).

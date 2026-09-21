@@ -41,7 +41,7 @@ Reverses a source build of The Cabinet (scripts/setup-linux.sh) on Arch/CachyOS.
   --keep-rust         do not uninstall the Rust toolchain
   --keep-pkgs         do not remove any pacman packages
   --keep <pkg,...>    extra packages to preserve (flatpak is always preserved)
-  --purge-cfg         also delete the app config (config/scores/room-ledger)
+  --purge-cfg         also delete the app config
   --install-appimage  download the latest Linux AppImage to ~/.local/bin
   -h, --help          show this help
 
@@ -350,7 +350,7 @@ elif [ "$PURGE_CFG" = 1 ]; then
     [ -d "$d" ] && run rm -rf "$d"
   done
 else
-  echo "    kept (scores/ledger); pass --purge-cfg to delete"
+  echo "    kept (config); pass --purge-cfg to delete"
 fi
 
 # ---------------------------------------------------------------- appimage
@@ -394,7 +394,7 @@ install_appimage() {
 [Desktop Entry]
 Type=Application
 Name=The Cabinet
-Comment=FightCade direct-connect lobby over Tailscale
+Comment=FightCade direct-connect launcher over Tailscale
 Exec=$dest %U
 Terminal=false
 Categories=Game;Network;
