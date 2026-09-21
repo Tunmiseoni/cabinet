@@ -16,7 +16,9 @@ pub struct RetroArchProvider {
     program: PathBuf,
     core: PathBuf,
     port: u16,
-    nickname: String,
+    nickname: Option<String>,
+    handle: Option<String>,
+    tailscale_binary: Option<PathBuf>,
     overrides_dir: PathBuf,
     peer_override: PeerOverride,
     verbose: bool,
@@ -38,13 +40,13 @@ impl RetroArchProvider {
             .retroarch_nickname
             .as_deref()
             .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                cfg.handle
-                    .as_deref()
-                    .filter(|value| !value.trim().is_empty())
-            })
-            .unwrap_or("player")
-            .to_string();
+            .map(str::to_string);
+        let handle = cfg
+            .handle
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string);
+        let tailscale_binary = crate::tailscale::resolve_binary(cfg).ok();
         Self {
             program,
             core,
@@ -53,7 +55,9 @@ impl RetroArchProvider {
             } else {
                 cfg.retroarch_port
             },
-            nickname: spec::sanitize_value(&nickname),
+            nickname,
+            handle,
+            tailscale_binary,
             overrides_dir: app_config_dir.join("retroarch"),
             peer_override: if dev {
                 PeerOverride::loopback()
@@ -68,8 +72,31 @@ impl RetroArchProvider {
         self.peer_override.resolve_or(fallback)
     }
 
-    fn write_overrides(&self, role: Role) -> crate::error::Result<PathBuf> {
-        spec::write_overrides(self, role)
+    fn tailnet_hostname(&self) -> Option<String> {
+        let binary = self.tailscale_binary.as_ref()?;
+        let tailnet = crate::tailscale::status(binary).ok()?;
+        let hostname = tailnet.self_peer?.hostname;
+        let hostname = hostname.trim();
+        (!hostname.is_empty()).then(|| hostname.to_string())
+    }
+
+    fn resolve_nickname(&self) -> String {
+        let explicit = self
+            .nickname
+            .as_deref()
+            .or(self.handle.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let nickname = explicit
+            .or_else(|| self.tailnet_hostname())
+            .or_else(crate::env::os_hostname)
+            .unwrap_or_else(|| "player".to_string());
+        spec::sanitize_value(&nickname)
+    }
+
+    fn write_overrides(&self, role: Role, nickname: &str) -> crate::error::Result<PathBuf> {
+        spec::write_overrides(self, role, nickname)
     }
 }
 
@@ -118,7 +145,8 @@ impl Provider for RetroArchProvider {
         if !request.rom_path.is_file() {
             return Err(format!("ROM not found: {}", request.rom_path.display()).into());
         }
-        let overrides = self.write_overrides(request.role)?;
+        let nickname = self.resolve_nickname();
+        let overrides = self.write_overrides(request.role, &nickname)?;
         let peer = self.peer(request.peer_ip);
         let args = spec::launch_args(&spec::Args {
             core: &self.core,
@@ -128,7 +156,7 @@ impl Provider for RetroArchProvider {
             role: request.role,
             peer: &peer,
             port: self.port,
-            nickname: &self.nickname,
+            nickname: &nickname,
         });
 
         Ok(LaunchSpec {
@@ -159,6 +187,33 @@ mod tests {
         let caps = provider(&scratch).capabilities();
         assert!(caps.spectate);
         assert!(caps.dev_pair);
+    }
+
+    #[test]
+    fn nickname_prefers_the_explicit_value_and_sanitizes_it() {
+        let scratch = Scratch::new("nick-explicit");
+        let mut provider = provider(&scratch);
+        provider.nickname = Some("ex\"plicit\n".to_string());
+        provider.handle = Some("handle".to_string());
+        assert_eq!(provider.resolve_nickname(), "explicit");
+    }
+
+    #[test]
+    fn nickname_falls_back_to_the_handle() {
+        let scratch = Scratch::new("nick-handle");
+        let mut provider = provider(&scratch);
+        provider.nickname = None;
+        provider.handle = Some("handle".to_string());
+        assert_eq!(provider.resolve_nickname(), "handle");
+    }
+
+    #[test]
+    fn nickname_is_never_empty() {
+        let scratch = Scratch::new("nick-empty");
+        let mut provider = provider(&scratch);
+        provider.nickname = Some("   ".to_string());
+        provider.handle = Some(String::new());
+        assert!(!provider.resolve_nickname().is_empty());
     }
 
     #[test]

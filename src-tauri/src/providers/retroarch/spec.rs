@@ -45,6 +45,7 @@ pub(super) fn overrides_path(overrides_dir: &Path, role: Role) -> PathBuf {
 pub(super) fn write_overrides(
     provider: &RetroArchProvider,
     role: Role,
+    nickname: &str,
 ) -> crate::error::Result<PathBuf> {
     let dir = provider.overrides_dir.join(role.key());
     let saves = dir.join("saves");
@@ -68,7 +69,7 @@ pub(super) fn write_overrides(
     content.push_str("input_libretro_device_p1 = \"5\"\n");
     content.push_str("input_libretro_device_p2 = \"5\"\n");
     content.push_str(&format!("netplay_ip_port = \"{}\"\n", provider.port));
-    content.push_str(&format!("netplay_nickname = \"{}\"\n", provider.nickname));
+    content.push_str(&format!("netplay_nickname = \"{}\"\n", nickname));
     content.push_str(&format!("savefile_directory = \"{}\"\n", saves.display()));
     content.push_str(&format!("savestate_directory = \"{}\"\n", states.display()));
     if role == Role::Spectator {
