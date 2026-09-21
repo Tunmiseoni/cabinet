@@ -11,7 +11,14 @@ Research and tooling for playing **FightCade 2 FBNeo** games with friends over a
 **`Tunmiseoni/the-cabinet` is a public GitHub repository** (since 2026-09-19, after a full-history scrub; see `docs/04-design.md` §3/§8). Everything committed, including full history, is world-readable. Before writing or committing anything, check it for leaks:
 
 - No secrets or credentials of any kind (tokens, API keys, signing/updater keys, passwords). Put those in **GitHub Secrets, never in the repo**.
-- No real network identifiers: tailnet IPs/hostnames, public IPs, LAN IPs, router/admin addresses, MagicDNS names, or account handles. Use placeholders instead (`100.x.x.x`, `192.0.2.x`, `203.0.113.x`, `example-tailnet.ts.net`).
+- No real network identifiers: tailnet IPs/hostnames, public IPs, LAN IPs, router/admin addresses, MagicDNS names, or account handles. Use only these sanctioned placeholders:
+  - Tailnet: `100.64.0.1` (this Mac), `100.64.0.2` (CachyOS peer), `100.64.0.3` (Windows peer), or the generic `100.x.x.x`
+  - LAN/router: `192.0.2.1`, `192.0.2.100`, `192.0.2.101`
+  - ISP private hops: `198.51.100.2`–`198.51.100.4`
+  - Public/STUN (TEST-NET-3): `203.0.113.x`
+  - MagicDNS suffix: `example-tailnet.ts.net`
+  - Host aliases: `mac-host`, `cachyos-host`, `windows-host`
+  - Account handle: `player-one` (and `me@`/`friend@`)
 - No ROMs, emulator binaries, `.env*`, or local machine paths/config with personal data.
 - Code and docs are fine — `sfiii3nr1` and other public MAME identifiers are kept.
 

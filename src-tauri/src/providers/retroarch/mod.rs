@@ -108,6 +108,10 @@ impl Provider for RetroArchProvider {
         Some(self.port)
     }
 
+    fn requires_rom_file(&self) -> bool {
+        true
+    }
+
     fn spec(&self, request: &MatchRequest) -> Result<LaunchSpec, String> {
         if !request.rom_path.is_file() {
             return Err(format!("ROM not found: {}", request.rom_path.display()));

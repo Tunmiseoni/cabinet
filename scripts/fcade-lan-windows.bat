@@ -42,7 +42,7 @@ if defined MY_IP (
 )
 
 rem --- peer -------------------------------------------------------------------
-set "PEER_DEFAULT=100.64.0.10"
+set "PEER_DEFAULT=100.64.0.1"
 set "PEER_IP="
 set /p "PEER_IP=Peer Tailscale IP (your friend) [%PEER_DEFAULT%]: "
 if not defined PEER_IP set "PEER_IP=%PEER_DEFAULT%"

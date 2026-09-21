@@ -344,7 +344,11 @@ Added so the next run is diagnosable:
   unreachable ⇒ launch refused with the error in the dialog (override via "Launch anyway"). Dev
   pairs wait for the loopback host to accept before spawning the client, closing the start race.
 - **Diagnostics bundle**: Settings → Diagnostics → *Open logs folder* / *Collect diagnostics*
-  (version, config, provider, tailnet summary, last match, session index, last 200 log lines).
+  (version, config, provider, tailnet summary, last match, session index, the latest session's
+  `emulator-*.log` tails, last 200 app-log lines). The structured sections are redacted — home
+  paths, IPv4/IPv6 addresses, `*.ts.net` MagicDNS names, and the configured handle/default peer —
+  while the raw app-log tail carries an explicit "not redacted" warning. Session dirs are pruned
+  to `SESSION_KEEP`.
 
 Re-run 2026-09-20: the captured logs confirm the host is listening and clients/spectators connect
 (see the live tailnet entry above). Remaining nit: hosts logged repeated `Failed to connect to
@@ -384,7 +388,7 @@ min — but the logs surfaced the items below.
 | F12 | The untracked handoffs (`handoff-cabinet-mode-2026-09-20.md`, `handoff-retroarch-provider-2026-09-20.md`) still describe pre-live state. | Refresh or delete them so they don't mislead. | Low — **Done 2026-09-21 (cleanup): both handoffs deleted** |
 | F13 | ~~Rooms/KotH bypass the provider seam: `service.rs:139` calls `commands::resolve_launcher` (always FightCade) and always reads overlay results.~~ | ~~Gate room hosting/joining on `overlay_results`…~~ **Moot — the rooms/KotH/overlay subsystem was removed 2026-09-21** ([`04-design.md`](04-design.md) §5). | Dropped |
 | F14 | The diagnostics bundle (`diagnostics.rs`) lists session dirs/files with sizes and tails the app log, but omitted the per-session `emulator-*.log` contents — exactly where the netplay lines live. | Include the latest session's emulator-log tail in the bundle. | High — **fixed 2026-09-21 (cleanup)** |
-| F15 | The diagnostics bundle embeds tailnet IPs and absolute home/config paths (`config`, provider detail, last match) with no redaction or warning. | Redact identifiers or warn that the bundle is not for public sharing. | Med — **fixed 2026-09-21 (cleanup): home paths + IPv4 redacted, warning header added** |
+| F15 | The diagnostics bundle embeds tailnet IPs and absolute home/config paths (`config`, provider detail, last match) with no redaction or warning. | Redact identifiers or warn that the bundle is not for public sharing. | Med — **fixed 2026-09-21 (cleanup): home paths + IPv4/IPv6 + `*.ts.net` names + configured handle/peer redacted, warning header added** |
 | F16 | Session dirs and `emulator-*.log` were never pruned; only the app log rotates. | Add retention (count/age/size cap). | Med — **fixed 2026-09-21 (cleanup): session dirs pruned to the newest `SESSION_KEEP`** |
 | F17 | Each spectator renders its own audio locally, which echoes in a voice call; the task list doesn't address it (§9). | Default spectators to muted, or add a setting. | Med |
 | F18 | Host-as-spectator (non-playing server) was not exercised; the app exposes only P1/P2/Spectator. | Decide whether to support and test it. | Low |

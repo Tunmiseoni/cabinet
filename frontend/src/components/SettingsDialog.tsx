@@ -182,11 +182,11 @@ export function SettingsDialog({
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="handle">Your handle</Label>
+            <Label htmlFor="handle">Default nickname</Label>
             <Input
               id="handle"
               value={form.handle}
-              placeholder="Defaults to your tailnet hostname"
+              placeholder="Fallback when netplay nickname is unset"
               onChange={(event) => update("handle")(event.target.value)}
             />
           </div>
@@ -256,7 +256,7 @@ export function SettingsDialog({
                   <Input
                     id="retroarchNickname"
                     value={form.retroarchNickname}
-                    placeholder={form.handle || "your handle"}
+                    placeholder={form.handle || "default nickname"}
                     onChange={(event) =>
                       update("retroarchNickname")(event.target.value)
                     }

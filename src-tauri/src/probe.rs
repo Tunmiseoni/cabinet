@@ -58,13 +58,13 @@ pub fn probe(ip: &str, port: u16, timeout: Duration) -> PortProbe {
 pub fn wait_for_port(ip: &str, port: u16, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
-        if probe(ip, port, Duration::from_millis(750)).reachable {
+        if probe(ip, port, crate::constants::PORT_PROBE_ATTEMPT_TIMEOUT).reachable {
             return true;
         }
         if Instant::now() >= deadline {
             return false;
         }
-        std::thread::sleep(Duration::from_millis(250));
+        std::thread::sleep(crate::constants::PORT_PROBE_RETRY_INTERVAL);
     }
 }
 

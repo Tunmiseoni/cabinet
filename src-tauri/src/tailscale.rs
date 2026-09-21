@@ -4,7 +4,7 @@ use crate::sync::MutexExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -212,8 +212,6 @@ fn run(binary: &PathBuf, args: &[&str]) -> Result<String, String> {
     Ok(stdout)
 }
 
-const STATUS_CACHE_TTL: Duration = Duration::from_millis(500);
-
 fn status_cache() -> &'static Mutex<Option<(PathBuf, Instant, Tailnet)>> {
     static CACHE: OnceLock<Mutex<Option<(PathBuf, Instant, Tailnet)>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
@@ -221,7 +219,7 @@ fn status_cache() -> &'static Mutex<Option<(PathBuf, Instant, Tailnet)>> {
 
 pub fn status(binary: &PathBuf) -> Result<Tailnet, String> {
     if let Some((cached_binary, at, tailnet)) = status_cache().lock_or_recover().as_ref() {
-        if cached_binary == binary && at.elapsed() < STATUS_CACHE_TTL {
+        if cached_binary == binary && at.elapsed() < crate::constants::TAILSCALE_STATUS_CACHE_TTL {
             return Ok(tailnet.clone());
         }
     }
@@ -404,8 +402,8 @@ mod tests {
     #[test]
     fn parses_direct_ping() {
         let health = parse_ping(
-            "100.64.0.11",
-            "pong from cachyos-host (100.64.0.11) via 192.168.1.101:41641 in 12ms",
+            "100.64.0.2",
+            "pong from cachyos-host (100.64.0.2) via 192.0.2.101:41641 in 12ms",
         );
         assert!(health.ok);
         assert_eq!(health.path, PathKind::Direct);
@@ -416,8 +414,8 @@ mod tests {
     #[test]
     fn parses_derp_ping() {
         let health = parse_ping(
-            "100.64.0.11",
-            "pong from cachyos-host (100.64.0.11) via DERP(lhr) in 329ms",
+            "100.64.0.2",
+            "pong from cachyos-host (100.64.0.2) via DERP(lhr) in 329ms",
         );
         assert!(health.ok);
         assert_eq!(health.path, PathKind::Relay);
@@ -427,7 +425,7 @@ mod tests {
 
     #[test]
     fn parses_local_ping() {
-        let health = parse_ping("100.64.0.10", "100.64.0.10 is local Tailscale IP");
+        let health = parse_ping("100.64.0.1", "100.64.0.1 is local Tailscale IP");
         assert!(health.ok);
         assert_eq!(health.path, PathKind::Local);
     }
@@ -435,8 +433,8 @@ mod tests {
     #[test]
     fn parses_timeout() {
         let health = parse_ping(
-            "100.64.0.11",
-            "ping \"100.64.0.11\" timed out\n2026/09/18 23:48:45 no reply",
+            "100.64.0.2",
+            "ping \"100.64.0.2\" timed out\n2026/09/18 23:48:45 no reply",
         );
         assert!(!health.ok);
         assert_eq!(health.path, PathKind::Unknown);
@@ -446,8 +444,8 @@ mod tests {
     #[test]
     fn parses_fractional_rtt() {
         let health = parse_ping(
-            "100.64.0.11",
-            "pong from cachyos-host (100.64.0.11) via [fd7a::1]:41641 in 4.5ms",
+            "100.64.0.2",
+            "pong from cachyos-host (100.64.0.2) via [fd7a::1]:41641 in 4.5ms",
         );
         assert_eq!(health.rtt_ms, Some(4.5));
         assert_eq!(health.path, PathKind::Direct);
@@ -458,10 +456,10 @@ mod tests {
       "BackendState": "Running",
       "Self": {
         "ID": "nSELF",
-        "HostName": "Onis-MacBook-Pro",
+        "HostName": "mac-host",
         "DNSName": "mac-host.example-tailnet.ts.net.",
         "OS": "macOS",
-        "TailscaleIPs": ["100.64.0.10", "fd7a:115c:a1e0::f801:3fab"],
+        "TailscaleIPs": ["100.64.0.1", "fd7a:115c:a1e0::1"],
         "Online": true,
         "Active": false,
         "CurAddr": "",
@@ -473,10 +471,10 @@ mod tests {
       "Peer": {
         "nodeA": {
           "ID": "nWIN",
-          "HostName": "DESKTOP-8NLUFK6",
+          "HostName": "windows-host",
           "DNSName": "windows-host.example-tailnet.ts.net.",
           "OS": "windows",
-          "TailscaleIPs": ["100.64.0.12", "fd7a:115c:a1e0::9401:b84c"],
+          "TailscaleIPs": ["100.64.0.3", "fd7a:115c:a1e0::3"],
           "Online": false,
           "Active": false,
           "CurAddr": "",
@@ -489,10 +487,10 @@ mod tests {
           "HostName": "cachyos-host",
           "DNSName": "cachyos-host.example-tailnet.ts.net.",
           "OS": "linux",
-          "TailscaleIPs": ["100.64.0.11", "fd7a:115c:a1e0::2"],
+          "TailscaleIPs": ["100.64.0.2", "fd7a:115c:a1e0::2"],
           "Online": true,
           "Active": true,
-          "CurAddr": "192.168.1.101:41641",
+          "CurAddr": "192.0.2.101:41641",
           "Relay": "lhr",
           "RxBytes": 5000,
           "TxBytes": 6000,
@@ -507,15 +505,15 @@ mod tests {
         assert_eq!(tailnet.backend_state, "Running");
         let self_peer = tailnet.self_peer.expect("self present");
         assert!(self_peer.is_self);
-        assert_eq!(self_peer.ip, "100.64.0.10");
+        assert_eq!(self_peer.ip, "100.64.0.1");
         assert_eq!(self_peer.node_id, "nSELF");
         assert_eq!(tailnet.peers.len(), 2);
         assert_eq!(tailnet.peers[0].hostname, "cachyos-host");
         assert!(tailnet.peers[0].online);
         assert_eq!(tailnet.peers[0].node_id, "nodeB");
-        assert_eq!(tailnet.peers[1].hostname, "DESKTOP-8NLUFK6");
+        assert_eq!(tailnet.peers[1].hostname, "windows-host");
         assert_eq!(tailnet.peers[1].node_id, "nWIN");
-        assert_eq!(tailnet.peers[0].ip, "100.64.0.11");
+        assert_eq!(tailnet.peers[0].ip, "100.64.0.2");
     }
 
     #[test]

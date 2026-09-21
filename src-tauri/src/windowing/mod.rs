@@ -17,7 +17,7 @@ pub struct Rect {
 }
 
 impl Rect {
-    #[allow(dead_code)]
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
         Self {
             x,
@@ -27,7 +27,7 @@ impl Rect {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn is_valid(self) -> bool {
         [self.x, self.y, self.width, self.height]
             .iter()
@@ -58,19 +58,23 @@ pub struct WindowInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub enum Permission {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Granted,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Denied,
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     NotRequired,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub enum PlacementMode {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Placement,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     FrameFollow,
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     Unsupported,
 }
 
@@ -92,7 +96,10 @@ pub trait WindowHost: Send + Sync {
     fn release(&self, window_id: u32) -> Result<(), String>;
 }
 
-#[allow(dead_code)]
+#[cfg_attr(
+    any(target_os = "macos", target_os = "windows", target_os = "linux"),
+    allow(dead_code)
+)]
 pub struct UnsupportedWindowHost;
 
 impl WindowHost for UnsupportedWindowHost {

@@ -5,10 +5,12 @@ Status: **applied pass done 2026-09-20** (balanced, behavior-preserving). A **se
 code, deleted the two stale `handoff-*.md` docs, added `cargo fmt --check` to the gate, and applied
 the logging/diagnostics follow-ups (§6 F4/F5/F14/F15/F16). A **third pass done 2026-09-21** applied
 the structural refactors — the `providers/` tree, the neutral `contracts` module, and the
-`retroarch.rs` / `windowing/macos.rs` splits plus the shared launcher helpers (§3, §4). The remaining
-heavier refactors (§2 typed errors, §5 frontend data layer, §7 `time` crate) are **proposed and
-deferred**; none block Phase 3. This file is the backlog for a future cleanup session, so day-to-day
-feature work has a written target instead of ad-hoc churn.
+`retroarch.rs` / `windowing/macos.rs` splits plus the shared launcher helpers (§3, §4). A **fourth
+pass done 2026-09-21** landed the frontend query layer (§5), completed the identifier genericization
+(with the leaks the 2026-09-19 scrub missed), extended diagnostics redaction, and applied the
+smaller convention fixes. The remaining heavier refactors (§2 typed errors, §7 `time` crate) are
+**proposed and deferred**; none block Phase 3. This file is the backlog for a future cleanup
+session, so day-to-day feature work has a written target instead of ad-hoc churn.
 
 > **Removed 2026-09-21:** the rooms/lobbies/KotH subsystem, the local lifetime score ledger, and
 > the emulator overlay/result watcher were deleted entirely (see `docs/04-design.md` §3/§5). Some
@@ -87,11 +89,37 @@ provider→launcher import for the two contract types. The planned `providers/co
 rejected: it would make `launcher → providers`, inverting the edge this refactor removes, so
 `contracts.rs` sits at the crate root instead.
 
-## 5. Deferred — frontend data layer
+## 5. Applied (2026-09-21) — frontend data layer
 
-`App.tsx` still owns all fetching, polling, and error state. A query/state layer (React Query, or
-a small `useInvoke` cache) would remove prop-drilling and the manual `sameJson` de-duplication,
-and would give retries/staleness for free. `lib/hooks.ts` is the seam this would build on.
+`App.tsx` used to own all fetching, polling, and error state, with manual `sameJson` de-duplication
+and a `refreshX` callback per resource. The new `frontend/src/lib/query.ts` exposes a small
+`useInvoke<T>(key, fetcher, { enabled, pollMs })` hook built on `lib/hooks.ts`:
+
+- a module-level result cache keyed by string, with JSON de-duplication so an unchanged payload does
+  not re-render (replacing the hand-written `sameJson` calls in `App.tsx`; `sameJson` now lives in
+  `lib/utils.ts` and is used only by the cache),
+- `enabled` for conditional queries (health runs only when peers are online; its key includes the
+  online IPs so it reloads when the set changes),
+- `pollMs` for optional background polling via `usePolling` (silent refresh),
+- `refresh()` for explicit reloads and `mutate()` for local updates (used after saving config).
+
+`App.tsx` now consumes five queries (config, peers, ROMs, launcher, health) instead of a dozen
+`useState`/`useCallback` pairs; the Refresh button and post-save flow call the queries' `refresh`.
+No dependency was added (React Query remains the heavier alternative). Frontend gate: `npm run build`.
+
+## 5b. Applied (2026-09-21) — fourth pass (identifiers, redaction, conventions)
+
+| Area | Change | Where |
+|---|---|---|
+| Identifiers | Genericized docs/scripts/test fixtures to the sanctioned placeholder set (`AGENTS.md`); fixed three real leaks the 2026-09-19 scrub missed — two real machine hostnames in the Tailscale test fixture and a real account handle in the config tests (values intentionally not reproduced here). | `docs/*`, `README.md`, `AGENTS.md`, `scripts/fcade-lan-*`, `tailscale.rs`, `config.rs` |
+| Redaction | `diagnostics::redact` now also strips IPv6, `*.ts.net` MagicDNS names, and the configured `handle`/`defaultPeerIp`; tests added. | `diagnostics.rs` |
+| Constants | `TAILSCALE_STATUS_CACHE_TTL`, probe attempt/retry intervals, and the diagnostics session/log-tail limits moved to `constants.rs`. | `constants.rs`, `tailscale.rs`, `probe.rs`, `diagnostics.rs` |
+| Locking | The last raw `.lock().unwrap_or_else(...)` sites (macOS window host) and the silent `if let Ok(..) = sink.lock()` in `capture_stream` now use `lock_or_recover`. | `windowing/macos/mod.rs`, `logging.rs` |
+| Visibility / dead code | `RetroArchProvider` re-export narrowed to `pub(crate)`; the `windowing/mod.rs` `#[allow(dead_code)]` blanket scoped per-platform via `cfg_attr`. | `providers/mod.rs`, `windowing/mod.rs` |
+| Provider seam | `Provider::requires_rom_file()` replaces the `ProviderKind::Retroarch` branch in `commands::optional_rom_file`; `lib::verbose_logging_requested` reuses `commands::load_config`. | `providers/mod.rs`, `providers/retroarch/mod.rs`, `commands.rs`, `lib.rs` |
+| Settings | The vestigial `handle` field is relabeled **Default nickname** (it is only the RetroArch nickname fallback now). | `frontend/src/components/SettingsDialog.tsx` |
+
+Verification: `./scripts/test.sh` (frontend build + `cargo fmt --check` + `cargo test` + clippy `-D warnings`), mirrored by the 3-OS `.github/workflows/ci.yml` matrix.
 
 ## 6. Deferred — logging & diagnostics follow-ups
 
@@ -103,7 +131,7 @@ belong to a logging/diagnostics cleanup:
 | F4 | Gate `--verbose` behind `verboseLogging`; timestamp captured emulator lines instead of writing them raw. | **Done 2026-09-21** |
 | F5 | Session dirs are UTC while the app log is local; unify or record the offset. | **Done 2026-09-21** (app log, capture, and session dirs all UTC) |
 | F14 | Include the latest session's `emulator-*.log` tail in the diagnostics bundle. | **Done 2026-09-21** |
-| F15 | Redact tailnet IPs / home paths from the diagnostics bundle (repo is public). | **Done 2026-09-21** (structured sections redacted; raw log tail carries a warning) |
+| F15 | Redact tailnet IPs / home paths from the diagnostics bundle (repo is public). | **Done 2026-09-21** (structured sections redacted — home paths, IPv4/IPv6, `*.ts.net`, configured handle/peer; raw log tail carries a warning) |
 | F16 | Prune session dirs / `emulator-*.log` (only the app log rotates today). | **Done 2026-09-21** (`SESSION_KEEP` in `constants.rs`) |
 
 F12 (the stale `handoff-*.md` docs) was resolved in the 2026-09-21 cleanup by deleting both handoffs;
@@ -117,7 +145,7 @@ lines and a class of date bugs, at the cost of a new dependency. Deferred under 
 
 ## 8. Constraints and verification
 
-- Repo is **public**: placeholders only (`100.x.x.x`), never commit logs, cores, or ROMs.
+- Repo is **public**: use only the sanctioned placeholders in `AGENTS.md`, never commit logs, cores, or ROMs.
 - Any change must pass `./scripts/test.sh` (frontend build + `cargo fmt --check` + `cargo test` +
   `cargo clippy --all-targets -- -D warnings`) on macOS, Linux, and Windows.
 - Prefer `git mv` for moves so history is preserved.

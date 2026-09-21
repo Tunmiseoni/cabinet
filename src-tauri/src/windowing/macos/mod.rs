@@ -1,4 +1,5 @@
 use super::{HostStatus, Permission, PlacementMode, Rect, WindowHost, WindowInfo};
+use crate::sync::MutexExt;
 use accessibility_sys::{
     kAXErrorSuccess, kAXPositionAttribute, kAXRaiseAction, kAXSizeAttribute,
     kAXTrustedCheckOptionPrompt, kAXValueTypeCGPoint, kAXValueTypeCGSize, kAXWindowsAttribute,
@@ -97,7 +98,7 @@ impl WindowHost for MacosWindowHost {
             .cloned()
             .ok_or_else(|| format!("window {window_id} not found"))?;
         let first = {
-            let mut originals = self.originals.lock().unwrap_or_else(|e| e.into_inner());
+            let mut originals = self.originals.lock_or_recover();
             originals.insert(window_id, window.bounds).is_none()
         };
         unsafe {
@@ -107,11 +108,7 @@ impl WindowHost for MacosWindowHost {
     }
 
     fn release(&self, window_id: u32) -> Result<(), String> {
-        let original = self
-            .originals
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&window_id);
+        let original = self.originals.lock_or_recover().remove(&window_id);
         let Some(original) = original else {
             return Ok(());
         };

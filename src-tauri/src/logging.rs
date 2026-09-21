@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::sync::MutexExt;
 use tauri::{AppHandle, Manager};
 
 pub const APP_LOG_FILE: &str = "the-cabinet";
@@ -92,10 +93,9 @@ where
             let Ok(line) = line else {
                 break;
             };
-            if let Ok(mut file) = sink.lock() {
-                let _ = writeln!(file, "{}", stamp_line(&line));
-                let _ = file.flush();
-            }
+            let mut file = sink.lock_or_recover();
+            let _ = writeln!(file, "{}", stamp_line(&line));
+            let _ = file.flush();
             log::debug!(target: EMULATOR_TARGET, "{label} {line}");
         }
     });

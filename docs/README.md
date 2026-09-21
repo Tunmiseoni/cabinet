@@ -37,15 +37,15 @@ is the current spec; `01`–`03` are the original investigation into
 | FightCade | 2.1.45, `/Applications/FightCade2.app` |
 | Emulator | FBNeo (`fcadefbneo.exe`, PE32) under bundled Wine `wine32on64` (Rosetta 2) |
 | Networking helper | `Contents/MacOS/emulator/fcade` (PyInstaller) |
-| Router | ZTE, admin at `http://192.168.1.1` |
-| LAN IP | `192.168.1.100` |
+| Router | ZTE, admin at `http://192.0.2.1` |
+| LAN IP | `192.0.2.100` |
 | Public IP (observed) | `203.0.113.10` |
-| Tailscale (this Mac) | `100.64.0.10` (`mac-host`, `me@`); symmetric NAT; nearest DERP `jnb` 122.7 ms |
-| Tailscale (friend) | `100.64.0.11` (`cachyos-host`, `friend@`); public `203.0.113.11`, LAN `192.168.1.101`; **also symmetric NAT**; nearest DERP `lhr` 114 ms |
-| Tailscale (Windows friend) | `100.64.0.12`; native FightCade at `%APPDATA%\Fightcade` |
+| Tailscale (this Mac) | `100.64.0.1` (`mac-host`, `me@`); symmetric NAT; nearest DERP `jnb` 122.7 ms |
+| Tailscale (friend) | `100.64.0.2` (`cachyos-host`, `friend@`); public `203.0.113.11`, LAN `192.0.2.101`; **also symmetric NAT**; nearest DERP `lhr` 114 ms |
+| Tailscale (Windows friend) | `100.64.0.3`; native FightCade at `%APPDATA%\Fightcade` |
 | Tailscale path (measured) | **Direct, <100 ms** after a 2026-09-18 router restart; earlier DERP `par` 329–514 ms relay is stale |
 | Launchers | `scripts/fcade-lan-macos.sh` (installed to `~/bin/fcade-lan`), `scripts/fcade-lan-linux.sh` (cachyos friend; Flatpak-aware), `scripts/fcade-lan-windows.bat` + `scripts/fcade-lan-windows-firewall.bat` (Windows friend) |
 | The Cabinet app | Tauri v2 launcher (launchers, connection health, RetroArch spectator provider, Cabinet mode). Run with `scripts/dev.sh`. See root [`README.md`](../README.md). |
 | Friend install (cachyos) | FightCade Flatpak `com.fightcade.Fightcade` on CachyOS; uses the Flatpak's bundled Wine |
-| Friend install (Windows) | FightCade native at `%APPDATA%\Fightcade`; tailnet `100.64.0.12`; no Wine needed |
+| Friend install (Windows) | FightCade native at `%APPDATA%\Fightcade`; tailnet `100.64.0.3`; no Wine needed |
 | ROM present | `sfiii3nr1.zip` (Street Fighter III: 3rd Strike) |

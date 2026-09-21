@@ -24,15 +24,13 @@ export function useTauriEvent<T>(
   }, [event]);
 }
 
-export function usePolling(callback: () => void, intervalMs: number): void {
+export function usePolling(callback: () => void, intervalMs?: number): void {
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
 
   useEffect(() => {
-    const timer = setInterval(
-      () => callbackRef.current(),
-      Math.max(intervalMs, 0),
-    );
+    if (intervalMs === undefined || intervalMs <= 0) return;
+    const timer = setInterval(() => callbackRef.current(), intervalMs);
     return () => clearInterval(timer);
   }, [intervalMs]);
 }

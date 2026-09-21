@@ -205,6 +205,6 @@ Prove the premise on the user's Mac during a live match:
 ## 9. Publication-scrub reminder
 
 This repo is public. Any notes, logs, or config added for this work must use placeholders, not
-real identifiers: `100.x.x.x` / `100.64.0.10`, `203.0.113.x`, `192.0.2.x`,
+real identifiers: `100.x.x.x` / `100.64.0.1`, `203.0.113.x`, `192.0.2.x`,
 `example-tailnet.ts.net`. Never commit tokens, keys, ROMs, emulator binaries, or local machine
 paths with personal data.

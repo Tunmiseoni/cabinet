@@ -48,13 +48,13 @@ TS_IP="$(command -v tailscale >/dev/null 2>&1 && tailscale ip -4 2>/dev/null | h
 
 # --- UI (zenity if present, else plain prompts) --------------------------------
 if command -v zenity >/dev/null 2>&1; then
-  PEER_IP="$(zenity --entry --title="FightCade LAN" --text="Peer Tailscale IP (your friend):" --entry-text="100.64.0.10")" || exit 1
+  PEER_IP="$(zenity --entry --title="FightCade LAN" --text="Peer Tailscale IP (your friend):" --entry-text="100.64.0.1")" || exit 1
   ROM="$(ls "$ROM_DIR/"*.zip 2>/dev/null | sed 's#.*/##;s/\.zip$//' | \
         zenity --list --title="FightCade LAN" --text="Choose ROM" --column="ROM")" || exit 1
   SIDE_LABEL="$(zenity --list --title="FightCade LAN" --text="Choose your side" --column="Side" P1 P2)" || exit 1
   [ "$SIDE_LABEL" = "P1" ] && SIDE=0 || SIDE=1
 else
-  printf 'Peer Tailscale IP [100.64.0.10]: '; read -r PEER_IP; PEER_IP="${PEER_IP:-100.64.0.10}"
+  printf 'Peer Tailscale IP [100.64.0.1]: '; read -r PEER_IP; PEER_IP="${PEER_IP:-100.64.0.1}"
   echo "ROMs:"; ls "$ROM_DIR/"*.zip 2>/dev/null | sed 's#.*/##;s/\.zip$//' | nl
   printf 'ROM short name [sfiii3nr1]: '; read -r ROM; ROM="${ROM:-sfiii3nr1}"
   printf 'Your side (P1/P2) [P1]: '; read -r S; S="${S:-P1}"

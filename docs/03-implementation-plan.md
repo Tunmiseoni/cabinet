@@ -38,9 +38,9 @@ What is **still not available on this route** (see [`04-design.md`](04-design.md
 | Emulator | `Contents/MacOS/emulator/fbneo/fcadefbneo.exe` |
 | Emulator cwd (required) | `Contents/MacOS/emulator/fbneo` |
 | ROMs dir | `Contents/MacOS/emulator/fbneo/ROMs/` (has `sfiii3nr1.zip`) |
-| This Mac tailnet IP | `100.64.0.10` |
-| Friend tailnet IP | `100.64.0.11` (`cachyos-host`, Linux) |
-| Windows friend tailnet IP | `100.64.0.12` (native FightCade, `%APPDATA%\Fightcade`) |
+| This Mac tailnet IP | `100.64.0.1` |
+| Friend tailnet IP | `100.64.0.2` (`cachyos-host`, Linux) |
+| Windows friend tailnet IP | `100.64.0.3` (native FightCade, `%APPDATA%\Fightcade`) |
 | Direct arg format | `quark:direct,<rom>,<localPort>,<peerIP>,<peerPort>,<side>,0 -w` |
 | P1 mapping (side 0) | local `7001`, peer `7000` |
 | P2 mapping (side 1) | local `7000`, peer `7001` |
@@ -48,8 +48,8 @@ What is **still not available on this route** (see [`04-design.md`](04-design.md
 ## Step 0 — Preconditions
 
 - Both machines have Tailscale up and can reach each other:
-  - `tailscale status` on the Mac should show `100.64.0.11` online.
-  - `tailscale ping 100.64.0.11` should return `pong` (direct or via DERP).
+  - `tailscale status` on the Mac should show `100.64.0.2` online.
+  - `tailscale ping 100.64.0.2` should return `pong` (direct or via DERP).
 - Both machines have a FightCade install with the **same ROM set** (`sfiii3nr1.zip` here).
 - Verify the ROM by name (the name passed to `quark:direct` is the ROM's short name, not the `.zip` filename with extension):
   - Mac side: `ls "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs"`.
@@ -57,7 +57,7 @@ What is **still not available on this route** (see [`04-design.md`](04-design.md
 ## Step 1 — macOS launcher (DONE)
 
 `scripts/fcade-lan-macos.sh` → installed as `~/bin/fcade-lan`; `~/Desktop/FightCade LAN.command` is the double-click entry point. It prompts for:
-1. peer Tailscale IP (default `100.64.0.11`),
+1. peer Tailscale IP (default `100.64.0.2`),
 2. ROM (chosen from `fbneo/ROMs/*.zip`, short name),
 3. side (P1 = `0` → local `7001`/peer `7000`; P2 = `1` → mirror).
 
@@ -94,14 +94,14 @@ The `cd` matters: FBNeo resolves `config/` and `ROMs/` relative to cwd, and Flat
 
 ## Step 2b — Windows launcher (DONE)
 
-`scripts/fcade-lan-windows.bat` for the Windows friend (tailnet `100.64.0.12`). Windows FightCade is native, so there is no Wine or sandbox — the script just finds the emulator and runs it.
+`scripts/fcade-lan-windows.bat` for the Windows friend (tailnet `100.64.0.3`). Windows FightCade is native, so there is no Wine or sandbox — the script just finds the emulator and runs it.
 
 - Default install: `%APPDATA%\Fightcade\emulator\fbneo\fcadefbneo.exe`; auto-detects a few fallbacks and honours an `FC_DIR` override.
-- Prompts for peer Tailscale IP (default `100.64.0.10`, this Mac), a numbered ROM menu built from `ROMs\*.zip`, and P1/P2.
+- Prompts for peer Tailscale IP (default `100.64.0.1`, this Mac), a numbered ROM menu built from `ROMs\*.zip`, and P1/P2.
 - Runs from the fbneo dir:
   ```bat
   cd /d "%APPDATA%\Fightcade\emulator\fbneo"
-  fcadefbneo.exe "quark:direct,sfiii3nr1,7001,100.64.0.10,7000,0,0" -w
+  fcadefbneo.exe "quark:direct,sfiii3nr1,7001,100.64.0.1,7000,0,0" -w
   ```
   (P1 pointing at this Mac; the friend's default peer is this Mac's tailnet IP.)
 
@@ -112,9 +112,9 @@ The `cd` matters: FBNeo resolves `config/` and `ROMs/` relative to cwd, and Flat
 1. Both start Tailscale.
 2. Agree on ROM and who is P1/P2.
 3. Mac: run `fcade-lan`, enter the friend's IP, ROM `sfiii3nr1`, choose P1.
-4. Friend: run their launcher with peer `100.64.0.10`, same ROM, choose P2.
-   - Windows friend (`100.64.0.12`): double-click `fcade-lan-windows.bat` (run the firewall `.bat` once beforehand). Peer default is already this Mac.
-   - cachyos friend (`100.64.0.11`): run `scripts/fcade-lan-linux.sh`.
+4. Friend: run their launcher with peer `100.64.0.1`, same ROM, choose P2.
+   - Windows friend (`100.64.0.3`): double-click `fcade-lan-windows.bat` (run the firewall `.bat` once beforehand). Peer default is already this Mac.
+   - cachyos friend (`100.64.0.2`): run `scripts/fcade-lan-linux.sh`.
 5. Launch roughly together; the emulator should open and the match begin.
 
 ## Step 4 — Verification

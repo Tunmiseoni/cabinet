@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::logging;
 use crate::providers;
 use crate::session;
@@ -159,7 +160,11 @@ fn diagnostics_text(app: &AppHandle) -> String {
                     .filter(|path| path.is_dir())
                     .collect();
                 dirs.sort();
-                for dir in dirs.iter().rev().take(10) {
+                for dir in dirs
+                    .iter()
+                    .rev()
+                    .take(crate::constants::DIAGNOSTICS_SESSION_LIST_LIMIT)
+                {
                     let _ = writeln!(out, "{}", dir.display());
                     if let Ok(files) = std::fs::read_dir(dir) {
                         for file in files.flatten() {
@@ -192,20 +197,29 @@ fn diagnostics_text(app: &AppHandle) -> String {
                         .file_name()
                         .and_then(|name| name.to_str())
                         .unwrap_or("emulator");
-                    let _ = writeln!(out, "\n### {name} (last 200 lines)");
-                    let _ = writeln!(out, "{}", tail_text(&log, 200));
+                    let _ = writeln!(
+                        out,
+                        "\n### {name} (last {} lines)",
+                        crate::constants::DIAGNOSTICS_LOG_TAIL_LINES
+                    );
+                    let _ = writeln!(
+                        out,
+                        "{}",
+                        tail_text(&log, crate::constants::DIAGNOSTICS_LOG_TAIL_LINES)
+                    );
                 }
             }
         }
     }
 
     let tail = match logging::app_log_path(app) {
-        Ok(path) => tail_text(&path, 200),
+        Ok(path) => tail_text(&path, crate::constants::DIAGNOSTICS_LOG_TAIL_LINES),
         Err(err) => err.to_string(),
     };
     format!(
-        "{}\n--- recent app log (last 200 lines) ---\n{tail}",
-        redact(&out)
+        "{}\n--- recent app log (last {} lines) ---\n{tail}",
+        redact(&out, &cfg),
+        crate::constants::DIAGNOSTICS_LOG_TAIL_LINES
     )
 }
 
@@ -243,8 +257,25 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-pub fn redact(text: &str) -> String {
-    redact_ipv4(&redact_home(text))
+pub fn redact(text: &str, cfg: &Config) -> String {
+    let text = redact_home(text);
+    let text = redact_configured(&text, cfg);
+    let text = redact_ipv4(&text);
+    let text = redact_ipv6(&text);
+    redact_magicdns(&text)
+}
+
+fn redact_configured(text: &str, cfg: &Config) -> String {
+    let mut out = text.to_string();
+    for (value, placeholder) in [
+        (cfg.handle.as_deref(), "<handle>"),
+        (cfg.default_peer_ip.as_deref(), "<peer-ip>"),
+    ] {
+        if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
+            out = out.replace(value, placeholder);
+        }
+    }
+    out
 }
 
 fn redact_home(text: &str) -> String {
@@ -285,6 +316,65 @@ fn push_redacted_token(token: &mut String, out: &mut String) {
     token.clear();
 }
 
+fn redact_ipv6(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut token = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_hexdigit() || ch == ':' {
+            token.push(ch);
+        } else {
+            push_redacted_ipv6_token(&mut token, &mut out);
+            out.push(ch);
+        }
+    }
+    push_redacted_ipv6_token(&mut token, &mut out);
+    out
+}
+
+fn push_redacted_ipv6_token(token: &mut String, out: &mut String) {
+    if token.is_empty() {
+        return;
+    }
+    if token.contains(':') && token.parse::<std::net::Ipv6Addr>().is_ok() {
+        out.push_str("fdxx::x");
+    } else {
+        out.push_str(token);
+    }
+    token.clear();
+}
+
+fn redact_magicdns(text: &str) -> String {
+    const SUFFIX: &str = ".ts.net";
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(index) = rest.find(SUFFIX) {
+        let bytes = rest.as_bytes();
+        let mut start = index;
+        while start > 0 {
+            let prev = bytes[start - 1];
+            if prev.is_ascii_alphanumeric() || prev == b'-' || prev == b'.' {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+        let mut end = index + SUFFIX.len();
+        while end < bytes.len() {
+            let next = bytes[end];
+            if next.is_ascii_alphanumeric() || next == b'-' || next == b'.' {
+                end += 1;
+            } else {
+                break;
+            }
+        }
+        out.push_str(&rest[..start]);
+        out.push_str("example-tailnet.ts.net");
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn tail_text(path: &Path, max_lines: usize) -> String {
     let Ok(raw) = std::fs::read_to_string(path) else {
         return format!("(no log at {})", path.display());
@@ -316,8 +406,39 @@ mod tests {
     #[test]
     fn redacts_ipv4_addresses() {
         assert_eq!(
-            redact_ipv4("connected to 100.64.0.11:41641 via 192.168.1.101"),
+            redact_ipv4("connected to 100.64.0.2:41641 via 192.0.2.101"),
             "connected to 100.x.x.x:41641 via 100.x.x.x"
+        );
+    }
+
+    #[test]
+    fn redacts_ipv6_addresses() {
+        assert_eq!(
+            redact_ipv6("via [fd7a:115c:a1e0::f801:3fab]:41641 at 12:34:56"),
+            "via [fdxx::x]:41641 at 12:34:56"
+        );
+    }
+
+    #[test]
+    fn redacts_magicdns_names() {
+        assert_eq!(
+            redact_magicdns(
+                "self mac-host.example-tailnet.ts.net. peer windows-host.example-tailnet.ts.net."
+            ),
+            "self example-tailnet.ts.net peer example-tailnet.ts.net"
+        );
+    }
+
+    #[test]
+    fn redacts_configured_handle_and_peer() {
+        let cfg = Config {
+            handle: Some("player-one".into()),
+            default_peer_ip: Some("100.64.0.2".into()),
+            ..Config::default()
+        };
+        assert_eq!(
+            redact("hi player-one at 100.64.0.2", &cfg),
+            "hi <handle> at <peer-ip>"
         );
     }
 

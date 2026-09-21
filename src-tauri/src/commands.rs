@@ -91,7 +91,7 @@ fn rom_file(cfg: &Config, rom: &str) -> Result<PathBuf, String> {
 }
 
 fn optional_rom_file(cfg: &Config, provider: &dyn Provider, rom: &str) -> Result<PathBuf, String> {
-    if provider.kind() == ProviderKind::Retroarch {
+    if provider.requires_rom_file() {
         return rom_file(cfg, rom);
     }
     Ok(roms::resolve_rom_dir(cfg)

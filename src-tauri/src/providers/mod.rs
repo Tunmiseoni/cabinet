@@ -1,7 +1,8 @@
 mod fightcade;
 mod retroarch;
 
-pub use retroarch::{ParityStatus, RetroArchProvider};
+pub use retroarch::ParityStatus;
+pub(crate) use retroarch::RetroArchProvider;
 
 use crate::config::Config;
 use crate::contracts::{InstallInfo, LaunchSpec};
@@ -72,6 +73,10 @@ pub trait Provider: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     fn port(&self, role: Role) -> Option<u16>;
     fn spec(&self, request: &MatchRequest) -> Result<LaunchSpec, String>;
+
+    fn requires_rom_file(&self) -> bool {
+        false
+    }
 
     fn parity(&self, _rom_path: &Path) -> Result<Option<ParityStatus>, String> {
         Ok(None)

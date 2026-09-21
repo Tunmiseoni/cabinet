@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn loads_a_config_without_provider_fields() {
         let config: Config = serde_json::from_str(
-            r#"{"handle":"Tunmise","cabinetMode":true,"rttWarnMs":150,"pollIntervalSecs":10}"#,
+            r#"{"handle":"player-one","cabinetMode":true,"rttWarnMs":150,"pollIntervalSecs":10}"#,
         )
         .unwrap();
         assert_eq!(config.provider, ProviderKind::Fightcade);
@@ -102,7 +102,7 @@ mod tests {
             retroarch_path: Some("/opt/RetroArch".into()),
             retroarch_core: Some("/tmp/fbneo.so".into()),
             retroarch_port: 60000,
-            retroarch_nickname: Some("Tunmise".into()),
+            retroarch_nickname: Some("player-one".into()),
             ..Config::default()
         };
         let raw = serde_json::to_string(&config).unwrap();
@@ -111,6 +111,6 @@ mod tests {
         assert_eq!(loaded.retroarch_path.as_deref(), Some("/opt/RetroArch"));
         assert_eq!(loaded.retroarch_core.as_deref(), Some("/tmp/fbneo.so"));
         assert_eq!(loaded.retroarch_port, 60000);
-        assert_eq!(loaded.retroarch_nickname.as_deref(), Some("Tunmise"));
+        assert_eq!(loaded.retroarch_nickname.as_deref(), Some("player-one"));
     }
 }

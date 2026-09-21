@@ -50,11 +50,10 @@ fn apply_linux_webkit_workarounds() {
 }
 
 fn verbose_logging_requested(app: &tauri::AppHandle) -> bool {
-    use tauri::Manager;
-    let Ok(dir) = app.path().app_config_dir() else {
-        return false;
-    };
-    if config::Config::load(&config::config_path(dir)).verbose_logging {
+    if crate::commands::load_config(app)
+        .map(|config| config.verbose_logging)
+        .unwrap_or(false)
+    {
         return true;
     }
     std::env::var("RUST_LOG").is_ok_and(|value| {

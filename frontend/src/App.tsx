@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -22,28 +22,15 @@ import {
   type MatchRole,
   type MatchState,
   type PeerHealth,
-  type ProviderInfo,
-  type RomIndex,
-  type Tailnet,
   MATCH_EVENT,
 } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
-import { useAsyncTask, usePolling, useTauriEvent } from "@/lib/hooks";
-import { sameJson } from "@/lib/utils";
+import { useAsyncTask, useTauriEvent } from "@/lib/hooks";
+import { useInvoke } from "@/lib/query";
 import { AlertTriangle, RefreshCw, Settings, Wifi } from "lucide-react";
 
 function App() {
-  const [config, setConfig] = useState<Config | null>(null);
-  const [tailnet, setTailnet] = useState<Tailnet | null>(null);
-  const [romIndex, setRomIndex] = useState<RomIndex | null>(null);
-  const [health, setHealth] = useState<Record<string, PeerHealth>>({});
-  const [launcher, setLauncher] = useState<ProviderInfo | null>(null);
   const [match, setMatch] = useState<MatchState | null>(null);
-  const [peersLoading, setPeersLoading] = useState(true);
-  const [romsLoading, setRomsLoading] = useState(true);
-  const [healthLoading, setHealthLoading] = useState(false);
-  const [peersError, setPeersError] = useState<string | null>(null);
-  const [romsError, setRomsError] = useState<string | null>(null);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showLobby, setShowLobby] = useState(false);
@@ -51,92 +38,66 @@ function App() {
   const launchAction = useAsyncTask(setAppError);
   const settingsAction = useAsyncTask(setAppError);
 
+  const configQuery = useInvoke("config", getConfig);
+  const config = configQuery.data;
+
+  const pollSeconds = Math.max(2, config?.pollIntervalSecs ?? 10);
+  const peersQuery = useInvoke("peers", listPeers, {
+    pollMs: pollSeconds * 1000,
+  });
+  const romsQuery = useInvoke("roms", listRoms);
+  const launcherQuery = useInvoke("launcher", launcherInfo);
+
+  const onlineIps = useMemo(
+    () =>
+      (peersQuery.data?.peers ?? [])
+        .filter((peer) => peer.online)
+        .map((peer) => peer.ip),
+    [peersQuery.data],
+  );
+  const healthQuery = useInvoke(
+    `health:${onlineIps.join(",")}`,
+    () => peersHealth(onlineIps),
+    { enabled: onlineIps.length > 0 },
+  );
+  const health = useMemo<Record<string, PeerHealth>>(
+    () =>
+      Object.fromEntries(
+        (healthQuery.data ?? []).map((result) => [result.ip, result]),
+      ),
+    [healthQuery.data],
+  );
+
   const running = match?.status === "running";
   const cabinetActive = Boolean(config?.cabinetMode) && running && !showLobby;
+  const rttWarnMs = config?.rttWarnMs ?? 150;
 
   useEffect(() => {
     if (!running) setShowLobby(false);
   }, [running]);
 
-  const rttWarnMs = config?.rttWarnMs ?? 150;
-
-  const refreshPeers = useCallback(async (silent = false) => {
-    if (!silent) setPeersLoading(true);
-    try {
-      const status = await listPeers();
-      setTailnet((prev) => (sameJson(prev, status) ? prev : status));
-      setPeersError(null);
-
-      const onlineIps = status.peers
-        .filter((peer) => peer.online)
-        .map((peer) => peer.ip);
-      if (onlineIps.length === 0) {
-        setHealth((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-        return;
-      }
-      if (!silent) setHealthLoading(true);
-      try {
-        const results = await peersHealth(onlineIps);
-        const next = Object.fromEntries(
-          results.map((result) => [result.ip, result]),
-        );
-        setHealth((prev) => (sameJson(prev, next) ? prev : next));
-      } finally {
-        if (!silent) setHealthLoading(false);
-      }
-    } catch (err) {
-      setPeersError(String(err));
-    } finally {
-      if (!silent) setPeersLoading(false);
-    }
-  }, []);
-
-  const refreshRoms = useCallback(async () => {
-    setRomsLoading(true);
-    try {
-      setRomIndex(await listRoms());
-      setRomsError(null);
-    } catch (err) {
-      setRomsError(String(err));
-    } finally {
-      setRomsLoading(false);
-    }
-  }, []);
-
-  const refreshLauncher = useCallback(async () => {
-    try {
-      setLauncher(await launcherInfo());
-      setAppError(null);
-    } catch (err) {
-      setAppError(String(err));
-    }
-  }, []);
-
   useEffect(() => {
-    getConfig()
-      .then(setConfig)
-      .catch((err) => setAppError(String(err)));
-    refreshPeers();
-    refreshRoms();
-    refreshLauncher();
     matchStatus()
       .then(setMatch)
       .catch(() => undefined);
-  }, [refreshPeers, refreshRoms, refreshLauncher]);
+  }, []);
 
   useTauriEvent<MatchState>(MATCH_EVENT, setMatch);
 
-  const pollSeconds = Math.max(2, config?.pollIntervalSecs ?? 10);
-  usePolling(() => {
-    refreshPeers(true);
-  }, pollSeconds * 1000);
+  const refreshAll = () => {
+    void peersQuery.refresh();
+    void romsQuery.refresh();
+    void launcherQuery.refresh();
+  };
 
   const handleSaveConfig = (next: Config) =>
     settingsAction.run(async () => {
-      setConfig(await saveConfig(next));
-      await refreshPeers();
-      await refreshRoms();
-      await refreshLauncher();
+      configQuery.mutate(await saveConfig(next));
+      await Promise.all([
+        peersQuery.refresh(),
+        romsQuery.refresh(),
+        launcherQuery.refresh(),
+      ]);
     });
 
   const handleLaunch = (
@@ -160,10 +121,19 @@ function App() {
       setMatch(await launchDevPair(rom));
     });
 
-  const warnings = (tailnet?.peers ?? [])
+  const warnings = (peersQuery.data?.peers ?? [])
     .filter((peer) => peer.online)
     .map((peer) => healthWarning(peer.hostname, health[peer.ip], rttWarnMs))
     .filter((warning): warning is string => warning !== null);
+
+  const errorMessage = [
+    peersQuery.error,
+    romsQuery.error,
+    launcherQuery.error,
+    appError,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   if (cabinetActive && match) {
     return (
@@ -196,19 +166,13 @@ function App() {
             <h1 className="text-2xl font-bold tracking-tight">The Cabinet</h1>
             <p className="text-sm text-muted-foreground">
               Tailnet FightCade launcher
-              {tailnet?.selfPeer?.ip ? ` · ${tailnet.selfPeer.ip}` : ""}
+              {peersQuery.data?.selfPeer?.ip
+                ? ` · ${peersQuery.data.selfPeer.ip}`
+                : ""}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                refreshPeers();
-                refreshRoms();
-                refreshLauncher();
-              }}
-            >
+            <Button variant="outline" size="sm" onClick={refreshAll}>
               <RefreshCw className="size-4" />
               Refresh
             </Button>
@@ -223,12 +187,12 @@ function App() {
           </div>
         </header>
 
-        {(peersError || romsError || appError) && (
+        {errorMessage && (
           <Alert variant="destructive">
             <AlertTriangle className="size-4" />
             <AlertTitle>Something went wrong</AlertTitle>
             <AlertDescription className="break-words">
-              {[peersError, romsError, appError].filter(Boolean).join(" · ")}
+              {errorMessage}
             </AlertDescription>
           </Alert>
         )}
@@ -249,10 +213,10 @@ function App() {
 
         <LaunchCard
           config={config}
-          tailnet={tailnet}
+          tailnet={peersQuery.data}
           health={health}
-          romIndex={romIndex}
-          provider={launcher}
+          romIndex={romsQuery.data}
+          provider={launcherQuery.data}
           match={match}
           busy={launchAction.busy}
           onLaunch={handleLaunch}
@@ -262,14 +226,18 @@ function App() {
 
         <div className="grid min-h-0 flex-1 gap-6 md:grid-cols-2">
           <PeersCard
-            tailnet={tailnet}
-            loading={peersLoading}
-            error={peersError}
+            tailnet={peersQuery.data}
+            loading={peersQuery.loading}
+            error={peersQuery.error}
             health={health}
-            healthLoading={healthLoading}
+            healthLoading={healthQuery.loading}
             rttWarnMs={rttWarnMs}
           />
-          <RomsCard romIndex={romIndex} loading={romsLoading} error={romsError} />
+          <RomsCard
+            romIndex={romsQuery.data}
+            loading={romsQuery.loading}
+            error={romsQuery.error}
+          />
         </div>
 
         <SettingsDialog

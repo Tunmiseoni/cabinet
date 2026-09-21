@@ -27,7 +27,7 @@ done < <(ls "$FB_DIR/ROMs/"*.zip 2>/dev/null | sed 's#.*/##')
 ask() { osascript -e "text returned of (display dialog \"$1\" default answer \"$2\" buttons {\"OK\"} default button 1)" 2>/dev/null; }
 
 TITLE="FightCade LAN ($MY_IP)"
-PEER_IP="$(ask "Peer Tailscale IP (your friend):" "100.64.0.11")" || exit 1
+PEER_IP="$(ask "Peer Tailscale IP (your friend):" "100.64.0.2")" || exit 1
 [ -n "$PEER_IP" ] || exit 1
 
 if [ "${#ROMS[@]}" -gt 0 ]; then

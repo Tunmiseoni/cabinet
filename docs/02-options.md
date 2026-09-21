@@ -9,7 +9,7 @@ Legend: ✅ recommended · ⚠️ works but costly/limited · ❌ does not solve
 ## Option A — Ask the ISP for a public/static IP ✅ (cleanest, often paid)
 
 - **Idea:** Have MTN move this line off CGNAT or assign a static public IPv4.
-- **Then:** port-forward on the ZTE router (UDP `6000-6009`, TCP `7000-7005`) to `192.168.1.100`.
+- **Then:** port-forward on the ZTE router (UDP `6000-6009`, TCP `7000-7005`) to `192.0.2.100`.
 - **Pros:** fixes all peer-to-peer games, no extra software, no change to how FightCade is used.
 - **Cons:** MTN may refuse or charge; often business plans only; may not be available on this plan. Does not fix symmetric NAT by itself (many CGNAT gateways are symmetric) — but a real public IP at least makes the ports reachable, which is the fallback FightCade uses.
 - **Cost:** free–paid (varies).
@@ -19,8 +19,8 @@ Router port-forward rule (only useful once a public IP exists):
 
 | Service | Protocol | External ports | Internal IP | Internal ports |
 |---|---|---|---|---|
-| FightCade | UDP | 6000–6009 | 192.168.1.100 | 6000–6009 |
-| FightCade | TCP | 7000–7005 | 192.168.1.100 | 7000–7005 |
+| FightCade | UDP | 6000–6009 | 192.0.2.100 | 6000–6009 |
+| FightCade | TCP | 7000–7005 | 192.0.2.100 | 7000–7005 |
 
 ---
 
@@ -51,7 +51,7 @@ Router port-forward rule (only useful once a public IP exists):
   fcadefbneo.exe quark:direct,<rom>,<localPort>,<peerIP>,<peerPort>,<side>,0 -w
   ```
   with side `0` = P1 (local `7001`, peer `7000`) and side `1` = P2 (local `7000`, peer `7001`).
-- **Why it fits this user:** Tailscale is already installed and the friend `cachyos-host` (`100.64.0.11`) is reachable. This bypasses the ISP problem entirely and costs nothing.
+- **Why it fits this user:** Tailscale is already installed and the friend `cachyos-host` (`100.64.0.2`) is reachable. This bypasses the ISP problem entirely and costs nothing.
 - **Pros:** free; uses existing Tailscale; no ISP/VPN; no port forwarding; works behind any NAT; uses the same emulator, ROMs, and rollback netcode.
 - **Cons:** not FightCade matchmaking — it is a **friend-only** connection (no ranked/public lobbies). Both players must run the direct launcher and use the **same ROM set**. The Linux side needs its own launcher/script.
 - **Latency reality (updated 2026-09-18):** earlier measurements had both ends on symmetric NAT with no direct path, relaying via DERP `par` (~330–500 ms). After a router restart the tailnet established a **direct path, <100 ms**, and matches were played successfully over it. The direct path is the current operating condition; DERP remains only a fallback if a direct path is ever lost.
@@ -65,7 +65,7 @@ cd "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo"
 WINEPREFIX="/Applications/FightCade2.app/Contents/Resources/.wine32" \
 WINEDEBUG=-all \
 "/Applications/FightCade2.app/Contents/Resources/wine/bin/wine32on64" \
-  "fcadefbneo.exe" "quark:direct,sfiii3nr1,7001,100.64.0.11,7000,0,0" -w
+  "fcadefbneo.exe" "quark:direct,sfiii3nr1,7001,100.64.0.2,7000,0,0" -w
 ```
 
 (That is P1 pointing at the friend. The friend runs the mirror image.)
