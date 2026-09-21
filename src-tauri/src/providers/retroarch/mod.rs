@@ -263,6 +263,58 @@ impl Provider for RetroArchProvider {
 mod tests {
     use super::*;
     use crate::providers::retroarch::test_support::{provider, request, Scratch};
+    use crate::sync::MutexExt;
+    use std::sync::{Arc, Mutex};
+
+    fn spawn_capturing(
+        spec: &crate::contracts::LaunchSpec,
+    ) -> (std::process::Child, Arc<Mutex<String>>) {
+        use std::process::Stdio;
+        let mut child = crate::process::command(&spec.program)
+            .args(&spec.args)
+            .current_dir(&spec.cwd)
+            .envs(spec.envs.iter().cloned())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn retroarch");
+        let log = Arc::new(Mutex::new(String::new()));
+        let mut streams: Vec<Box<dyn std::io::Read + Send>> = Vec::new();
+        if let Some(stdout) = child.stdout.take() {
+            streams.push(Box::new(stdout));
+        }
+        if let Some(stderr) = child.stderr.take() {
+            streams.push(Box::new(stderr));
+        }
+        for stream in streams {
+            let log = Arc::clone(&log);
+            std::thread::spawn(move || {
+                use std::io::BufRead;
+                for line in std::io::BufReader::new(stream)
+                    .lines()
+                    .map_while(Result::ok)
+                {
+                    let mut log = log.lock_or_recover();
+                    log.push_str(&line);
+                    log.push('\n');
+                }
+            });
+        }
+        (child, log)
+    }
+
+    fn wait_for(log: &Arc<Mutex<String>>, needle: &str, timeout: std::time::Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if log.lock_or_recover().contains(needle) {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+    }
 
     #[test]
     fn capabilities_match_the_degrade_paths() {
@@ -346,6 +398,82 @@ mod tests {
             let _ = child.wait();
         }
         assert!(all_alive, "all three roles should stay running");
+    }
+
+    #[test]
+    #[ignore = "launches a host-as-spectator and two loopback clients (opens RetroArch windows)"]
+    fn live_host_as_spectator_seats_clients_by_seat() {
+        use std::time::Duration;
+
+        let core = PathBuf::from(std::env::var("HOME").unwrap_or_default())
+            .join("Library/Application Support/RetroArch/cores/fbneo_libretro.dylib");
+        let rom = PathBuf::from(
+            "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs/sfiii3nr1.zip",
+        );
+        if !core.is_file() || !rom.is_file() {
+            eprintln!("skipping: RetroArch core or ROM not present");
+            return;
+        }
+
+        let scratch = Scratch::new("live-seats");
+        let cfg = Config {
+            retroarch_core: Some(core.to_string_lossy().to_string()),
+            ..Config::default()
+        };
+        let provider = RetroArchProvider::new(&cfg, &scratch.dir, &scratch.dir, true);
+
+        let mut host_request = request(Role::P1, &rom, "127.0.0.1");
+        host_request.start_as_spectator = true;
+        let host_spec = provider.spec(&host_request).unwrap();
+        let (mut host, host_log) = spawn_capturing(&host_spec);
+        std::thread::sleep(Duration::from_secs(4));
+
+        let mut first_request = request(Role::P2, &rom, "127.0.0.1");
+        first_request.player_slot = Some(1);
+        let first_spec = provider.spec(&first_request).unwrap();
+        let (mut first, first_log) = spawn_capturing(&first_spec);
+        let seat_one = wait_for(
+            &first_log,
+            "You have joined as player 1",
+            Duration::from_secs(25),
+        );
+
+        let mut second_request = request(Role::P2, &rom, "127.0.0.1");
+        second_request.player_slot = Some(2);
+        let second_spec = provider.spec(&second_request).unwrap();
+        let (mut second, second_log) = spawn_capturing(&second_spec);
+        let seat_two = wait_for(
+            &second_log,
+            "You have joined as player 2",
+            Duration::from_secs(25),
+        );
+
+        for child in [&mut host, &mut first, &mut second] {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        if !seat_one {
+            eprintln!(
+                "seat-1 client never bound player 1:\n{}",
+                first_log.lock_or_recover()
+            );
+        }
+        if !seat_two {
+            eprintln!(
+                "seat-2 client never bound player 2:\n{}",
+                second_log.lock_or_recover()
+            );
+        }
+        eprintln!("host log:\n{}", host_log.lock_or_recover());
+        assert!(
+            seat_one,
+            "the client seated on player 1 did not join as player 1"
+        );
+        assert!(
+            seat_two,
+            "the client seated on player 2 did not join as player 2"
+        );
     }
 
     #[test]
