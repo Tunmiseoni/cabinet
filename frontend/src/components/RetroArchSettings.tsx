@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { getRetroArchHotkeys, downloadRetroArchCore } from "@/lib/api";
-import type { HotkeyBinding, RetroArchInput } from "@/lib/types";
+import { useTauriEvent } from "@/lib/hooks";
+import {
+  CORE_DOWNLOAD_EVENT,
+  type CoreDownloadProgress,
+  type HotkeyBinding,
+  type RetroArchInput,
+} from "@/lib/types";
 
 export type RetroArchField =
   | "retroarchPath"
@@ -110,6 +118,12 @@ function keyLabel(key: string): string {
   return key;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const mb = bytes / (1024 * 1024);
+  return mb >= 10 ? `${mb.toFixed(0)} MB` : `${mb.toFixed(1)} MB`;
+}
+
 interface RetroArchSettingsProps {
   path: string;
   core: string;
@@ -149,11 +163,14 @@ export function RetroArchSettings({
 }: RetroArchSettingsProps) {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<CoreDownloadProgress | null>(null);
   const [hotkeys, setHotkeys] = useState<HotkeyBinding[]>([]);
   const [defaults, setDefaults] = useState<RetroArchInput | null>(null);
   const [captureField, setCaptureField] = useState<keyof RetroArchInput | null>(
     null,
   );
+
+  useTauriEvent<CoreDownloadProgress>(CORE_DOWNLOAD_EVENT, setProgress);
 
   useEffect(() => {
     let active = true;
@@ -187,12 +204,17 @@ export function RetroArchSettings({
   async function handleDownload() {
     setDownloading(true);
     setDownloadError(null);
+    setProgress(null);
     try {
       const core = await downloadRetroArchCore();
       onCoreDownloaded(core.path);
+      toast.success("Frozen core installed", { description: core.path });
     } catch (error) {
-      setDownloadError(String(error));
+      const message = String(error);
+      setDownloadError(message);
+      toast.error("Core download failed", { description: message });
     } finally {
+      setProgress(null);
       setDownloading(false);
     }
   }
@@ -203,6 +225,16 @@ export function RetroArchSettings({
         hotkey.collides &&
         hotkey.key.toLowerCase() === value.trim().toLowerCase(),
     );
+
+  const progressPercent =
+    progress?.total != null
+      ? Math.min(100, Math.round((progress.downloaded / progress.total) * 100))
+      : undefined;
+  const progressLabel = progress
+    ? progress.total != null
+      ? `${progressPercent}% · ${formatBytes(progress.downloaded)} / ${formatBytes(progress.total)}`
+      : `${formatBytes(progress.downloaded)} downloaded`
+    : "Starting…";
 
   return (
     <>
@@ -233,6 +265,14 @@ export function RetroArchSettings({
             {downloading ? "Downloading…" : "Download frozen core"}
           </Button>
         </div>
+        {downloading && (
+          <div className="grid gap-1">
+            <Progress value={progressPercent} />
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {progressLabel}
+            </p>
+          </div>
+        )}
         {downloadError ? (
           <p className="text-xs text-destructive">{downloadError}</p>
         ) : (

@@ -8,6 +8,7 @@ import { MatchView } from "@/components/MatchView";
 import { PeersCard } from "@/components/PeersCard";
 import { RomsCard } from "@/components/RomsCard";
 import { SettingsDialog } from "@/components/SettingsDialog";
+import { Toaster } from "@/components/ui/sonner";
 import {
   getConfig,
   launcherInfo,
@@ -209,19 +210,6 @@ function App() {
           </Alert>
         )}
 
-        <LaunchCard
-          config={config}
-          tailnet={peersQuery.data}
-          health={health}
-          romIndex={romsQuery.data}
-          provider={launcherQuery.data}
-          match={match}
-          busy={launchAction.busy}
-          onLaunch={handleLaunch}
-          onLaunchDevPair={handleLaunchDevPair}
-          onStop={handleStop}
-        />
-
         <LobbyCard
           config={config}
           romIndex={romsQuery.data}
@@ -230,6 +218,21 @@ function App() {
           onMatch={(state) => matchQuery.mutate(state)}
           onError={setAppError}
         />
+
+        {config?.developerMode && (
+          <LaunchCard
+            config={config}
+            tailnet={peersQuery.data}
+            health={health}
+            romIndex={romsQuery.data}
+            provider={launcherQuery.data}
+            match={match}
+            busy={launchAction.busy}
+            onLaunch={handleLaunch}
+            onLaunchDevPair={handleLaunchDevPair}
+            onStop={handleStop}
+          />
+        )}
 
         <div className="grid min-h-0 flex-1 gap-6 md:grid-cols-2">
           <PeersCard
@@ -253,6 +256,8 @@ function App() {
           config={config}
           onSave={handleSaveConfig}
         />
+
+        <Toaster position="bottom-right" />
       </div>
     </TooltipProvider>
   );

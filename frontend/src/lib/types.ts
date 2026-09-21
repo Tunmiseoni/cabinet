@@ -280,3 +280,9 @@ export interface CabinetStatus {
 }
 
 export const MATCH_EVENT = "match-state-changed";
+export const CORE_DOWNLOAD_EVENT = "core-download-progress";
+
+export interface CoreDownloadProgress {
+  downloaded: number;
+  total: number | null;
+}

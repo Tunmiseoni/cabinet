@@ -1,5 +1,5 @@
 use crate::commands::config::{config_and_provider, load_config};
-use crate::commands::launch::{launch_match, LaunchRequest};
+use crate::commands::launch::{launch_match_inner, LaunchRequest};
 use crate::config::Config;
 use crate::constants;
 use crate::lobby::beacon;
@@ -109,8 +109,8 @@ pub fn lobby_start(
         room.room_id,
         room.rom
     );
-    if let Err(err) = launch_match(
-        app.clone(),
+    if let Err(err) = launch_match_inner(
+        &app,
         LaunchRequest {
             rom,
             peer_ip: String::new(),
@@ -122,7 +122,7 @@ pub fn lobby_start(
         },
     ) {
         lobby.stop();
-        return Err(err);
+        return Err(err.into());
     }
     Ok(room)
 }
@@ -183,8 +183,8 @@ pub fn lobby_join(
         room.as_ref().map(|room| room.room_id.as_str()),
         role.label(),
     );
-    let state = launch_match(
-        app,
+    let state = launch_match_inner(
+        &app,
         LaunchRequest {
             rom,
             peer_ip: host,

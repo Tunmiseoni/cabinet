@@ -24,6 +24,7 @@ import {
   lobbyStatus,
   lobbyStop,
   matchStatus,
+  stopMatch,
 } from "@/lib/api";
 import { useAsyncTask } from "@/lib/hooks";
 import { useInvoke } from "@/lib/query";
@@ -34,7 +35,7 @@ import type {
   Room,
   RomIndex,
 } from "@/lib/types";
-import { DoorOpen, Eye, Server, Users } from "lucide-react";
+import { DoorOpen, Eye, Server, Square, Users } from "lucide-react";
 
 const FIRST_TO = [1, 2, 3];
 
@@ -96,6 +97,16 @@ export function LobbyCard({
     onMatch(await matchStatus());
   }
 
+  async function stopSession() {
+    try {
+      await lobbyStop();
+    } catch {
+      await stopMatch();
+    }
+    roomQuery.mutate(null);
+    onMatch(await matchStatus());
+  }
+
   async function join(host: string, spectate: boolean, rom?: string) {
     const outcome = await lobbyJoin({
       host,
@@ -121,6 +132,27 @@ export function LobbyCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6">
+        {running && (
+          <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+            <div className="grid gap-1">
+              <span className="text-sm font-medium">Match running</span>
+              <span className="text-xs text-muted-foreground">
+                {match?.rom}
+                {match?.peerIp ? ` · ${match.peerIp}` : ""}
+              </span>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={busy}
+              onClick={() => void action.run(stopSession)}
+            >
+              <Square className="size-4" />
+              Stop match
+            </Button>
+          </section>
+        )}
+
         <section className="grid gap-3">
           <h3 className="flex items-center gap-2 text-sm font-medium">
             <Server className="size-4" />

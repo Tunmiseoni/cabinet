@@ -99,6 +99,15 @@ pub fn run() {
             let dir = app.path().app_config_dir()?;
             migrate_legacy_config_dir(&dir);
 
+            let config_path = config::config_path(dir.clone());
+            let mut cfg = config::Config::load(&config_path);
+            if cfg.reset_developer_mode() {
+                log::info!("developer mode reset for this session");
+                if let Err(err) = cfg.save(&config_path) {
+                    log::warn!("cannot persist developer-mode reset: {err}");
+                }
+            }
+
             let verbose = verbose_logging_requested(app.handle());
             log::set_max_level(if verbose {
                 log::LevelFilter::Debug

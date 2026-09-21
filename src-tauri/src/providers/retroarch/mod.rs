@@ -52,10 +52,11 @@ impl RetroArchProvider {
             .filter(|value| !value.trim().is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(core::DEFAULT_PROGRAM));
-        let managed_core = core::managed_core_path(app_data_dir);
+        let managed_core = core::managed_core_candidates(app_data_dir);
         let home = crate::env::home_dir();
         let candidates = core::core_candidates(&program, home.as_deref());
-        let core = core::resolve_core(cfg.retroarch_core.as_deref(), &candidates, managed_core);
+        let core = core::resolve_core(cfg.retroarch_core.as_deref(), &candidates, &managed_core);
+        let core = core::adopt_managed_core(core, app_data_dir);
         let nickname = cfg
             .retroarch_nickname
             .as_deref()
@@ -177,10 +178,14 @@ impl Provider for RetroArchProvider {
         let installed = program_ok && core_ok;
         let detail = if installed {
             format!("{} · {}", self.program.display(), self.core.display())
+        } else if !program_ok {
+            format!(
+                "RetroArch binary not found at {} — install RetroArch",
+                self.program.display()
+            )
         } else {
             format!(
-                "missing {} or {}",
-                self.program.display(),
+                "core not found at {} — Settings → RetroArch → Download frozen core",
                 self.core.display()
             )
         };

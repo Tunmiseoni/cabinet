@@ -179,12 +179,23 @@ fn preflight(
     }
 }
 
+/// Developer-mode LaunchCard / loopback diagnostics entry point; the lobby calls
+/// `launch_match_inner` directly.
 #[tauri::command(async)]
 pub fn launch_match(
     app: AppHandle,
     request: LaunchRequest,
 ) -> crate::error::CommandResult<MatchState> {
-    let (cfg, provider) = config_and_provider(&app, request.dev)?;
+    launch_match_inner(&app, request).map_err(Into::into)
+}
+
+/// Shared launcher used by the lobby (`lobby_start` / `lobby_join`). The `launch_match` command
+/// is kept only for the developer-mode LaunchCard and loopback diagnostics.
+pub(crate) fn launch_match_inner(
+    app: &AppHandle,
+    request: LaunchRequest,
+) -> crate::error::Result<MatchState> {
+    let (cfg, provider) = config_and_provider(app, request.dev)?;
     log::info!(
         "launch request: provider={:?} role={} seat={:?} rom={} peer={:?} dev={} force={}",
         provider.kind(),
@@ -220,7 +231,7 @@ pub fn launch_match(
         && matches!(request.role, Role::P2 | Role::Spectator)
         && (request.dev || request.force);
     session::launch(
-        &app,
+        app,
         &plan,
         session::LaunchOptions {
             dev: request.dev,
@@ -229,7 +240,6 @@ pub fn launch_match(
             capture_netplay: provider.kind() == ProviderKind::Retroarch,
         },
     )
-    .map_err(Into::into)
 }
 
 #[derive(Debug, Serialize)]
@@ -237,6 +247,15 @@ pub fn launch_match(
 pub struct DownloadedCore {
     pub path: String,
     pub sha256: String,
+}
+
+pub const CORE_DOWNLOAD_EVENT: &str = "core-download-progress";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoreDownloadProgress {
+    pub downloaded: u64,
+    pub total: Option<u64>,
 }
 
 #[tauri::command(async)]
@@ -247,12 +266,18 @@ pub fn retroarch_hotkey_map(app: AppHandle) -> crate::error::CommandResult<provi
 
 #[tauri::command(async)]
 pub fn download_retroarch_core(app: AppHandle) -> crate::error::CommandResult<DownloadedCore> {
-    use tauri::Manager;
+    use tauri::{Emitter, Manager};
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|err| format!("cannot resolve data dir: {err}"))?;
-    let core = providers::download_managed_core(&data_dir)?;
+    let core = providers::download_managed_core(&data_dir, |downloaded, total| {
+        app.emit(
+            CORE_DOWNLOAD_EVENT,
+            CoreDownloadProgress { downloaded, total },
+        )
+        .ok();
+    })?;
     Ok(DownloadedCore {
         path: core.to_string_lossy().to_string(),
         sha256: providers::frozen_core_sha256().to_string(),
@@ -269,6 +294,7 @@ pub fn match_status(app: AppHandle) -> MatchState {
     session::status(&app)
 }
 
+/// Developer-mode / loopback diagnostics only; the lobby does not use this pair flow.
 #[tauri::command(async)]
 pub fn launch_dev_pair(app: AppHandle, rom: String) -> crate::error::CommandResult<MatchState> {
     let (cfg, provider) = config_and_provider(&app, true)?;

@@ -171,7 +171,7 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-4 sm:max-w-lg">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-4 sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -201,7 +201,8 @@ export function SettingsDialog({
             <div className="grid gap-1">
               <Label htmlFor="developerMode">Developer mode</Label>
               <p className="text-xs text-muted-foreground">
-                Show developer tools on the home screen, like the loopback Dev pair.
+                Show developer tools on the home screen, like the loopback Dev pair. Turns
+                itself off each time the app starts.
               </p>
             </div>
             <input

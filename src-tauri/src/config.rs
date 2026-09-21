@@ -124,6 +124,14 @@ impl Config {
             .unwrap_or_default()
     }
 
+    /// Developer mode is session-scoped: it must not carry across launches, even when a
+    /// previous session saved it on. Returns whether it had been left on.
+    pub fn reset_developer_mode(&mut self) -> bool {
+        let was_on = self.developer_mode;
+        self.developer_mode = false;
+        was_on
+    }
+
     pub fn save(&self, path: &Path) -> io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -154,6 +162,17 @@ mod tests {
             crate::constants::RETROARCH_DEFAULT_COMMAND_PORT
         );
         assert!(config.retroarch_core.is_none());
+    }
+
+    #[test]
+    fn reset_developer_mode_turns_it_off_and_reports_the_prior_state() {
+        let mut config = Config {
+            developer_mode: true,
+            ..Config::default()
+        };
+        assert!(config.reset_developer_mode());
+        assert!(!config.developer_mode);
+        assert!(!config.reset_developer_mode());
     }
 
     #[test]

@@ -210,16 +210,18 @@ pub(super) fn core_candidates(program: &Path, home: Option<&Path>) -> Vec<PathBu
 pub(super) fn resolve_core(
     configured: Option<&str>,
     candidates: &[PathBuf],
-    managed: PathBuf,
+    managed: &[PathBuf],
 ) -> PathBuf {
     if let Some(value) = configured.map(str::trim).filter(|value| !value.is_empty()) {
         return PathBuf::from(value);
     }
     candidates
         .iter()
+        .chain(managed.iter())
         .find(|candidate| candidate.is_file())
         .cloned()
-        .unwrap_or(managed)
+        .or_else(|| managed.first().cloned())
+        .unwrap_or_default()
 }
 
 pub(super) fn managed_core_path(app_data_dir: &Path) -> PathBuf {
@@ -229,7 +231,83 @@ pub(super) fn managed_core_path(app_data_dir: &Path) -> PathBuf {
         .join(core_file_name())
 }
 
-pub(crate) fn download_managed_core(app_data_dir: &Path) -> crate::error::Result<PathBuf> {
+/// Both names the app may have written for the managed FBNeo core: the canonical
+/// `fbneo_libretro.<ext>` first, then the release asset name (`fbneo_libretro-<tag>.<ext>`)
+/// that an earlier version placed under the same directory.
+pub(super) fn managed_core_candidates(app_data_dir: &Path) -> Vec<PathBuf> {
+    let canonical = managed_core_path(app_data_dir);
+    let legacy = canonical.with_file_name(core_asset_name());
+    vec![canonical, legacy]
+}
+
+/// If `resolved` points at a legacy asset-named managed core, normalize it to the canonical
+/// managed name so later detects and downloads converge on one file. Handles both a stale
+/// configured path to the old name and a legacy file left on disk. Best-effort: returns the
+/// canonical path when it exists or the migration succeeds, otherwise the original path.
+pub(super) fn adopt_managed_core(resolved: PathBuf, app_data_dir: &Path) -> PathBuf {
+    let canonical = managed_core_path(app_data_dir);
+    let legacy = canonical.with_file_name(core_asset_name());
+    if resolved != legacy {
+        return resolved;
+    }
+    if canonical.is_file() {
+        log::info!(
+            "configured core {} resolves to managed {}",
+            legacy.display(),
+            canonical.display()
+        );
+        return canonical;
+    }
+    if !legacy.is_file() {
+        return canonical;
+    }
+    if let Some(parent) = canonical.parent() {
+        if let Err(err) = std::fs::create_dir_all(parent) {
+            log::warn!("cannot create {}: {err}", parent.display());
+            return legacy;
+        }
+    }
+    if std::fs::rename(&legacy, &canonical).is_ok() {
+        log::info!(
+            "migrated core {} -> {}",
+            legacy.display(),
+            canonical.display()
+        );
+        return canonical;
+    }
+    if std::fs::copy(&legacy, &canonical).is_ok() {
+        let _ = std::fs::remove_file(&legacy);
+        log::info!(
+            "migrated core {} -> {}",
+            legacy.display(),
+            canonical.display()
+        );
+        return canonical;
+    }
+    log::warn!(
+        "could not migrate core {} to {}",
+        legacy.display(),
+        canonical.display()
+    );
+    legacy
+}
+
+const PROGRESS_STEP_BYTES: u64 = 1024 * 1024;
+
+/// Whether a chunk boundary is worth reporting: every [`PROGRESS_STEP_BYTES`] while receiving,
+/// plus the final byte. Reporting the exact total matters for a known-size download so the bar
+/// can reach 100%.
+fn report_progress(downloaded: u64, reported: u64, total: Option<u64>) -> bool {
+    if total.is_some_and(|total| downloaded >= total) {
+        return downloaded != reported;
+    }
+    downloaded.saturating_sub(reported) >= PROGRESS_STEP_BYTES
+}
+
+pub(crate) fn download_managed_core(
+    app_data_dir: &Path,
+    mut on_progress: impl FnMut(u64, Option<u64>),
+) -> crate::error::Result<PathBuf> {
     if !is_published_platform() {
         return Err(format!("no published frozen core for {}", platform_tag()).into());
     }
@@ -245,6 +323,7 @@ pub(crate) fn download_managed_core(app_data_dir: &Path) -> crate::error::Result
     let response = ureq::get(&url)
         .call()
         .map_err(|err| format!("download failed: {err}"))?;
+    let total = response.body().content_length();
     let mut body = response.into_body();
 
     let temp = dest.with_extension("download");
@@ -252,8 +331,26 @@ pub(crate) fn download_managed_core(app_data_dir: &Path) -> crate::error::Result
         let mut file = std::fs::File::create(&temp)
             .map_err(|err| format!("cannot create {}: {err}", temp.display()))?;
         let mut reader = body.as_reader();
-        std::io::copy(&mut reader, &mut file)
-            .map_err(|err| format!("cannot write {}: {err}", temp.display()))?;
+        let mut buffer = [0u8; 64 * 1024];
+        let mut downloaded: u64 = 0;
+        let mut reported: u64 = 0;
+        loop {
+            let read = std::io::Read::read(&mut reader, &mut buffer)
+                .map_err(|err| format!("cannot read the download: {err}"))?;
+            if read == 0 {
+                break;
+            }
+            std::io::Write::write_all(&mut file, &buffer[..read])
+                .map_err(|err| format!("cannot write {}: {err}", temp.display()))?;
+            downloaded += read as u64;
+            if report_progress(downloaded, reported, total) {
+                reported = downloaded;
+                on_progress(downloaded, total);
+            }
+        }
+        if downloaded != reported {
+            on_progress(downloaded, total);
+        }
     }
 
     let actual = sha256_file(&temp)?;
@@ -264,6 +361,10 @@ pub(crate) fn download_managed_core(app_data_dir: &Path) -> crate::error::Result
     }
     std::fs::rename(&temp, &dest)
         .map_err(|err| format!("cannot install {}: {err}", dest.display()))?;
+    let legacy = dest.with_file_name(core_asset_name());
+    if legacy.is_file() {
+        let _ = std::fs::remove_file(&legacy);
+    }
     log::info!("installed frozen core at {}", dest.display());
     Ok(dest)
 }
@@ -285,7 +386,7 @@ mod tests {
         let resolved = resolve_core(
             Some("/custom/fbneo.dylib"),
             &[scratch.dir.join("standard.dylib")],
-            scratch.dir.join("managed.dylib"),
+            &[scratch.dir.join("managed.dylib")],
         );
         assert_eq!(resolved, PathBuf::from("/custom/fbneo.dylib"));
     }
@@ -299,7 +400,7 @@ mod tests {
         let resolved = resolve_core(
             Some("   "),
             &[absent, present.clone()],
-            scratch.dir.join("managed.dylib"),
+            &[scratch.dir.join("managed.dylib")],
         );
         assert_eq!(resolved, present);
     }
@@ -308,8 +409,88 @@ mod tests {
     fn resolve_core_falls_back_to_the_managed_path() {
         let scratch = Scratch::new("managed");
         let managed = scratch.dir.join("managed.dylib");
-        let resolved = resolve_core(None, &[scratch.dir.join("absent.dylib")], managed.clone());
+        let resolved = resolve_core(
+            None,
+            &[scratch.dir.join("absent.dylib")],
+            std::slice::from_ref(&managed),
+        );
         assert_eq!(resolved, managed);
+    }
+
+    #[test]
+    fn resolve_core_finds_the_canonical_managed_core() {
+        let scratch = Scratch::new("managed-canonical");
+        let canonical = scratch.dir.join("fbneo_libretro.dylib");
+        let legacy = scratch.dir.join("fbneo_libretro-legacy.dylib");
+        std::fs::write(&canonical, b"core").unwrap();
+        std::fs::write(&legacy, b"core").unwrap();
+        let resolved = resolve_core(None, &[], &[canonical.clone(), legacy]);
+        assert_eq!(resolved, canonical);
+    }
+
+    #[test]
+    fn resolve_core_finds_the_asset_named_managed_core() {
+        let scratch = Scratch::new("managed-legacy");
+        let canonical = scratch.dir.join("fbneo_libretro.dylib");
+        let legacy = scratch.dir.join("fbneo_libretro-legacy.dylib");
+        std::fs::write(&legacy, b"core").unwrap();
+        let resolved = resolve_core(None, &[], &[canonical, legacy.clone()]);
+        assert_eq!(resolved, legacy);
+    }
+
+    #[test]
+    fn managed_core_candidates_pair_the_canonical_and_asset_names() {
+        let dir = Path::new("/data/the-cabinet");
+        let candidates = managed_core_candidates(dir);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0], managed_core_path(dir));
+        assert_eq!(
+            candidates[1].file_name().and_then(|name| name.to_str()),
+            Some(core_asset_name().as_str())
+        );
+    }
+
+    #[test]
+    fn adopt_managed_core_renames_the_asset_named_core() {
+        let scratch = Scratch::new("adopt-legacy");
+        let app_data_dir = scratch.dir.join("app-data");
+        let canonical = managed_core_path(&app_data_dir);
+        let legacy = canonical.with_file_name(core_asset_name());
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, b"core").unwrap();
+
+        let adopted = adopt_managed_core(legacy.clone(), &app_data_dir);
+
+        assert_eq!(adopted, canonical);
+        assert!(canonical.is_file());
+        assert!(!legacy.exists());
+    }
+
+    #[test]
+    fn adopt_managed_core_keeps_the_canonical_core() {
+        let scratch = Scratch::new("adopt-canonical");
+        let app_data_dir = scratch.dir.join("app-data");
+        let canonical = managed_core_path(&app_data_dir);
+        std::fs::create_dir_all(canonical.parent().unwrap()).unwrap();
+        std::fs::write(&canonical, b"core").unwrap();
+
+        let adopted = adopt_managed_core(canonical.clone(), &app_data_dir);
+
+        assert_eq!(adopted, canonical);
+    }
+
+    #[test]
+    fn adopt_managed_core_normalizes_a_stale_configured_asset_path() {
+        let scratch = Scratch::new("adopt-stale-config");
+        let app_data_dir = scratch.dir.join("app-data");
+        let canonical = managed_core_path(&app_data_dir);
+        let legacy = canonical.with_file_name(core_asset_name());
+        std::fs::create_dir_all(canonical.parent().unwrap()).unwrap();
+        std::fs::write(&canonical, b"core").unwrap();
+
+        let adopted = adopt_managed_core(legacy, &app_data_dir);
+
+        assert_eq!(adopted, canonical);
     }
 
     #[test]
@@ -448,7 +629,30 @@ mod tests {
             return;
         }
         let scratch = Scratch::new("download-unsupported");
-        assert!(download_managed_core(&scratch.dir).is_err());
+        assert!(download_managed_core(&scratch.dir, |_, _| {}).is_err());
+    }
+
+    #[test]
+    fn report_progress_throttles_to_the_step_and_reports_the_final_byte() {
+        let total = Some(10 * PROGRESS_STEP_BYTES);
+        assert!(!report_progress(PROGRESS_STEP_BYTES / 2, 0, total));
+        assert!(report_progress(PROGRESS_STEP_BYTES, 0, total));
+        assert!(report_progress(
+            10 * PROGRESS_STEP_BYTES,
+            9 * PROGRESS_STEP_BYTES,
+            total
+        ));
+        assert!(!report_progress(
+            10 * PROGRESS_STEP_BYTES,
+            10 * PROGRESS_STEP_BYTES,
+            total
+        ));
+    }
+
+    #[test]
+    fn report_progress_uses_the_step_when_the_total_is_unknown() {
+        assert!(!report_progress(1024, 0, None));
+        assert!(report_progress(PROGRESS_STEP_BYTES, 0, None));
     }
 
     #[test]
@@ -470,7 +674,7 @@ mod tests {
             return;
         }
         let scratch = Scratch::new("live-download");
-        let core = download_managed_core(&scratch.dir).expect("download core");
+        let core = download_managed_core(&scratch.dir, |_, _| {}).expect("download core");
         assert!(core.is_file());
         assert_eq!(sha256_file(&core).unwrap(), frozen_core_sha256());
     }

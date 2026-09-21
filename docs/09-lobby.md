@@ -6,9 +6,20 @@ lobby. It is a design, not a spec: [`04-design.md`](04-design.md) remains the to
 be updated as the pieces land. The **build order is gated on a hardware spike**, specified separately
 in [`10-lobby-spike.md`](10-lobby-spike.md) — read that before writing code. **Implemented
 2026-09-21:** the RetroArch command-socket plumbing (`providers/retroarch/command.rs`, per-instance
-command ports, `network_cmd_enable`) and per-ROM RAM result detection (`lobby/results.rs`, the
-`sfiii3nr1` address table and round-outcome watcher). **Not implemented:** rooms, beacon/manual join,
-sets/rotation, history/scores.
+command ports, `network_cmd_enable`), per-ROM RAM result detection (`lobby/results.rs`, the
+`sfiii3nr1` address table and round-outcome watcher), the room model + HTTP beacon (`lobby/room.rs`,
+`lobby/beacon.rs`), hosting, the seat/role split, the client join flow (`lobby_*` commands), and
+`LobbyCard.tsx`. **Not implemented:** sets/rotation, history/scores, `RoomView.tsx`.
+
+**The lobby is the preferred home-screen path.** `LobbyCard.tsx` hosts/joins rooms and is rendered
+first; the direct **Launch match** card is hidden unless the `developerMode` setting is on (and
+developer mode is session-scoped — forced off at every app start), and the
+`launch_match`/`launch_dev_pair` commands are kept only for that card and loopback diagnostics —
+`lobby_start`/`lobby_join` call the shared `launch_match_inner` instead. While a session runs,
+`LobbyCard` shows a **Stop match** control so joiners (who have no Launch card) can stop; it calls
+`lobbyStop` with a `stopMatch` fallback. The managed FBNeo core is stored under its canonical name
+`fbneo_libretro.<ext>` under `<app_data_dir>/cores/<platform>/`; an earlier release-asset-named copy
+is still found and migrated on startup (see [`04-design.md`](04-design.md) §3).
 
 Motivation: the current flow makes the user pick a **role** (P1 / P2 / Spectator) against a peer by
 hand, and there is no way to *find* a session. The lobby reframes this around a **room**: create one,
@@ -345,7 +356,7 @@ src-tauri/src/
 └─ providers/retroarch -> command-socket plumbing (port allocation, overrides) [built]
 
 frontend/src/components/
-├─ LobbyCard.tsx     -> host/join room, room list, manual address             [built]
+├─ LobbyCard.tsx     -> host/join room, room list, manual address, stop       [built; preferred home screen]
 └─ RoomView.tsx      -> seats, set score, rotation state                      [proposed]
 ```
 
