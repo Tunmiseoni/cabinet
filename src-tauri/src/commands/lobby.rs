@@ -48,10 +48,10 @@ fn host_identity(cfg: &Config) -> (String, String) {
     (node_id, handle)
 }
 
-/// Resolve the launch role and input seat for a joiner. A player always connects as a client
-/// (`Role::P2`); the server assigns the seat at connect time, so the *seat* is what varies, not
-/// the connect direction. Without an explicit seat, the room's advertised occupancy decides,
-/// filling the slots the host has not taken.
+/// Resolve the launch role and seat for a joiner. A player always connects as a client
+/// (`Role::P2`) and lets RetroArch hand it the first free player device; the room's advertised
+/// occupancy decides whether a seat is free and which one to report. Without an explicit seat,
+/// the room's occupancy fills the slot the host has not taken.
 fn assign_join(
     spectate: bool,
     requested: Option<u8>,

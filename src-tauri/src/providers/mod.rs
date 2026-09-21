@@ -50,9 +50,9 @@ impl Role {
         self.default_player_slot().map(|slot| slot - 1)
     }
 
-    /// The seat this role binds by default: a player slot (`1`/`2`), or `None` when the
-    /// instance sends no input. The lobby overrides this with an explicit seat when a client
-    /// joins a room, so a client can bind either player independent of its connect direction.
+    /// The seat this role takes by default: a player slot (`1`/`2`), or `None` when the
+    /// instance sends no input. The lobby can override it with an explicit seat for the host's
+    /// "play as" choice and for room bookkeeping.
     pub fn default_player_slot(self) -> Option<u8> {
         match self {
             Role::P1 => Some(1),
@@ -72,9 +72,11 @@ pub struct Capabilities {
 #[derive(Debug, Clone)]
 pub struct MatchRequest<'a> {
     pub role: Role,
-    /// Explicit input seat for this instance: `Some(1)`/`Some(2)` binds `input_player1_*`/
-    /// `input_player2_*`; `None` falls back to the role's default (`P1` -> 1, `P2` -> 2,
-    /// `Spectator` -> none). Separates *which player you control* from *how you connect*.
+    /// The player seat this instance intends to occupy: `Some(1)`/`Some(2)`, or `None` for the
+    /// role's default (`P1` -> 1, `P2` -> 2, `Spectator` -> none). The seat does **not** choose
+    /// the input bind prefix — RetroArch netplay reads the local keyboard from the first local
+    /// device, i.e. `input_player1_*` — it selects which device the host requests and is recorded
+    /// for the room. Separates *which player you control* from *how you connect*.
     pub player_slot: Option<u8>,
     pub rom: &'a str,
     pub rom_path: &'a Path,

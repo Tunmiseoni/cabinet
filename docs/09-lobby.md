@@ -161,15 +161,19 @@ secrets.
 `providers/retroarch/parity.rs`) using the beacon's ROM identity → spawn the joiner's instance as a
 client/spectator (`-C <host>`). If parity fails, the joiner is told before anything launches.
 
-**Seat vs. role (resolved 2026-09-21).** The room host assigns each connecting client a player slot,
-but `Role` coupled connection direction with the player slot: `P1` was the `-H` server binding
-`input_player1_*`, `P2` a `-C` client binding `input_player2_*`. A client seated as player 1 had no
-role that both connected as a client and bound player 1 (the normal case with a host-as-spectator,
-where the first joiner becomes player 1). Fixed by separating *seat* from *role*: the launch request
-carries an explicit `player_slot` (`1`/`2`, or none), the seat chooses the `input_player{1|2}_*`
-binds, and `Role` still chooses the connect direction (`-H`/`-C`/spectator). The `lobby_join` command
-derives the seat from the room's advertised occupancy (first player -> 1, second -> 2, full ->
-spectate) unless the joiner picks one explicitly.
+**Seat vs. role (resolved 2026-09-21; corrected 2026-09-21).** The room host assigns each
+connecting client a player slot, but `Role` coupled connection direction with the player slot:
+`P1` was the `-H` server binding `input_player1_*`, `P2` a `-C` client binding `input_player2_*`.
+That prefix mapping was **wrong**: RetroArch netplay reads a participant's local keyboard from the
+**first local device of the matching type** (`get_self_input_state` in
+`network/netplay/netplay_frontend.c`), not from the player slot it was assigned, so a single-seat
+instance always samples `input_player1_*`. The seat is instead selected by the
+`netplay_request_device_p1`/`p2` keys (only the host sets them explicitly; a client lets RetroArch
+assign the first free device). Fixed by always binding the keyboard preset to `input_player1_*`
+(plus a `input_player2_*` duplicate for a seat-2 instance, as a hedge) while `Role` still chooses
+the connect direction (`-H`/`-C`/spectator). The `lobby_join` command derives the seat from the
+room's advertised occupancy (first player -> 1, second -> 2, full -> spectate) unless the joiner
+picks one explicitly.
 
 **v1's second protocol is dropped.** There is no custom TCP control channel. Discovery is one
 beacon; control is RetroArch's own command socket (§7.5).
@@ -196,8 +200,8 @@ or join a room, and the room assigns you a seat." Three seat types remain:
 
 | Seat | Instance | Notes |
 |---|---|---|
-| Server | The room's host instance | Plays a seat by default; `Spectate (table)` keeps it non-playing. May toggle into/out of play (later, §7.4). |
-| Player | A client claiming a device slot | Two player slots (P1/P2-equivalent). Host and joiners each hold one. |
+| Server | The room's host instance | Plays a seat by default; `Spectate (table)` keeps it non-playing. May toggle into/out of play (later, §7.4). The host requests its device with `netplay_request_device_p1`/`p2`. |
+| Player | A client claiming a device slot | Two player slots (P1/P2-equivalent). Host and joiners each hold one. A client leaves the request keys unset and RetroArch assigns it the first free device. |
 | Spectator | A client with `netplay_start_as_spectator = "true"` | Sends no input; many allowed. |
 
 ### 7.2 Room lifecycle
@@ -373,15 +377,18 @@ frontend/src/components/
   interfaces; queried with `ureq`. Cross-OS reachability (firewall) remains spike S7.
 - **Client seat vs. input binds:** ~~the host assigns slots at connect time, but `Role` couples
   direction and slot — a client seated as player 1 cannot bind player 1 today.~~ **Resolved
-  2026-09-21:** seat is split from role via `player_slot` on the launch request (§5); the
-  `lobby_join` command assigns it from room occupancy. The host updates the beacon's occupancy from
-  its netplay observer so joiners can see free seats (spectators are not counted yet).
+  2026-09-21 (corrected):** the keyboard preset is always written to `input_player1_*` because
+  netplay samples the first local device (§5); the seat is only a slot/identifier on the launch
+  request. `lobby_join` reports it from room occupancy, and the client lets RetroArch assign the
+  first free device. The host sets `netplay_request_device_p1`/`p2` so its own seat choice is
+  honored. The host updates the beacon's occupancy from its netplay observer so joiners can see
+  free seats (spectators are not counted yet).
 - **Host seat:** ~~does hosting always mean spectating?~~ **Resolved 2026-09-21:** `lobby_start`
   takes a `hostSeat` (`1`/`2`, or none for the table mode), defaulting to `1`. The room advertises
   its `hostSeat` and the host's held seat is included in the advertised `players`, so a joiner is
-  seated in the free slot (host on 1 → joiner takes 2, and vice versa). Manual join-by-address has
-  no beacon, so a manual joiner defaults to seat 1 and can collide with a host playing seat 1 — use
-  the beacon path, or the host's `Spectate`/seat-2 choice.
+  seated in the free slot (host on 1 → joiner takes 2, and vice versa). The client's device is
+  assigned by RetroArch as the first free one, so a manual join-by-address (no beacon) still lands
+  in the free slot; only the *reported* seat may be nominal.
 - **Parity timing:** run the parity gate before spawning the joiner (recommended) or after? (Before —
   fail fast, no window churn.)
 - **Slot race:** exact ordering/acknowledgement between the loser's release and the challenger's

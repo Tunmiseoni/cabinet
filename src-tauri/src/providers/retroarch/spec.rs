@@ -49,9 +49,7 @@ pub(super) fn overrides_path(overrides_dir: &Path, role: Role) -> PathBuf {
     overrides_dir.join(format!("netplay-{}.cfg", role.key()))
 }
 
-/// The 12 preset keys mapped to their FBNeo Classic RetroPad bind suffix. The seat picks the
-/// prefix: seat 1 -> `input_player1_*`, seat 2 -> `input_player2_*`, no seat -> no input. The
-/// seat is independent of the connect direction, so a client can bind either player.
+/// The 12 preset keys mapped to their FBNeo Classic RetroPad bind suffix.
 fn preset_binds(input: &RetroArchInput) -> [(&'static str, &'static str, &str); 12] {
     [
         ("up", "Up", &input.up),
@@ -69,25 +67,35 @@ fn preset_binds(input: &RetroArchInput) -> [(&'static str, &'static str, &str); 
     ]
 }
 
+/// Write the keyboard preset for a seated instance. RetroArch netplay reads a participant's local
+/// input from the *first local device of the matching type* (`get_self_input_state` in
+/// `network/netplay/netplay_frontend.c`), not from the player slot it was assigned, so the
+/// keyboard always has to be on `input_player1_*`. The seat is independent of the connect
+/// direction, so both host and client bind here; a seat-2 instance also keeps the
+/// `input_player2_*` binds as a hedge. No seat -> no input (a spectator).
 fn write_preset_binds(
     content: &mut String,
     input: &RetroArchInput,
     seat: Option<u8>,
 ) -> crate::error::Result<()> {
-    let prefix = match seat {
-        Some(1) => "input_player1",
-        Some(2) => "input_player2",
-        _ => return Ok(()),
-    };
-    for (suffix, label, key) in preset_binds(input) {
-        let key = key.trim();
-        if !hotkeys::is_valid_key(key) {
-            return Err(format!("invalid RetroArch key \"{key}\" for {label}").into());
+    if seat.is_none() {
+        return Ok(());
+    }
+    let mut prefixes: Vec<&str> = vec!["input_player1"];
+    if seat == Some(2) {
+        prefixes.push("input_player2");
+    }
+    for prefix in prefixes {
+        for (suffix, label, key) in preset_binds(input) {
+            let key = key.trim();
+            if !hotkeys::is_valid_key(key) {
+                return Err(format!("invalid RetroArch key \"{key}\" for {label}").into());
+            }
+            content.push_str(&format!(
+                "{prefix}_{suffix} = \"{}\"\n",
+                sanitize_value(key)
+            ));
         }
-        content.push_str(&format!(
-            "{prefix}_{suffix} = \"{}\"\n",
-            sanitize_value(key)
-        ));
     }
     Ok(())
 }
@@ -133,6 +141,21 @@ pub(super) fn write_overrides(
     ));
     content.push_str("input_libretro_device_p1 = \"5\"\n");
     content.push_str("input_libretro_device_p2 = \"5\"\n");
+    // The seat a participant actually takes is chosen by which device it requests; the input
+    // bind prefix does not select it. Only the host asks explicitly, so its "play as" choice is
+    // honored; a client leaves this unset and RetroArch assigns it the first free device.
+    if role == Role::P1 {
+        if let Some(host_seat) = seat {
+            content.push_str(&format!(
+                "netplay_request_device_p1 = \"{}\"\n",
+                host_seat == 1
+            ));
+            content.push_str(&format!(
+                "netplay_request_device_p2 = \"{}\"\n",
+                host_seat == 2
+            ));
+        }
+    }
     if provider.input_enabled {
         write_preset_binds(&mut content, &provider.input, seat)?;
         let host_cfg = if provider.isolated_config {
@@ -525,13 +548,16 @@ mod tests {
         assert!(p1.contains("input_player1_start = \"num1\""));
         assert!(p1.contains("input_player1_select = \"num5\""));
         assert!(!p1.contains("input_player2_"));
+        assert!(p1.contains("netplay_request_device_p1 = \"true\""));
+        assert!(p1.contains("netplay_request_device_p2 = \"false\""));
 
         provider
             .spec(&request(Role::P2, &rom, "100.64.0.2"))
             .unwrap();
         let p2 = overrides(&provider, Role::P2);
+        assert!(p2.contains("input_player1_y = \"u\""));
         assert!(p2.contains("input_player2_y = \"u\""));
-        assert!(!p2.contains("input_player1_"));
+        assert!(!p2.contains("netplay_request_device"));
 
         provider
             .spec(&request(Role::Spectator, &rom, "100.64.0.2"))
@@ -539,6 +565,7 @@ mod tests {
         let spectator = overrides(&provider, Role::Spectator);
         assert!(!spectator.contains("input_player1_"));
         assert!(!spectator.contains("input_player2_"));
+        assert!(!spectator.contains("netplay_request_device"));
     }
 
     #[test]
@@ -554,10 +581,25 @@ mod tests {
         let content = overrides(&provider, Role::P2);
         assert!(content.contains("input_player1_y = \"u\""));
         assert!(!content.contains("input_player2_"));
+        assert!(!content.contains("netplay_request_device"));
     }
 
     #[test]
-    fn a_seat_of_two_binds_player_two_even_on_the_host() {
+    fn a_client_seated_as_player_two_binds_both_prefixes_without_requesting_a_device() {
+        let scratch = Scratch::new("seat-client-p2");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        let mut request = request(Role::P2, &rom, "100.64.0.2");
+        request.player_slot = Some(2);
+        provider.spec(&request).unwrap();
+        let content = overrides(&provider, Role::P2);
+        assert!(content.contains("input_player1_y = \"u\""));
+        assert!(content.contains("input_player2_y = \"u\""));
+        assert!(!content.contains("netplay_request_device"));
+    }
+
+    #[test]
+    fn a_host_seated_as_player_two_requests_the_second_device() {
         let scratch = Scratch::new("seat-host-p2");
         let rom = scratch.rom();
         let provider = provider(&scratch);
@@ -566,8 +608,10 @@ mod tests {
         let spec = provider.spec(&request).unwrap();
         assert!(spec.args.iter().any(|arg| arg == "-H"));
         let content = overrides(&provider, Role::P1);
+        assert!(content.contains("input_player1_y = \"u\""));
         assert!(content.contains("input_player2_y = \"u\""));
-        assert!(!content.contains("input_player1_"));
+        assert!(content.contains("netplay_request_device_p1 = \"false\""));
+        assert!(content.contains("netplay_request_device_p2 = \"true\""));
     }
 
     #[test]
@@ -582,6 +626,8 @@ mod tests {
         let content = overrides(&provider, Role::P1);
         assert!(content.contains("input_player1_y = \"u\""));
         assert!(!content.contains("netplay_start_as_spectator"));
+        assert!(content.contains("netplay_request_device_p1 = \"true\""));
+        assert!(content.contains("netplay_request_device_p2 = \"false\""));
     }
 
     #[test]
@@ -605,6 +651,7 @@ mod tests {
         let content = overrides(&provider, Role::P1);
         assert!(!content.contains("input_player1_y"));
         assert!(!content.contains("input_cheat_toggle = \"nul\""));
+        assert!(content.contains("netplay_request_device_p1 = \"true\""));
     }
 
     #[test]
