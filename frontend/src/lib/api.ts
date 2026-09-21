@@ -5,14 +5,19 @@ import type {
   CabinetStatus,
   Config,
   DiagnosticsResult,
+  DiscoveredRoom,
   DownloadedCore,
+  JoinOutcome,
   LaunchRequest,
+  LobbyJoinRequest,
+  LobbyStartRequest,
   MatchState,
   ParityStatus,
   PeerHealth,
   PortProbe,
   ProviderInfo,
   RetroArchInputMap,
+  Room,
   RomIndex,
   Tailnet,
 } from "./types";
@@ -61,6 +66,21 @@ export const cabinetRelease = (windowId: number) =>
 
 export const cabinetRequestPermission = () =>
   invoke<boolean>("cabinet_request_permission");
+
+export const lobbyStart = (request: LobbyStartRequest) =>
+  invoke<Room>("lobby_start", { request });
+
+export const lobbyStop = () => invoke<void>("lobby_stop");
+
+export const lobbyStatus = () => invoke<Room | null>("lobby_status");
+
+export const lobbyQuery = (host: string) =>
+  invoke<Room | null>("lobby_query", { host });
+
+export const lobbyDiscover = () => invoke<DiscoveredRoom[]>("lobby_discover");
+
+export const lobbyJoin = (request: LobbyJoinRequest) =>
+  invoke<JoinOutcome>("lobby_join", { request });
 
 export const probePort = (ip: string, port: number, timeoutMs?: number) =>
   invoke<PortProbe>("probe_port", { ip, port, timeoutMs });

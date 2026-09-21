@@ -47,9 +47,16 @@ impl Role {
     }
 
     pub fn side(self) -> Option<u8> {
+        self.default_player_slot().map(|slot| slot - 1)
+    }
+
+    /// The seat this role binds by default: a player slot (`1`/`2`), or `None` when the
+    /// instance sends no input. The lobby overrides this with an explicit seat when a client
+    /// joins a room, so a client can bind either player independent of its connect direction.
+    pub fn default_player_slot(self) -> Option<u8> {
         match self {
-            Role::P1 => Some(0),
-            Role::P2 => Some(1),
+            Role::P1 => Some(1),
+            Role::P2 => Some(2),
             Role::Spectator => None,
         }
     }
@@ -65,10 +72,25 @@ pub struct Capabilities {
 #[derive(Debug, Clone)]
 pub struct MatchRequest<'a> {
     pub role: Role,
+    /// Explicit input seat for this instance: `Some(1)`/`Some(2)` binds `input_player1_*`/
+    /// `input_player2_*`; `None` falls back to the role's default (`P1` -> 1, `P2` -> 2,
+    /// `Spectator` -> none). Separates *which player you control* from *how you connect*.
+    pub player_slot: Option<u8>,
     pub rom: &'a str,
     pub rom_path: &'a Path,
     pub peer_ip: &'a str,
     pub start_as_spectator: bool,
+}
+
+impl MatchRequest<'_> {
+    /// The resolved seat: the explicit `player_slot` if valid, else the role's default.
+    pub fn seat(&self) -> crate::error::Result<Option<u8>> {
+        match self.player_slot {
+            Some(slot @ (1 | 2)) => Ok(Some(slot)),
+            Some(other) => Err(format!("invalid player slot {other}: expected 1 or 2").into()),
+            None => Ok(self.role.default_player_slot()),
+        }
+    }
 }
 
 pub trait Provider: Send + Sync {
@@ -133,5 +155,34 @@ mod tests {
         assert_eq!(Role::P2.side(), Some(1));
         assert_eq!(Role::Spectator.side(), None);
         assert_eq!(Role::Spectator.label(), "Spectator");
+    }
+
+    #[test]
+    fn default_player_slot_matches_the_role() {
+        assert_eq!(Role::P1.default_player_slot(), Some(1));
+        assert_eq!(Role::P2.default_player_slot(), Some(2));
+        assert_eq!(Role::Spectator.default_player_slot(), None);
+    }
+
+    #[test]
+    fn an_explicit_seat_overrides_the_role_default() {
+        let rom = std::path::Path::new("/tmp/sfiii3nr1.zip");
+        let mut request = MatchRequest {
+            role: Role::P2,
+            player_slot: Some(1),
+            rom: "sfiii3nr1",
+            rom_path: rom,
+            peer_ip: "100.64.0.2",
+            start_as_spectator: false,
+        };
+        assert_eq!(request.seat().unwrap(), Some(1));
+
+        request.player_slot = None;
+        assert_eq!(request.seat().unwrap(), Some(2));
+
+        request.player_slot = Some(0);
+        assert!(request.seat().is_err());
+        request.player_slot = Some(3);
+        assert!(request.seat().is_err());
     }
 }

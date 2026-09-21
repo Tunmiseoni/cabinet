@@ -48,7 +48,8 @@ impl Lobby {
             .map(|live| live.room.lock_or_recover().clone())
     }
 
-    #[allow(dead_code)]
+    /// Update the room's live occupancy. The host's netplay observer calls this whenever the
+    /// peer list changes so the beacon tells joiners which seats are free.
     pub(crate) fn set_occupancy(&self, players: u8, spectators: u8) -> Option<Room> {
         let inner = self.inner.lock_or_recover();
         let live = inner.as_ref()?;

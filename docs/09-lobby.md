@@ -145,14 +145,15 @@ secrets.
 `providers/retroarch/parity.rs`) using the beacon's ROM identity → spawn the joiner's instance as a
 client/spectator (`-C <host>`). If parity fails, the joiner is told before anything launches.
 
-> **Open issue — client seat vs. input binds (2026-09-21).** The room host assigns each connecting
-> client a player slot at connect time (first free), but the app's `Role` couples connection
-> direction with the player slot: `P1` is the `-H` server with `input_player1_*`, `P2` is a `-C`
-> client with `input_player2_*`. A client that the host seats as **player 1** therefore has no app
-> role that both connects as a client and binds player 1. With a host-as-spectator this is the normal
-> case (the first joiner becomes player 1). Proposed fix: separate *seat* from *role* — add an
-> explicit player slot to the launch request so a client can bind either player, and assign it from
-> room occupancy (first joiner → slot 1). Needs confirmation before the join flow is built.
+**Seat vs. role (resolved 2026-09-21).** The room host assigns each connecting client a player slot,
+but `Role` coupled connection direction with the player slot: `P1` was the `-H` server binding
+`input_player1_*`, `P2` a `-C` client binding `input_player2_*`. A client seated as player 1 had no
+role that both connected as a client and bound player 1 (the normal case with a host-as-spectator,
+where the first joiner becomes player 1). Fixed by separating *seat* from *role*: the launch request
+carries an explicit `player_slot` (`1`/`2`, or none), the seat chooses the `input_player{1|2}_*`
+binds, and `Role` still chooses the connect direction (`-H`/`-C`/spectator). The `lobby_join` command
+derives the seat from the room's advertised occupancy (first player -> 1, second -> 2, full ->
+spectate) unless the joiner picks one explicitly.
 
 **v1's second protocol is dropped.** There is no custom TCP control channel. Discovery is one
 beacon; control is RetroArch's own command socket (§7.5).
@@ -338,13 +339,13 @@ src-tauri/src/
 │  ├─ control.rs     -> the RetroArch command socket (NETPLAY_GAME_WATCH, READ_CORE_RAM, …) [built in providers/retroarch/command.rs]
 │  ├─ sets.rs        -> set/rotation state machine (first-to-N, FIFO)         [proposed]
 │  └─ results.rs     -> per-ROM RAM watcher (address table + desync cross-check) [built]
-├─ commands/lobby.rs -> lobby_start/stop/status/query/discover                [built]
+├─ commands/lobby.rs -> lobby_start/stop/status/query/discover/join             [built]
 ├─ scores.rs         -> local per-opponent ledger (observed locally)          [proposed]
 ├─ history.rs        -> local set/round index                                 [proposed]
 └─ providers/retroarch -> command-socket plumbing (port allocation, overrides) [built]
 
 frontend/src/components/
-├─ LobbyCard.tsx     -> create/join room, room list                           [proposed]
+├─ LobbyCard.tsx     -> host/join room, room list, manual address             [built]
 └─ RoomView.tsx      -> seats, set score, rotation state                      [proposed]
 ```
 
@@ -353,9 +354,11 @@ frontend/src/components/
 - **Beacon transport and port:** ~~HTTP `GET /room` vs UDP request/response; which port; bind address.~~
   **Resolved 2026-09-21:** HTTP `GET /room`, server `tiny_http`, default port `47812`, bound to all
   interfaces; queried with `ureq`. Cross-OS reachability (firewall) remains spike S7.
-- **Client seat vs. input binds:** the host assigns slots at connect time, but `Role` couples
-  direction and slot — a client seated as player 1 cannot bind player 1 today. Separate seat from
-  role (proposed in §5) before building the join flow.
+- **Client seat vs. input binds:** ~~the host assigns slots at connect time, but `Role` couples
+  direction and slot — a client seated as player 1 cannot bind player 1 today.~~ **Resolved
+  2026-09-21:** seat is split from role via `player_slot` on the launch request (§5); the
+  `lobby_join` command assigns it from room occupancy. The host updates the beacon's occupancy from
+  its netplay observer so joiners can see free seats (spectators are not counted yet).
 - **Parity timing:** run the parity gate before spawning the joiner (recommended) or after? (Before —
   fail fast, no window churn.)
 - **Slot race:** exact ordering/acknowledgement between the loser's release and the challenger's
@@ -412,10 +415,11 @@ fallback. Steps 2–4 build order:
 1. **Hardware spike** — S1–S5 **done locally**; S6–S7 pending online. (Build gate cleared; release
    gate open.)
 2. **Lobby core** — room lifecycle, beacon (+ manual join), parity pre-check, control-socket plumbing.
-   **Started 2026-09-21:** control-socket plumbing done (`providers/retroarch/command.rs`); the room
-   model (`lobby/room.rs`), the HTTP beacon (`lobby/beacon.rs`), the host-as-a-non-playing-server
-   launch path, and the `lobby_*` commands are done; the client join flow (seat/bind split, §5) is
-   the remaining piece.
+   **Done 2026-09-21:** control-socket plumbing (`providers/retroarch/command.rs`); the room model
+   (`lobby/room.rs`), the HTTP beacon (`lobby/beacon.rs`), the host-as-a-non-playing-server launch
+   path, the `lobby_*` commands, and the **client join flow** (`lobby_join`, with the seat/bind split
+   of §5 and host occupancy advertised from the netplay observer). `LobbyCard.tsx` hosts/joins rooms
+   and joins by address. `RoomView.tsx` (seats/set score) still belongs to step 3.
 3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher. **Result
    detection started 2026-09-21:** `lobby/results.rs` reads the `sfiii3nr1` health/round addresses and
    classifies rounds; the first-to-N set machine and rotation remain.

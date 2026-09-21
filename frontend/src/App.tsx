@@ -3,6 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LaunchCard } from "@/components/LaunchCard";
+import { LobbyCard } from "@/components/LobbyCard";
 import { MatchView } from "@/components/MatchView";
 import { PeersCard } from "@/components/PeersCard";
 import { RomsCard } from "@/components/RomsCard";
@@ -219,6 +220,15 @@ function App() {
           onLaunch={handleLaunch}
           onLaunchDevPair={handleLaunchDevPair}
           onStop={handleStop}
+        />
+
+        <LobbyCard
+          config={config}
+          romIndex={romsQuery.data}
+          provider={launcherQuery.data}
+          match={match}
+          onMatch={(state) => matchQuery.mutate(state)}
+          onError={setAppError}
         />
 
         <div className="grid min-h-0 flex-1 gap-6 md:grid-cols-2">

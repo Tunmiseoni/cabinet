@@ -192,8 +192,49 @@ export interface LaunchRequest {
   rom: string;
   peerIp: string;
   role: MatchRole;
+  playerSlot?: number | null;
   dev: boolean;
   force?: boolean;
+}
+
+export type RoomPhase = "waiting" | "playing";
+
+export interface Room {
+  roomId: string;
+  hostNodeId: string;
+  hostHandle: string;
+  rom: string;
+  firstTo: number;
+  phase: RoomPhase;
+  players: number;
+  spectators: number;
+  revision: number;
+}
+
+export interface DiscoveredRoom {
+  hostIp: string;
+  hostHostname: string;
+  room: Room;
+}
+
+export interface LobbyStartRequest {
+  rom: string;
+  firstTo?: number;
+}
+
+export interface LobbyJoinRequest {
+  host: string;
+  rom?: string | null;
+  spectate?: boolean;
+  playerSlot?: number | null;
+  force?: boolean;
+}
+
+export interface JoinOutcome {
+  room: Room | null;
+  role: MatchRole;
+  playerSlot: number | null;
+  state: MatchState;
 }
 
 export interface PortProbe {

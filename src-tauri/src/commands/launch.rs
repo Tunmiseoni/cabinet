@@ -72,6 +72,8 @@ pub struct LaunchRequest {
     pub peer_ip: String,
     pub role: Role,
     #[serde(default)]
+    pub player_slot: Option<u8>,
+    #[serde(default)]
     pub dev: bool,
     #[serde(default)]
     pub force: bool,
@@ -91,6 +93,7 @@ fn plan_for(
     provider: &dyn Provider,
     cfg: &Config,
     role: Role,
+    player_slot: Option<u8>,
     rom: &str,
     peer_ip: &str,
     start_as_spectator: bool,
@@ -108,6 +111,7 @@ fn plan_for(
     }
     let request = MatchRequest {
         role,
+        player_slot,
         rom,
         rom_path: &rom_path,
         peer_ip,
@@ -182,9 +186,10 @@ pub fn launch_match(
 ) -> crate::error::CommandResult<MatchState> {
     let (cfg, provider) = config_and_provider(&app, request.dev)?;
     log::info!(
-        "launch request: provider={:?} role={} rom={} peer={:?} dev={} force={}",
+        "launch request: provider={:?} role={} seat={:?} rom={} peer={:?} dev={} force={}",
         provider.kind(),
         request.role.label(),
+        request.player_slot,
         request.rom,
         request.peer_ip,
         request.dev,
@@ -206,6 +211,7 @@ pub fn launch_match(
         provider.as_ref(),
         &cfg,
         request.role,
+        request.player_slot,
         &request.rom,
         &peer_ip,
         request.host_spectating,
@@ -275,8 +281,24 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> crate::error::CommandResu
         return Err("this provider has no dev pair".into());
     }
     let plans = vec![
-        plan_for(provider.as_ref(), &cfg, Role::P1, &rom, "127.0.0.1", false)?,
-        plan_for(provider.as_ref(), &cfg, Role::P2, &rom, "127.0.0.1", false)?,
+        plan_for(
+            provider.as_ref(),
+            &cfg,
+            Role::P1,
+            None,
+            &rom,
+            "127.0.0.1",
+            false,
+        )?,
+        plan_for(
+            provider.as_ref(),
+            &cfg,
+            Role::P2,
+            None,
+            &rom,
+            "127.0.0.1",
+            false,
+        )?,
     ];
     session::launch_many(
         &app,

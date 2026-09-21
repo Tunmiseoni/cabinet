@@ -138,6 +138,7 @@ pub fn run() {
             commands::lobby::lobby_status,
             commands::lobby::lobby_query,
             commands::lobby::lobby_discover,
+            commands::lobby::lobby_join,
             commands::cabinet::cabinet_status,
             commands::cabinet::cabinet_place,
             commands::cabinet::cabinet_release,

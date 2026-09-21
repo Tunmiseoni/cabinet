@@ -97,6 +97,7 @@ mod tests {
     fn request<'a>(role: Role, rom_path: &'a Path, peer: &'a str) -> MatchRequest<'a> {
         MatchRequest {
             role,
+            player_slot: None,
             rom: "sfiii3nr1",
             rom_path,
             peer_ip: peer,

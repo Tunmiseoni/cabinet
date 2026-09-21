@@ -49,9 +49,9 @@ pub(super) fn overrides_path(overrides_dir: &Path, role: Role) -> PathBuf {
     overrides_dir.join(format!("netplay-{}.cfg", role.key()))
 }
 
-/// The 12 preset keys mapped to their FBNeo Classic RetroPad bind suffix. P1 (host) uses
-/// `input_player1_*`; P2 (client) uses `input_player2_*`, matching RetroArch netplay's
-/// default `netplay_client_swap_input = false`. Spectators send no input.
+/// The 12 preset keys mapped to their FBNeo Classic RetroPad bind suffix. The seat picks the
+/// prefix: seat 1 -> `input_player1_*`, seat 2 -> `input_player2_*`, no seat -> no input. The
+/// seat is independent of the connect direction, so a client can bind either player.
 fn preset_binds(input: &RetroArchInput) -> [(&'static str, &'static str, &str); 12] {
     [
         ("up", "Up", &input.up),
@@ -72,14 +72,12 @@ fn preset_binds(input: &RetroArchInput) -> [(&'static str, &'static str, &str); 
 fn write_preset_binds(
     content: &mut String,
     input: &RetroArchInput,
-    role: Role,
+    seat: Option<u8>,
 ) -> crate::error::Result<()> {
-    let Some(prefix) = (match role {
-        Role::P1 => Some("input_player1"),
-        Role::P2 => Some("input_player2"),
-        Role::Spectator => None,
-    }) else {
-        return Ok(());
+    let prefix = match seat {
+        Some(1) => "input_player1",
+        Some(2) => "input_player2",
+        _ => return Ok(()),
     };
     for (suffix, label, key) in preset_binds(input) {
         let key = key.trim();
@@ -97,6 +95,7 @@ fn write_preset_binds(
 pub(super) fn write_overrides(
     provider: &RetroArchProvider,
     role: Role,
+    seat: Option<u8>,
     nickname: &str,
     start_as_spectator: bool,
 ) -> crate::error::Result<PathBuf> {
@@ -135,7 +134,7 @@ pub(super) fn write_overrides(
     content.push_str("input_libretro_device_p1 = \"5\"\n");
     content.push_str("input_libretro_device_p2 = \"5\"\n");
     if provider.input_enabled {
-        write_preset_binds(&mut content, &provider.input, role)?;
+        write_preset_binds(&mut content, &provider.input, seat)?;
         let host_cfg = if provider.isolated_config {
             None
         } else {
@@ -540,6 +539,44 @@ mod tests {
         let spectator = overrides(&provider, Role::Spectator);
         assert!(!spectator.contains("input_player1_"));
         assert!(!spectator.contains("input_player2_"));
+    }
+
+    #[test]
+    fn a_client_seated_as_player_one_binds_player_one() {
+        let scratch = Scratch::new("seat-client-p1");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        let mut request = request(Role::P2, &rom, "100.64.0.2");
+        request.player_slot = Some(1);
+        let spec = provider.spec(&request).unwrap();
+        let connect = spec.args.iter().position(|arg| arg == "-C").unwrap();
+        assert_eq!(spec.args[connect + 1], "100.64.0.2");
+        let content = overrides(&provider, Role::P2);
+        assert!(content.contains("input_player1_y = \"u\""));
+        assert!(!content.contains("input_player2_"));
+    }
+
+    #[test]
+    fn a_seat_of_two_binds_player_two_even_on_the_host() {
+        let scratch = Scratch::new("seat-host-p2");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        let mut request = request(Role::P1, &rom, "100.64.0.2");
+        request.player_slot = Some(2);
+        let spec = provider.spec(&request).unwrap();
+        assert!(spec.args.iter().any(|arg| arg == "-H"));
+        let content = overrides(&provider, Role::P1);
+        assert!(content.contains("input_player2_y = \"u\""));
+        assert!(!content.contains("input_player1_"));
+    }
+
+    #[test]
+    fn an_invalid_seat_is_rejected() {
+        let scratch = Scratch::new("seat-invalid");
+        let rom = scratch.rom();
+        let mut request = request(Role::P2, &rom, "100.64.0.2");
+        request.player_slot = Some(7);
+        assert!(provider(&scratch).spec(&request).is_err());
     }
 
     #[test]

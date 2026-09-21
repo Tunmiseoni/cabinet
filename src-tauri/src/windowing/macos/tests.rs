@@ -187,6 +187,7 @@ fn live_places_retroarch_window() {
     let spec = provider
         .spec(&MatchRequest {
             role: Role::P1,
+            player_slot: None,
             rom: "sfiii3nr1",
             rom_path: &rom,
             peer_ip: "127.0.0.1",

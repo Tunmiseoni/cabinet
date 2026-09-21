@@ -64,6 +64,7 @@ pub(super) fn provider(scratch: &Scratch) -> RetroArchProvider {
 pub(super) fn request<'a>(role: Role, rom: &'a Path, peer: &'a str) -> MatchRequest<'a> {
     MatchRequest {
         role,
+        player_slot: None,
         rom: "sfiii3nr1",
         rom_path: rom,
         peer_ip: peer,

@@ -102,6 +102,7 @@ fn netplay_observer(app: &AppHandle, generation: u64, role: Role) -> logging::Li
         let Some(netplay) = snapshot else {
             return;
         };
+        let occupied_seats = netplay.players.len().min(2) as u8;
         let session = app.state::<Session>();
         let state = {
             let mut inner = session.inner.lock_or_recover();
@@ -120,6 +121,13 @@ fn netplay_observer(app: &AppHandle, generation: u64, role: Role) -> logging::Li
             inner.state.clone()
         };
         emit(&app, &state);
+        // The host's beacon advertises free seats from the peers it has actually seen join, so a
+        // joiner can pick the right input seat before launching. Spectators are not counted yet.
+        if role == Role::P1 {
+            if let Some(lobby) = app.try_state::<crate::lobby::Lobby>() {
+                lobby.set_occupancy(occupied_seats, 0);
+            }
+        }
     })
 }
 
@@ -354,6 +362,13 @@ fn running(app: &AppHandle, generation: u64) -> bool {
     inner.generation == generation && !inner.running.is_empty()
 }
 
+/// A hosted room exists only while its host instance runs. End it when the match ends.
+fn stop_lobby(app: &AppHandle) {
+    if let Some(lobby) = app.try_state::<crate::lobby::Lobby>() {
+        lobby.stop();
+    }
+}
+
 fn spawn_monitor(app: AppHandle, generation: u64) {
     std::thread::spawn(move || loop {
         std::thread::sleep(constants::MONITOR_INTERVAL);
@@ -405,6 +420,7 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
         }
 
         if done {
+            stop_lobby(&app);
             break;
         }
     });
@@ -460,6 +476,7 @@ pub fn stop(app: &AppHandle) -> crate::error::Result<MatchState> {
 
     if had_running {
         emit(app, &state);
+        stop_lobby(app);
     }
     Ok(state)
 }
