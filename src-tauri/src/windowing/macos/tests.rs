@@ -190,6 +190,7 @@ fn live_places_retroarch_window() {
             rom: "sfiii3nr1",
             rom_path: &rom,
             peer_ip: "127.0.0.1",
+            start_as_spectator: false,
         })
         .unwrap();
     eprintln!("windowing: retroarch argv = {:?}", spec.args);

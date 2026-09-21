@@ -82,6 +82,7 @@ pub struct Config {
     pub retroarch_isolated_config: bool,
     pub retroarch_input: RetroArchInput,
     pub retroarch_input_enabled: bool,
+    pub lobby_beacon_port: u16,
     pub verbose_logging: bool,
     pub developer_mode: bool,
 }
@@ -108,6 +109,7 @@ impl Default for Config {
             retroarch_isolated_config: false,
             retroarch_input: RetroArchInput::default(),
             retroarch_input_enabled: true,
+            lobby_beacon_port: crate::constants::LOBBY_BEACON_PORT,
             verbose_logging: false,
             developer_mode: false,
         }

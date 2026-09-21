@@ -64,6 +64,7 @@ interface FormState {
   retroarchIsolatedConfig: boolean;
   retroarchInput: RetroArchInput;
   retroarchInputEnabled: boolean;
+  lobbyBeaconPort: string;
   verboseLogging: boolean;
   developerMode: boolean;
 }
@@ -89,6 +90,7 @@ function toForm(config: Config | null): FormState {
     retroarchIsolatedConfig: config?.retroarchIsolatedConfig ?? false,
     retroarchInput: config?.retroarchInput ?? DEFAULT_RETROARCH_INPUT,
     retroarchInputEnabled: config?.retroarchInputEnabled ?? true,
+    lobbyBeaconPort: String(config?.lobbyBeaconPort ?? 47812),
     verboseLogging: config?.verboseLogging ?? false,
     developerMode: config?.developerMode ?? false,
   };
@@ -117,6 +119,7 @@ function buildConfig(form: FormState): Config {
     retroarchIsolatedConfig: form.retroarchIsolatedConfig,
     retroarchInput: form.retroarchInput,
     retroarchInputEnabled: form.retroarchInputEnabled,
+    lobbyBeaconPort: Number(form.lobbyBeaconPort) || 47812,
     verboseLogging: form.verboseLogging,
     developerMode: form.developerMode,
   };
@@ -304,6 +307,23 @@ export function SettingsDialog({
                 onChange={(event) => update("rttWarnMs")(event.target.value)}
               />
             </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="lobbyBeaconPort">Lobby beacon port</Label>
+            <Input
+              id="lobbyBeaconPort"
+              type="number"
+              min={1}
+              max={65535}
+              value={form.lobbyBeaconPort}
+              onChange={(event) =>
+                update("lobbyBeaconPort")(event.target.value)
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              The room-discovery beacon listens on this port while you host. It
+              must be reachable through each machine's firewall.
+            </p>
           </div>
 
           <Separator />

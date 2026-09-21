@@ -138,8 +138,13 @@ impl RetroArchProvider {
         spec::sanitize_value(&nickname)
     }
 
-    fn write_overrides(&self, role: Role, nickname: &str) -> crate::error::Result<PathBuf> {
-        spec::write_overrides(self, role, nickname)
+    fn write_overrides(
+        &self,
+        role: Role,
+        nickname: &str,
+        start_as_spectator: bool,
+    ) -> crate::error::Result<PathBuf> {
+        spec::write_overrides(self, role, nickname, start_as_spectator)
     }
 
     pub(crate) fn hotkey_map(&self) -> InputMap {
@@ -210,7 +215,8 @@ impl Provider for RetroArchProvider {
             return Err(format!("ROM not found: {}", request.rom_path.display()).into());
         }
         let nickname = self.resolve_nickname();
-        let overrides = self.write_overrides(request.role, &nickname)?;
+        let overrides =
+            self.write_overrides(request.role, &nickname, request.start_as_spectator)?;
         let base_config = spec::write_base_config(self)?;
         let peer = self.peer(request.peer_ip);
         let args = spec::launch_args(&spec::Args {

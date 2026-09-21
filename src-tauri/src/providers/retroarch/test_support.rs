@@ -67,5 +67,6 @@ pub(super) fn request<'a>(role: Role, rom: &'a Path, peer: &'a str) -> MatchRequ
         rom: "sfiii3nr1",
         rom_path: rom,
         peer_ip: peer,
+        start_as_spectator: false,
     }
 }

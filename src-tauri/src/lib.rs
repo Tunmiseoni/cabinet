@@ -93,6 +93,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(session::Session::default())
         .manage(windowing::Host::new())
+        .manage(lobby::Lobby::default())
         .setup(|app| {
             use tauri::Manager;
             let dir = app.path().app_config_dir()?;
@@ -132,6 +133,11 @@ pub fn run() {
             commands::launch::retroarch_hotkey_map,
             commands::launch::stop_match,
             commands::launch::match_status,
+            commands::lobby::lobby_start,
+            commands::lobby::lobby_stop,
+            commands::lobby::lobby_status,
+            commands::lobby::lobby_query,
+            commands::lobby::lobby_discover,
             commands::cabinet::cabinet_status,
             commands::cabinet::cabinet_place,
             commands::cabinet::cabinet_release,

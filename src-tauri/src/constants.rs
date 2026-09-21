@@ -17,3 +17,7 @@ pub const DIAGNOSTICS_LOG_TAIL_LINES: usize = 200;
 pub const RETROARCH_DEFAULT_PORT: u16 = 55435;
 pub const RETROARCH_DEFAULT_COMMAND_PORT: u16 = 55355;
 pub const RETROARCH_COMMAND_TIMEOUT: Duration = Duration::from_millis(500);
+pub const LOBBY_BEACON_PORT: u16 = 47812;
+pub const LOBBY_BEACON_TICK: Duration = Duration::from_millis(200);
+pub const LOBBY_BEACON_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
+pub const LOBBY_BEACON_PROBE_TIMEOUT: Duration = Duration::from_millis(750);

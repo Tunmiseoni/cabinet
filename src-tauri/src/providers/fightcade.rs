@@ -100,6 +100,7 @@ mod tests {
             rom: "sfiii3nr1",
             rom_path,
             peer_ip: peer,
+            start_as_spectator: false,
         }
     }
 

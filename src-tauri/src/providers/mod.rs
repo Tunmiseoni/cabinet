@@ -68,6 +68,7 @@ pub struct MatchRequest<'a> {
     pub rom: &'a str,
     pub rom_path: &'a Path,
     pub peer_ip: &'a str,
+    pub start_as_spectator: bool,
 }
 
 pub trait Provider: Send + Sync {

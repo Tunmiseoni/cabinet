@@ -98,6 +98,7 @@ pub(super) fn write_overrides(
     provider: &RetroArchProvider,
     role: Role,
     nickname: &str,
+    start_as_spectator: bool,
 ) -> crate::error::Result<PathBuf> {
     let dir = provider.overrides_dir.join(role.key());
     let saves = dir.join("saves");
@@ -160,6 +161,8 @@ pub(super) fn write_overrides(
         if provider.mute_spectators {
             content.push_str("audio_mute_enable = \"true\"\n");
         }
+    } else if start_as_spectator {
+        content.push_str("netplay_start_as_spectator = \"true\"\n");
     }
 
     let path = overrides_path(&provider.overrides_dir, role);
@@ -322,6 +325,20 @@ mod tests {
         } else {
             assert!(!content.contains("video_driver"));
         }
+    }
+
+    #[test]
+    fn a_host_can_start_as_a_non_playing_spectator() {
+        let scratch = Scratch::new("host-spectating");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        let mut request = request(Role::P1, &rom, "100.64.0.2");
+        request.start_as_spectator = true;
+        let spec = provider.spec(&request).unwrap();
+        assert!(spec.args.iter().any(|arg| arg == "-H"));
+        let content = overrides(&provider, Role::P1);
+        assert!(content.contains("netplay_start_as_spectator = \"true\""));
+        assert!(!content.contains("audio_mute_enable"));
     }
 
     #[test]

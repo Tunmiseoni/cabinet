@@ -75,6 +75,8 @@ pub struct LaunchRequest {
     pub dev: bool,
     #[serde(default)]
     pub force: bool,
+    #[serde(default)]
+    pub host_spectating: bool,
 }
 
 fn effective_peer(dev: bool, peer_ip: &str) -> String {
@@ -91,6 +93,7 @@ fn plan_for(
     role: Role,
     rom: &str,
     peer_ip: &str,
+    start_as_spectator: bool,
 ) -> crate::error::Result<Plan> {
     let rom_path = optional_rom_file(cfg, provider, rom)?;
     if let Some(status) = provider.parity(&rom_path)? {
@@ -108,6 +111,7 @@ fn plan_for(
         rom,
         rom_path: &rom_path,
         peer_ip,
+        start_as_spectator,
     };
     let spec = provider.spec(&request)?;
     Ok(Plan {
@@ -204,6 +208,7 @@ pub fn launch_match(
         request.role,
         &request.rom,
         &peer_ip,
+        request.host_spectating,
     )?;
     let wait_for_host = provider.kind() == ProviderKind::Retroarch
         && matches!(request.role, Role::P2 | Role::Spectator)
@@ -270,8 +275,8 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> crate::error::CommandResu
         return Err("this provider has no dev pair".into());
     }
     let plans = vec![
-        plan_for(provider.as_ref(), &cfg, Role::P1, &rom, "127.0.0.1")?,
-        plan_for(provider.as_ref(), &cfg, Role::P2, &rom, "127.0.0.1")?,
+        plan_for(provider.as_ref(), &cfg, Role::P1, &rom, "127.0.0.1", false)?,
+        plan_for(provider.as_ref(), &cfg, Role::P2, &rom, "127.0.0.1", false)?,
     ];
     session::launch_many(
         &app,

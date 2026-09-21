@@ -131,9 +131,12 @@ secrets.
   (`waiting` | `playing`), `players` (slots in use), `spectators` (count), `revision`.
 - **Query path:** the app already enumerates online tailnet peers (`tailscale status --json`); it
   probes the beacon port on each online peer only. Non-hosts answer nothing.
-- **Transport is an open question** (§9): a tiny `GET /room` (HTTP over the tailnet) is easier to
-  test with `curl` and to reason about than v1's UDP probe datagram, but adds a listening socket and
-  per-OS firewall surface. UDP request/response is lighter but harder to debug.
+- **Transport: HTTP `GET /room` (decided 2026-09-21).** While hosting, the app serves JSON on the
+  configured beacon port (default `47812`, `lobbyBeaconPort`) via a small server (`tiny_http`, the
+  app's first server dependency); peers probe with the existing `ureq` client. It is easy to test
+  with `curl` and to reason about; the cost is a listening socket and per-OS firewall surface (spike
+  S7). **Implemented:** `lobby/beacon.rs` (serve + query), `commands/lobby.rs`
+  (`lobby_start`/`lobby_stop`/`lobby_status`/`lobby_query`/`lobby_discover`).
 - **Manual fallback is mandatory in v1:** a host can paste/hand out `host-ip:netplay-port`, and a
   joiner can enter it directly. A broken or blocked beacon must never prevent play.
 
@@ -141,6 +144,15 @@ secrets.
 **parity gate** (frontend version, core revision, content CRC — the gate already exists in
 `providers/retroarch/parity.rs`) using the beacon's ROM identity → spawn the joiner's instance as a
 client/spectator (`-C <host>`). If parity fails, the joiner is told before anything launches.
+
+> **Open issue — client seat vs. input binds (2026-09-21).** The room host assigns each connecting
+> client a player slot at connect time (first free), but the app's `Role` couples connection
+> direction with the player slot: `P1` is the `-H` server with `input_player1_*`, `P2` is a `-C`
+> client with `input_player2_*`. A client that the host seats as **player 1** therefore has no app
+> role that both connects as a client and binds player 1. With a host-as-spectator this is the normal
+> case (the first joiner becomes player 1). Proposed fix: separate *seat* from *role* — add an
+> explicit player slot to the launch request so a client can bind either player, and assign it from
+> room occupancy (first joiner → slot 1). Needs confirmation before the join flow is built.
 
 **v1's second protocol is dropped.** There is no custom TCP control channel. Discovery is one
 beacon; control is RetroArch's own command socket (§7.5).
@@ -320,11 +332,13 @@ per-ROM RAM watcher is `lobby/results.rs`. The items marked *proposed* are not b
 ```
 src-tauri/src/
 ├─ lobby/
-│  ├─ room.rs        -> room model (rom, firstTo, seats, phase, node ids)   [proposed]
-│  ├─ beacon.rs      -> serve + query the read-only discovery beacon         [proposed]
+│  ├─ room.rs        -> room model (rom, firstTo, seats, phase, node ids)   [built]
+│  ├─ beacon.rs      -> serve + query the read-only discovery beacon         [built]
+│  ├─ service.rs     -> the hosting room + beacon lifecycle                  [built]
 │  ├─ control.rs     -> the RetroArch command socket (NETPLAY_GAME_WATCH, READ_CORE_RAM, …) [built in providers/retroarch/command.rs]
 │  ├─ sets.rs        -> set/rotation state machine (first-to-N, FIFO)         [proposed]
 │  └─ results.rs     -> per-ROM RAM watcher (address table + desync cross-check) [built]
+├─ commands/lobby.rs -> lobby_start/stop/status/query/discover                [built]
 ├─ scores.rs         -> local per-opponent ledger (observed locally)          [proposed]
 ├─ history.rs        -> local set/round index                                 [proposed]
 └─ providers/retroarch -> command-socket plumbing (port allocation, overrides) [built]
@@ -336,7 +350,12 @@ frontend/src/components/
 
 ## 9. Open questions
 
-- **Beacon transport and port:** HTTP `GET /room` vs UDP request/response; which port; bind address.
+- **Beacon transport and port:** ~~HTTP `GET /room` vs UDP request/response; which port; bind address.~~
+  **Resolved 2026-09-21:** HTTP `GET /room`, server `tiny_http`, default port `47812`, bound to all
+  interfaces; queried with `ureq`. Cross-OS reachability (firewall) remains spike S7.
+- **Client seat vs. input binds:** the host assigns slots at connect time, but `Role` couples
+  direction and slot — a client seated as player 1 cannot bind player 1 today. Separate seat from
+  role (proposed in §5) before building the join flow.
 - **Parity timing:** run the parity gate before spawning the joiner (recommended) or after? (Before —
   fail fast, no window churn.)
 - **Slot race:** exact ordering/acknowledgement between the loser's release and the challenger's
@@ -393,8 +412,10 @@ fallback. Steps 2–4 build order:
 1. **Hardware spike** — S1–S5 **done locally**; S6–S7 pending online. (Build gate cleared; release
    gate open.)
 2. **Lobby core** — room lifecycle, beacon (+ manual join), parity pre-check, control-socket plumbing.
-   **Started 2026-09-21:** control-socket plumbing done (`providers/retroarch/command.rs`); room
-   lifecycle, beacon, and parity pre-check remain.
+   **Started 2026-09-21:** control-socket plumbing done (`providers/retroarch/command.rs`); the room
+   model (`lobby/room.rs`), the HTTP beacon (`lobby/beacon.rs`), the host-as-a-non-playing-server
+   launch path, and the `lobby_*` commands are done; the client join flow (seat/bind split, §5) is
+   the remaining piece.
 3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher. **Result
    detection started 2026-09-21:** `lobby/results.rs` reads the `sfiii3nr1` health/round addresses and
    classifies rounds; the first-to-N set machine and rotation remain.
