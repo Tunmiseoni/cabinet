@@ -214,6 +214,7 @@ pub fn launch_match(
             dev: request.dev,
             wait_for_host,
             peer_display: peer_ip,
+            capture_netplay: provider.kind() == ProviderKind::Retroarch,
         },
     )
     .map_err(Into::into)
@@ -251,6 +252,7 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> crate::error::CommandResu
             dev: true,
             wait_for_host: provider.kind() == ProviderKind::Retroarch,
             peer_display: "127.0.0.1 (P1↔P2)".to_string(),
+            capture_netplay: provider.kind() == ProviderKind::Retroarch,
         },
     )
     .map_err(Into::into)

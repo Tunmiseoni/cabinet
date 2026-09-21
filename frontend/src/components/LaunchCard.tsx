@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { LaunchWarningDialog } from "@/components/LaunchWarningDialog";
+import { NetplayBadge } from "@/components/NetplayBadge";
 import { PeerHealthBadge } from "@/components/PeerHealthBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -297,6 +298,14 @@ export function LaunchCard({
                 : (match.message ?? "finished")}
             </span>
           )}
+          {match?.status === "running" &&
+            match.instances.map((instance) => (
+              <NetplayBadge
+                key={instance.role}
+                netplay={instance.netplay}
+                label={instance.roleLabel}
+              />
+            ))}
           {match?.status === "running" && match.peerHealth && (
             <PeerHealthBadge
               health={match.peerHealth}
@@ -305,6 +314,22 @@ export function LaunchCard({
             />
           )}
         </div>
+
+        {match?.status === "running" && (
+          <div className="flex flex-col gap-1">
+            {match.instances
+              .filter((instance) => instance.netplay?.lastEvent)
+              .map((instance) => (
+                <span
+                  key={instance.role}
+                  className="truncate text-xs text-muted-foreground"
+                  title={instance.netplay?.lastEvent ?? undefined}
+                >
+                  {instance.roleLabel}: {instance.netplay?.lastEvent}
+                </span>
+              ))}
+          </div>
+        )}
 
         {parity && (
           <p

@@ -7,6 +7,7 @@ mod env;
 pub mod error;
 mod launcher;
 mod logging;
+mod netplay;
 mod probe;
 mod process;
 mod providers;

@@ -98,6 +98,35 @@ export interface ParityStatus {
   detail: string;
 }
 
+export type NetplayConnection =
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "failed";
+
+export interface NetplayPlayer {
+  nick: string;
+  player: number;
+  pingMs: number | null;
+}
+
+export interface NetplayEvent {
+  atMs: number;
+  kind: string;
+  text: string;
+}
+
+export interface NetplayInfo {
+  connection: NetplayConnection;
+  selfPlayer: number | null;
+  host: string | null;
+  players: NetplayPlayer[];
+  pingMs: number | null;
+  coreWarning: boolean;
+  lastEvent: string | null;
+  events: NetplayEvent[];
+}
+
 export interface InstanceState {
   role: MatchRole;
   roleLabel: string;
@@ -105,6 +134,7 @@ export interface InstanceState {
   pid: number | null;
   exitCode: number | null;
   message: string | null;
+  netplay: NetplayInfo | null;
 }
 
 export interface MatchState {

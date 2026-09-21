@@ -13,6 +13,8 @@ pub const KEEP_LOG_FILES: usize = 3;
 pub const SESSIONS_DIR: &str = "sessions";
 pub const EMULATOR_TARGET: &str = "emulator";
 
+pub type LineObserver = Arc<dyn Fn(&str) + Send + Sync>;
+
 pub fn app_log_dir(app: &AppHandle) -> crate::error::Result<PathBuf> {
     app.path()
         .app_log_dir()
@@ -84,8 +86,12 @@ pub fn open_emulator_log(
     Ok(Arc::new(Mutex::new(file)))
 }
 
-pub fn capture_stream<R>(stream: R, label: String, sink: Arc<Mutex<File>>)
-where
+pub fn capture_stream<R>(
+    stream: R,
+    label: String,
+    sink: Arc<Mutex<File>>,
+    observer: Option<LineObserver>,
+) where
     R: Read + Send + 'static,
 {
     thread::spawn(move || {
@@ -94,10 +100,15 @@ where
             let Ok(line) = line else {
                 break;
             };
-            let mut file = sink.lock_or_recover();
-            let _ = writeln!(file, "{}", stamp_line(&line));
-            let _ = file.flush();
+            {
+                let mut file = sink.lock_or_recover();
+                let _ = writeln!(file, "{}", stamp_line(&line));
+                let _ = file.flush();
+            }
             log::debug!(target: EMULATOR_TARGET, "{label} {line}");
+            if let Some(observer) = observer.as_deref() {
+                observer(&line);
+            }
         }
     });
 }
@@ -124,6 +135,36 @@ mod tests {
         let line = stamp_line("hello");
         assert!(line.starts_with('['), "got {line}");
         assert!(line.ends_with("] hello"), "got {line}");
+    }
+
+    #[test]
+    fn capture_stream_forwards_lines_to_the_observer() {
+        let dir = std::env::temp_dir().join(format!("cabinet-capture-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).unwrap();
+        let sink = open_emulator_log(&dir, "p1").unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let observer: LineObserver = Arc::new(move |line: &str| {
+            let _ = tx.send(line.to_string());
+        });
+        capture_stream(
+            std::io::Cursor::new(b"[Netplay] line one\nline two\n"),
+            "test".to_string(),
+            sink,
+            Some(observer),
+        );
+
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap(),
+            "[Netplay] line one"
+        );
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap(),
+            "line two"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

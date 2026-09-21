@@ -6,6 +6,7 @@ import {
   getCurrentWindow,
 } from "@tauri-apps/api/window";
 import { MatchStatusPanel } from "@/components/MatchStatusPanel";
+import { NetplayBadge } from "@/components/NetplayBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PeerHealthBadge } from "@/components/PeerHealthBadge";
@@ -206,6 +207,13 @@ export function MatchView({ match, rttWarnMs, onShowLobby }: MatchViewProps) {
             <span className="font-mono text-xs text-neutral-400">{match.peerIp}</span>
           )}
           <span className="font-mono text-xs text-neutral-400">{instances}</span>
+          {match.instances.map((instance) => (
+            <NetplayBadge
+              key={instance.role}
+              netplay={instance.netplay}
+              label={instance.roleLabel}
+            />
+          ))}
         </div>
         <div className="flex items-center gap-3">
           <PeerHealthBadge

@@ -2,6 +2,7 @@ use crate::config::{self, Config};
 use crate::constants;
 use crate::contracts::LaunchSpec;
 use crate::logging;
+use crate::netplay::{NetplayConnection, NetplayInfo, NetplayTracker};
 use crate::probe;
 use crate::providers::Role;
 use crate::sync::MutexExt;
@@ -10,7 +11,7 @@ use crate::time;
 use serde::Serialize;
 use std::path::Path;
 use std::process::{Child, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub const MATCH_EVENT: &str = "match-state-changed";
@@ -24,6 +25,7 @@ pub struct InstanceState {
     pub pid: Option<u32>,
     pub exit_code: Option<i32>,
     pub message: Option<String>,
+    pub netplay: Option<NetplayInfo>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,7 +85,49 @@ fn emit(app: &AppHandle, state: &MatchState) {
     app.emit(MATCH_EVENT, state).ok();
 }
 
-fn spawn_child(plan: &Plan, session_dir: Option<&Path>) -> crate::error::Result<Child> {
+fn netplay_observer(app: &AppHandle, generation: u64, role: Role) -> logging::LineObserver {
+    let app = app.clone();
+    let tracker = Arc::new(Mutex::new(NetplayTracker::new()));
+    Arc::new(move |line: &str| {
+        let snapshot = {
+            let mut tracker = tracker.lock_or_recover();
+            if tracker.feed(role, line) {
+                Some(tracker.info().clone())
+            } else {
+                None
+            }
+        };
+        let Some(netplay) = snapshot else {
+            return;
+        };
+        let session = app.state::<Session>();
+        let state = {
+            let mut inner = session.inner.lock_or_recover();
+            if inner.generation != generation {
+                return;
+            }
+            let Some(slot) = inner
+                .state
+                .instances
+                .iter_mut()
+                .find(|slot| slot.role == role)
+            else {
+                return;
+            };
+            slot.netplay = Some(netplay);
+            inner.state.clone()
+        };
+        emit(&app, &state);
+    })
+}
+
+fn spawn_child(
+    app: &AppHandle,
+    generation: u64,
+    plan: &Plan,
+    session_dir: Option<&Path>,
+    capture_netplay: bool,
+) -> crate::error::Result<Child> {
     let mut command = crate::process::command(&plan.spec.program);
     command
         .args(&plan.spec.args)
@@ -99,11 +143,21 @@ fn spawn_child(plan: &Plan, session_dir: Option<&Path>) -> crate::error::Result<
         match logging::open_emulator_log(dir, plan.role.key()) {
             Ok(sink) => {
                 let label = format!("{}[{}]", plan.role.key(), plan.rom);
+                let observer = if capture_netplay {
+                    Some(netplay_observer(app, generation, plan.role))
+                } else {
+                    None
+                };
                 if let Some(stdout) = child.stdout.take() {
-                    logging::capture_stream(stdout, format!("{label} stdout"), sink.clone());
+                    logging::capture_stream(
+                        stdout,
+                        format!("{label} stdout"),
+                        sink.clone(),
+                        observer.clone(),
+                    );
                 }
                 if let Some(stderr) = child.stderr.take() {
-                    logging::capture_stream(stderr, format!("{label} stderr"), sink);
+                    logging::capture_stream(stderr, format!("{label} stderr"), sink, observer);
                 }
             }
             Err(err) => log::warn!("cannot capture emulator output: {err}"),
@@ -124,6 +178,7 @@ pub struct LaunchOptions {
     pub dev: bool,
     pub wait_for_host: bool,
     pub peer_display: String,
+    pub capture_netplay: bool,
 }
 
 pub fn launch_many(
@@ -190,7 +245,13 @@ pub fn launch_many(
             plan.spec.cwd.display(),
             plan.spec.args
         );
-        let child = match spawn_child(plan, session_dir.as_deref()) {
+        let child = match spawn_child(
+            app,
+            generation,
+            plan,
+            session_dir.as_deref(),
+            options.capture_netplay,
+        ) {
             Ok(child) => child,
             Err(err) => {
                 log::error!("{err}");
@@ -215,6 +276,7 @@ pub fn launch_many(
             pid: Some(pid),
             exit_code: None,
             message: None,
+            netplay: options.capture_netplay.then(NetplayInfo::connecting),
         });
     }
 
@@ -345,6 +407,14 @@ fn spawn_monitor(app: AppHandle, generation: u64) {
     });
 }
 
+fn mark_netplay_stopped(slot: &mut InstanceState) {
+    if let Some(netplay) = slot.netplay.as_mut() {
+        if netplay.connection != NetplayConnection::Failed {
+            netplay.connection = NetplayConnection::Disconnected;
+        }
+    }
+}
+
 fn finish_slot(state: &mut MatchState, role: Role, code: Option<i32>) {
     if let Some(slot) = state
         .instances
@@ -358,6 +428,7 @@ fn finish_slot(state: &mut MatchState, role: Role, code: Option<i32>) {
             Some(code) => format!("exited with code {code}"),
             None => "terminated".to_string(),
         });
+        mark_netplay_stopped(slot);
     }
 }
 
@@ -376,6 +447,7 @@ pub fn stop(app: &AppHandle) -> crate::error::Result<MatchState> {
             if slot.pid.is_some() {
                 slot.pid = None;
                 slot.message = Some("stopped by user".to_string());
+                mark_netplay_stopped(slot);
             }
         }
     }

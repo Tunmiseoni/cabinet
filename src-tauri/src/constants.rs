@@ -11,6 +11,7 @@ pub const HEALTH_INTERVAL: Duration = Duration::from_secs(4);
 pub const MONITOR_INTERVAL: Duration = Duration::from_millis(300);
 pub const TAILSCALE_STATUS_CACHE_TTL: Duration = Duration::from_millis(500);
 pub const SESSION_KEEP: usize = 20;
+pub const NETPLAY_EVENT_LIMIT: usize = 32;
 pub const DIAGNOSTICS_SESSION_LIST_LIMIT: usize = 10;
 pub const DIAGNOSTICS_LOG_TAIL_LINES: usize = 200;
 pub const RETROARCH_DEFAULT_PORT: u16 = 55435;

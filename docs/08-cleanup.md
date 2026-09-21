@@ -163,6 +163,8 @@ belong to a logging/diagnostics cleanup:
 |---|---|---|
 | F4 | Gate `--verbose` behind `verboseLogging`; timestamp captured emulator lines instead of writing them raw. | **Done 2026-09-21** |
 | F5 | Session dirs are UTC while the app log is local; unify or record the offset. | **Done 2026-09-21** (app log, capture, and session dirs all UTC) |
+| F6 | The app logs only spawn/exit; connection status, slot, and ping live only inside the captured log. | **Done 2026-09-21** (`netplay.rs` parses the captured lines into `MatchState.instances[].netplay`; UI badge + capped event log) |
+| F1 | Host `Failed to connect to client.` churn looked like a failure. | **Confirmed benign 2026-09-21** (host reverse-probe with `netplay_nat_traversal=false`; ignored by the netplay observer) |
 | F14 | Include the latest session's `emulator-*.log` tail in the diagnostics bundle. | **Done 2026-09-21** |
 | F15 | Redact tailnet IPs / home paths from the diagnostics bundle (repo is public). | **Done 2026-09-21** (structured sections redacted — home paths, IPv4/IPv6, `*.ts.net`, configured handle/peer; raw log tail carries a warning) |
 | F16 | Prune session dirs / `emulator-*.log` (only the app log rotates today). | **Done 2026-09-21** (`SESSION_KEEP` in `constants.rs`) |
