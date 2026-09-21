@@ -190,11 +190,19 @@ or join a room, and the room assigns you a seat." Three seat types remain:
 
 - A **set is first-to-N wins**, N configured at room creation (**default N = 2**). The open question
   of "matches per set" is resolved to *first-to-N* rather than *best-of* or *fixed N games*.
+- **A "win" is a whole game/match, not a single round** (settled 2026-09-21). The RAM watcher emits
+  per-round outcomes; round wins accumulate to the game, and the game winner is the first side to
+  **2 round wins** (SF3's own best-of-3), after which the game's round counter resets for the next
+  game. The set counts *game* wins, and rotation happens at a game boundary — never mid-game. The
+  earlier §7.6 wording ("counting these outcomes") meant round outcomes feeding the game score, not
+  rounds counting directly toward the set.
 - The **winner keeps their slot/side**; only the other slot changes hands. Sides are the two player
   device slots; the winner is not re-seated.
-- A **draw** (double KO / timeout with equal rounds) is recorded but does **not** advance the set and
-  does **not** rotate anyone; the same two players replay it.
-- The set ends when one side reaches N; that transition triggers the rotation in §7.2 step 4.
+- A **draw** (double KO / timeout with equal health) is recorded but does **not** count as a round win
+  for either side, so it does **not** advance the game or the set and does **not** rotate anyone; the
+  same two players replay it.
+- The set ends when one side reaches N game wins; that transition triggers the rotation in §7.2
+  step 4.
 
 ### 7.4 Live role switching (the rotation mechanism)
 
@@ -235,9 +243,11 @@ transition (avoid the flaky mid-join window). This is the FIFO contract.
   | Rounds completed this match | `0x010D28` | `0,1,2…`, increments once per round **regardless of who won**; resets at match start |
 
   A round is decisive when one health byte reaches `0xFF` (that side was KO'd and lost); on a timer
-  expiry with neither at `0xFF`, the higher health wins; both at `0xFF` is a draw. The lobby derives
-  set scores by counting these outcomes — it does **not** read a counter. (An earlier read mistook
-  `0x010D28` for a win counter; it increments for either winner.)
+  expiry with neither at `0xFF`, the higher health wins; both at `0xFF` is a draw. Round outcomes
+  accumulate into the game score (first to 2 round wins; §7.3), and the game's round counter reset
+  marks the next game — the lobby does **not** read a counter as a win count. (An earlier read
+  mistook `0x010D28` for a win counter; it increments once per round for either winner and resets
+  each game.)
 - **Cost accepted:** it is **per-ROM reverse engineering**, version-sensitive to core/ROM updates.
   Start with **`sfiii3nr1`** (the ROM the group plays now).
 - **Both players observe independently.** Because the game is deterministic and synced, both
