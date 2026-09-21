@@ -22,6 +22,7 @@ pub struct InstanceState {
     pub role: Role,
     pub role_label: String,
     pub port: Option<u16>,
+    pub command_port: Option<u16>,
     pub pid: Option<u32>,
     pub exit_code: Option<i32>,
     pub message: Option<String>,
@@ -62,6 +63,7 @@ pub struct Plan {
     pub rom: String,
     pub peer_ip: String,
     pub port: Option<u16>,
+    pub command_port: Option<u16>,
 }
 
 struct Running {
@@ -273,6 +275,7 @@ pub fn launch_many(
             role: plan.role,
             role_label: plan.role.label().to_string(),
             port: plan.port,
+            command_port: plan.command_port,
             pid: Some(pid),
             exit_code: None,
             message: None,

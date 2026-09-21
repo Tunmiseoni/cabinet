@@ -1,3 +1,5 @@
+#[allow(dead_code)]
+mod command;
 mod core;
 mod hotkeys;
 mod parity;
@@ -26,6 +28,7 @@ pub struct RetroArchProvider {
     program: PathBuf,
     core: PathBuf,
     port: u16,
+    command_port: u16,
     nickname: Option<String>,
     handle: Option<String>,
     tailscale_binary: Option<PathBuf>,
@@ -74,6 +77,11 @@ impl RetroArchProvider {
             } else {
                 cfg.retroarch_port
             },
+            command_port: if cfg.retroarch_command_port == 0 {
+                constants::RETROARCH_DEFAULT_COMMAND_PORT
+            } else {
+                cfg.retroarch_command_port
+            },
             nickname,
             handle,
             tailscale_binary,
@@ -96,6 +104,15 @@ impl RetroArchProvider {
 
     fn peer(&self, fallback: &str) -> String {
         self.peer_override.resolve_or(fallback)
+    }
+
+    pub(crate) fn command_port_for(&self, role: Role) -> u16 {
+        let offset = match role {
+            Role::P1 => 0,
+            Role::P2 => 1,
+            Role::Spectator => 2,
+        };
+        self.command_port.saturating_add(offset)
     }
 
     fn tailnet_hostname(&self) -> Option<String> {
@@ -178,6 +195,10 @@ impl Provider for RetroArchProvider {
 
     fn port(&self, _role: Role) -> Option<u16> {
         Some(self.port)
+    }
+
+    fn command_port(&self, role: Role) -> Option<u16> {
+        Some(self.command_port_for(role))
     }
 
     fn requires_rom_file(&self) -> bool {
@@ -312,5 +333,60 @@ mod tests {
             let _ = child.wait();
         }
         assert!(all_alive, "all three roles should stay running");
+    }
+
+    #[test]
+    #[ignore = "launches a real RetroArch host and drives its loopback command socket"]
+    fn live_command_socket_smoke() {
+        use std::time::Duration;
+
+        let core = PathBuf::from(std::env::var("HOME").unwrap_or_default())
+            .join("Library/Application Support/RetroArch/cores/fbneo_libretro.dylib");
+        let rom = PathBuf::from(
+            "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs/sfiii3nr1.zip",
+        );
+        if !core.is_file() || !rom.is_file() {
+            eprintln!("skipping: RetroArch core or ROM not present");
+            return;
+        }
+
+        let scratch = Scratch::new("live-command");
+        let cfg = Config {
+            retroarch_core: Some(core.to_string_lossy().to_string()),
+            ..Config::default()
+        };
+        let provider = RetroArchProvider::new(&cfg, &scratch.dir, &scratch.dir, false);
+        let port = provider.command_port_for(Role::P1);
+        let spec = provider
+            .spec(&request(Role::P1, &rom, "127.0.0.1"))
+            .unwrap();
+        let mut child = crate::process::command(&spec.program)
+            .args(&spec.args)
+            .current_dir(&spec.cwd)
+            .envs(spec.envs.iter().cloned())
+            .spawn()
+            .expect("spawn retroarch");
+
+        let mut status = None;
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(500));
+            if let Ok(answer) = command::instance_status(port) {
+                status = Some(answer);
+                break;
+            }
+        }
+
+        let read = command::read_core_ram_bytes(port, 0x010D28, 1);
+
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert!(
+            status.is_some(),
+            "command socket on {port} never answered GET_STATUS"
+        );
+        let read = read.expect("read the round counter over READ_CORE_RAM");
+        assert_eq!(read.address, 0x010D28);
+        assert_eq!(read.bytes.len(), 1);
     }
 }

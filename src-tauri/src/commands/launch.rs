@@ -116,6 +116,7 @@ fn plan_for(
         rom: rom.to_string(),
         peer_ip: peer_ip.to_string(),
         port: provider.port(role),
+        command_port: provider.command_port(role),
     })
 }
 

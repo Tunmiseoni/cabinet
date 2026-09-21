@@ -75,6 +75,7 @@ pub struct Config {
     pub retroarch_path: Option<String>,
     pub retroarch_core: Option<String>,
     pub retroarch_port: u16,
+    pub retroarch_command_port: u16,
     pub retroarch_nickname: Option<String>,
     pub retroarch_mute_spectators: bool,
     pub retroarch_max_ping_ms: u32,
@@ -100,6 +101,7 @@ impl Default for Config {
             retroarch_path: None,
             retroarch_core: None,
             retroarch_port: crate::constants::RETROARCH_DEFAULT_PORT,
+            retroarch_command_port: crate::constants::RETROARCH_DEFAULT_COMMAND_PORT,
             retroarch_nickname: None,
             retroarch_mute_spectators: true,
             retroarch_max_ping_ms: 0,
@@ -145,6 +147,10 @@ mod tests {
             config.retroarch_port,
             crate::constants::RETROARCH_DEFAULT_PORT
         );
+        assert_eq!(
+            config.retroarch_command_port,
+            crate::constants::RETROARCH_DEFAULT_COMMAND_PORT
+        );
         assert!(config.retroarch_core.is_none());
     }
 
@@ -163,6 +169,10 @@ mod tests {
         assert!(!config.retroarch_isolated_config);
         assert!(config.retroarch_input_enabled);
         assert_eq!(config.retroarch_input, RetroArchInput::default());
+        assert_eq!(
+            config.retroarch_command_port,
+            crate::constants::RETROARCH_DEFAULT_COMMAND_PORT
+        );
     }
 
     #[test]
@@ -190,6 +200,7 @@ mod tests {
             retroarch_mute_spectators: false,
             retroarch_max_ping_ms: 150,
             retroarch_isolated_config: true,
+            retroarch_command_port: 60010,
             ..Config::default()
         };
         let raw = serde_json::to_string(&config).unwrap();
@@ -197,6 +208,7 @@ mod tests {
         assert!(!loaded.retroarch_mute_spectators);
         assert_eq!(loaded.retroarch_max_ping_ms, 150);
         assert!(loaded.retroarch_isolated_config);
+        assert_eq!(loaded.retroarch_command_port, 60010);
     }
 
     #[test]

@@ -15,3 +15,5 @@ pub const NETPLAY_EVENT_LIMIT: usize = 32;
 pub const DIAGNOSTICS_SESSION_LIST_LIMIT: usize = 10;
 pub const DIAGNOSTICS_LOG_TAIL_LINES: usize = 200;
 pub const RETROARCH_DEFAULT_PORT: u16 = 55435;
+pub const RETROARCH_DEFAULT_COMMAND_PORT: u16 = 55355;
+pub const RETROARCH_COMMAND_TIMEOUT: Duration = Duration::from_millis(500);

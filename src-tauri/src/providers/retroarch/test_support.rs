@@ -44,6 +44,7 @@ pub(super) fn provider(scratch: &Scratch) -> RetroArchProvider {
         program: PathBuf::from(DEFAULT_PROGRAM),
         core: PathBuf::from("/app/cores/fbneo_libretro.dylib"),
         port: 55435,
+        command_port: 55355,
         nickname: Some("spike".to_string()),
         handle: None,
         tailscale_binary: None,

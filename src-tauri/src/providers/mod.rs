@@ -76,6 +76,10 @@ pub trait Provider: Send + Sync {
     fn port(&self, role: Role) -> Option<u16>;
     fn spec(&self, request: &MatchRequest) -> crate::error::Result<LaunchSpec>;
 
+    fn command_port(&self, _role: Role) -> Option<u16> {
+        None
+    }
+
     fn requires_rom_file(&self) -> bool {
         false
     }

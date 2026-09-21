@@ -15,6 +15,7 @@ export interface Config {
   retroarchPath: string | null;
   retroarchCore: string | null;
   retroarchPort: number;
+  retroarchCommandPort: number;
   retroarchNickname: string | null;
   retroarchMuteSpectators: boolean;
   retroarchMaxPingMs: number;
@@ -168,6 +169,7 @@ export interface InstanceState {
   role: MatchRole;
   roleLabel: string;
   port: number | null;
+  commandPort: number | null;
   pid: number | null;
   exitCode: number | null;
   message: string | null;

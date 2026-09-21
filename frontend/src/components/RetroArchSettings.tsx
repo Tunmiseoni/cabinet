@@ -9,6 +9,7 @@ export type RetroArchField =
   | "retroarchPath"
   | "retroarchCore"
   | "retroarchPort"
+  | "retroarchCommandPort"
   | "retroarchNickname"
   | "retroarchMaxPingMs";
 
@@ -113,6 +114,7 @@ interface RetroArchSettingsProps {
   path: string;
   core: string;
   port: string;
+  commandPort: string;
   nickname: string;
   handle: string;
   maxPingMs: string;
@@ -131,6 +133,7 @@ export function RetroArchSettings({
   path,
   core,
   port,
+  commandPort,
   nickname,
   handle,
   maxPingMs,
@@ -251,6 +254,24 @@ export function RetroArchSettings({
             value={port}
             onChange={(event) => onChange("retroarchPort", event.target.value)}
           />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="retroarchCommandPort">Command port</Label>
+          <Input
+            id="retroarchCommandPort"
+            type="number"
+            min={1}
+            max={65535}
+            value={commandPort}
+            onChange={(event) =>
+              onChange("retroarchCommandPort", event.target.value)
+            }
+          />
+          <p className="text-xs text-muted-foreground">
+            RetroArch's command-socket port on this machine. Each instance uses
+            this base plus its role offset (host, client, spectator), so the
+            three ports must be free.
+          </p>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="retroarchNickname">Netplay nickname</Label>

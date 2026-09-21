@@ -57,6 +57,7 @@ interface FormState {
   retroarchPath: string;
   retroarchCore: string;
   retroarchPort: string;
+  retroarchCommandPort: string;
   retroarchNickname: string;
   retroarchMuteSpectators: boolean;
   retroarchMaxPingMs: string;
@@ -81,6 +82,7 @@ function toForm(config: Config | null): FormState {
     retroarchPath: config?.retroarchPath ?? "",
     retroarchCore: config?.retroarchCore ?? "",
     retroarchPort: String(config?.retroarchPort ?? 55435),
+    retroarchCommandPort: String(config?.retroarchCommandPort ?? 55355),
     retroarchNickname: config?.retroarchNickname ?? "",
     retroarchMuteSpectators: config?.retroarchMuteSpectators ?? true,
     retroarchMaxPingMs: String(config?.retroarchMaxPingMs ?? 0),
@@ -108,6 +110,7 @@ function buildConfig(form: FormState): Config {
     retroarchPath: emptyToNull(form.retroarchPath),
     retroarchCore: emptyToNull(form.retroarchCore),
     retroarchPort: Number(form.retroarchPort) || 55435,
+    retroarchCommandPort: Number(form.retroarchCommandPort) || 55355,
     retroarchNickname: emptyToNull(form.retroarchNickname),
     retroarchMuteSpectators: form.retroarchMuteSpectators,
     retroarchMaxPingMs: Math.max(0, Number(form.retroarchMaxPingMs) || 0),
@@ -243,6 +246,7 @@ export function SettingsDialog({
               path={form.retroarchPath}
               core={form.retroarchCore}
               port={form.retroarchPort}
+              commandPort={form.retroarchCommandPort}
               nickname={form.retroarchNickname}
               handle={form.handle}
               maxPingMs={form.retroarchMaxPingMs}

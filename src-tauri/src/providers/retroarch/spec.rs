@@ -126,6 +126,11 @@ pub(super) fn write_overrides(
     content.push_str("netplay_allow_slaves = \"true\"\n");
     content.push_str("netplay_require_slaves = \"false\"\n");
     content.push_str("netplay_max_connections = \"8\"\n");
+    content.push_str("network_cmd_enable = \"true\"\n");
+    content.push_str(&format!(
+        "network_cmd_port = \"{}\"\n",
+        provider.command_port_for(role)
+    ));
     content.push_str("input_libretro_device_p1 = \"5\"\n");
     content.push_str("input_libretro_device_p2 = \"5\"\n");
     if provider.input_enabled {
@@ -316,6 +321,26 @@ mod tests {
             assert!(content.contains("video_driver = \"vulkan\""));
         } else {
             assert!(!content.contains("video_driver"));
+        }
+    }
+
+    #[test]
+    fn command_interface_is_enabled_on_a_distinct_per_role_port() {
+        let scratch = Scratch::new("command-port");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        for (role, expected) in [
+            (Role::P1, 55355),
+            (Role::P2, 55356),
+            (Role::Spectator, 55357),
+        ] {
+            provider.spec(&request(role, &rom, "100.64.0.2")).unwrap();
+            let content = overrides(&provider, role);
+            assert!(content.contains("network_cmd_enable = \"true\""));
+            assert!(
+                content.contains(&format!("network_cmd_port = \"{expected}\"")),
+                "wrong command port for {role:?}: {content}"
+            );
         }
     }
 
