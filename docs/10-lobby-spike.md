@@ -1,7 +1,11 @@
 # Tailnet lobby spike (pre-lobby hardware validation)
 
-Status: **not run.** This is the gate for [`09-lobby.md`](09-lobby.md) — the lobby design. **No lobby
-product code is written until every required item below passes** (or its fallback is chosen).
+Status: **local build gate run 2026-09-21 — S1–S5 PASS on one macOS machine over loopback; S6/S7
+pending (online).** This is the gate for [`09-lobby.md`](09-lobby.md) — the lobby design. The gate is
+split: **S1–S5 are the build gate** (one machine, loopback — they are protocol/RAM questions, not
+network ones) and **S6–S7 are the release gate** (need all peers online / all three OSes). No lobby
+product code until the build gate passes; the lobby must not ship until the release gate passes (S7
+has a manual-join fallback, so it may lag).
 
 Purpose: de-risk the four unknowns the lobby depends on, on real hardware, before building. Each is a
 fact we could not settle from source alone, and getting any of them wrong invalidates a design
@@ -29,16 +33,51 @@ Phase 3 acceptance criterion.
 
 | # | Criterion | How it is judged |
 |---|---|---|
-| S1 | Host-as-spectator serves two playing clients | Host launched `-H` + `netplay_start_as_spectator = "true"`; clients join as **player 1/2**; host outbound ≈ 0 B/s; both clients play; no desync over a full set |
+| S1 | Host-as-spectator serves two playing clients | Host launched `-H` + `netplay_start_as_spectator = "true"`; clients join as **player 1/2**; the host holds **no player slot** (sends no input); both clients play; no desync over a full set |
 | S2 | Client player→spectator live | `NETPLAY_GAME_WATCH` to the client's command port frees its slot (host log), the instance keeps rendering, and sends no input |
 | S3 | Client spectator→player live | `NETPLAY_GAME_WATCH` to a spectator's command port; host auto-grants the free slot (`NETPLAY_CMD_MODE`); the instance sends input and stays synced |
 | S4 | Host player→spectator live | Host leaves play; two clients (one toggled in from spectator) play on; host remains the server; no desync |
-| S5 | Per-ROM round result read from RAM | A decisive round increments exactly one side at a known `sfiii3nr1` address; **both peers read the same value** |
+| S5 | Per-ROM round result read from RAM | A decisive round is detectable from known `sfiii3nr1` addresses; **both peers read the same value** |
 | S6 | Stability soak | 2 players + 2 spectators over the tailnet, **≥ 20 min**, with zero unintended disconnects, CRC failures, or timeouts |
 | S7 | Beacon reachable on all three OSes | A listener on the planned beacon port answers a query from every other machine; firewall rules documented |
 | S8 | (Optional) Replay during netplay | A netplay match recorded host-side replays deterministically; both players' inputs present |
 
-S1–S7 are the gate. S8 can be deferred to the replays phase without blocking the lobby.
+**Build gate (local): S1–S5.** **Release gate (online): S6–S7.** S8 can be deferred to the replays
+phase without blocking the lobby. Note S1's original "host outbound ≈ 0 B/s" wording was wrong — a
+non-playing host is still a relay and forwards both clients' traffic; the real signal is that it holds
+no player slot.
+
+## 1a. Confirmed on the local run (2026-09-21)
+
+| Item | Result |
+|---|---|
+| S1 | **PASS** — host spec log: `... has joined as player 1` / `player 2`; host held no slot; no desync |
+| S2 | **PASS** — host log `Player ... has left the game`; client stayed connected and kept rendering |
+| S3 | **PASS** — host auto-granted (`... has joined as player 1`); client kept its connection |
+| S4 | **PASS** — host stayed the server while spectating; a spectator took the freed slot; clients played on |
+| S5 | **PASS (method changed)** — see the addresses below |
+
+**S5 result source — the design's assumption was wrong.** FBNeo does **not** expose a libretro memory
+map, so `READ_CORE_MEMORY` returns `READ_CORE_RAM 0 -1 no memory map defined`. The usable command is
+`READ_CORE_RAM` (`retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM)`, **512 KB**, `0x00000`–`0x7FFFF`,
+code-address base `0x02000000`). Also, there is **no dedicated per-fighter win counter** in that
+512 KB: the byte that looked like one (`0x010D28`) increments once per completed round **regardless of
+who won**, and resets each match — it is the round counter. The decisive result is read from health.
+
+| Signal | RAM address (offset) | Behavior |
+|---|---|---|
+| P1 current health | `0x068D08` (mirror `0x068D0E`) | `0xA0` at round start; falls on damage; **saturates to `0xFF` on KO** |
+| P2 current health | `0x0691A0` (mirror `0x0691A6`) | same |
+| Rounds completed this match | `0x010D28` | `0,1,2…`, one per round, resets at match start |
+
+Result detection: a round ends when a health byte reaches `0xFF` (KO — that side lost) or the round
+counter advances; on a timer expiry with neither at `0xFF`, the higher health wins; both at `0xFF` is
+a draw. Every peer reads the identical values (verified on host/client/spectator). The lobby derives
+set scores from these events rather than reading a counter.
+
+Independent public research agrees: the FBNeo training-mode `sfiii3.lua` and the MAME cheat data
+expose **no** P1/P2 win byte and drive round logic from health + timer. Their health offsets are the
+parent-`sfiii3` values and read `00` on `sfiii3nr1` (see task L7).
 
 ## 2. Reference set and prerequisites
 
@@ -167,31 +206,36 @@ scope until the format/approach is re-decided.
 
 | Item | Topology | Observed | Result |
 |---|---|---|---|
-| S1 | | | |
-| S2 | | | |
-| S3 | | | |
-| S4 | | | |
-| S5 | | address: | |
-| S6 | | duration: | |
-| S7 | | | |
-| S8 | | | |
+| S1 | 1 machine, loopback: `hostspec` + 2 clients | Host logged both joins as player 1/2; host held no slot; no desync | **PASS** |
+| S2 | S1 topology | `NETPLAY_GAME_WATCH` → host `Player ... has left the game`; client stayed connected | **PASS** |
+| S3 | S1 topology | `NETPLAY_GAME_WATCH` → host `... has joined as player 1` (auto-grant); no disconnect | **PASS** |
+| S4 | 1 machine: playing host + client + spectator | Host spectated, stayed server; spectator took player 1; clients played on | **PASS** |
+| S5 | S1 topology + a full first-to-2 set | Health `0x068D08`/`0x0691A0`; loser → `0xFF`; round counter `0x010D28`; identical on all peers | **PASS (method changed)** |
+| S6 | | duration: | pending |
+| S7 | | | pending |
+| S8 | | | not run |
 
 ## 6. Derived tasks
 
-Fill in as the spike runs; mirror the 07-F table style.
-
 | # | Finding (evidence) | Task | Priority |
 |---|---|---|---|
-| L1 | — | — | — |
+| L1 | `READ_CORE_MEMORY` returns `no memory map defined` on FBNeo; `READ_CORE_RAM` works (512 KB). | Implement result reads with `READ_CORE_RAM`; correct the command in `09-lobby.md` §3/§7.6. | High |
+| L2 | No per-fighter win counter exists in the exposed RAM; `0x010D28` is the round counter. | Derive set scores from health + round transitions, not a counter. Update the design. | High |
+| L3 | The command socket services ~1 command/frame (~60/s); a full 512 KB read takes ~34 s. | Read only the needed windows; for bulk analysis use `SAVE_STATE` (RAM lives at state offset `0x214`). | Medium |
+| L4 | Live role switch toggles with a single `NETPLAY_GAME_WATCH`; the host auto-grants a free slot. | Implement rotation as toggles; verify the slot is free before promoting a spectator. | High |
+| L5 | The copied RetroArch config had **all `input_player2_*` bindings `nul`**, so the P2/client instance had no keys. | Ensure the launch path binds P2 input (the app must not inherit an unbound P2). | Medium |
+| L6 | Host-as-spectator and live switching all work, and the loser's health saturates to `0xFF`. | Record `0x068D08`, `0x0691A0`, `0x010D28` + core `GIT6bb3167` in the design; re-validate on core/ROM change. | Medium |
+| L7 | External research (FBNeo training-mode `sfiii3.lua`, MAME cheats) independently agrees there is **no** P1/P2 win byte and that result logic uses health + timer. It also lists timer `0x02011377`, match state `0x020154A6`, and player structs `0x02068C6C`/`0x02069104` (0x498 apart — matches ours). Its health `0x02068D0B`/`0x020691A3` read `00` on our ROM (ours read `A0`); they are parent-`sfiii3` offsets, **+3** from `sfiii3nr1`. | Validate `0x011377` (timer) and `0x0154A6` (match state) on `sfiii3nr1` in a live round — the timer may be a cleaner round-transition trigger than `0x010D28`. Never blind-copy parent-ROM offsets. | Medium |
 
 ## 7. Decision matrix
 
 | Outcome | Decision |
 |---|---|
-| S1–S7 all pass | Build the lobby per [`09-lobby.md`](09-lobby.md) in its stated order. |
+| S1–S5 pass (build gate) | **Met 2026-09-21** — the lobby core may be built per [`09-lobby.md`](09-lobby.md); actual result detection uses `READ_CORE_RAM` health, not the counter the design assumed. |
+| S6–S7 pass (release gate) | Ship the lobby; S7 failing only forces manual-join first. |
 | S1 fails | Rotation needs a playing host/table machine; revise §4/§7.4 of the design before building. |
 | S2/S3 fail | Rotation requires relaunching instances; accept reconnect churn and revise §7.4. |
-| S5 fails | No automatic result source exists; result detection must be re-decided (design blocker). |
+| S5 fails | No automatic result source exists; result detection must be re-decided (design blocker). **Not hit** — health is a valid source. |
 | S6 fails | Diagnose the disconnect before building; discovery/netplay stability may be the real v1 root cause. |
 | S7 fails | Ship manual join first; beacon is a follow-up investigation. |
 | S8 fails | Replays remain deferred; the lobby is unaffected. |

@@ -78,7 +78,7 @@ others (`command.h:498`–`563`):
 | Command | Use |
 |---|---|
 | `NETPLAY_GAME_WATCH` | Toggle play/spectate on the target instance. |
-| `READ_CORE_MEMORY <addr> <len>` | Read emulator RAM — the automatic result signal (§7.6). |
+| `READ_CORE_RAM <addr> <len>` | Read system RAM — the automatic result signal (§7.6). **Note:** the older memory-map command `READ_CORE_MEMORY` does **not** work with FBNeo (`no memory map defined`); use `READ_CORE_RAM` (512 KB, address base `0x02000000`). |
 | `GET_STATUS` | Instance/core/content status. |
 | `RECORD_REPLAY` / `HALT_REPLAY` / `PLAY_REPLAY_SLOT` / `SEEK_REPLAY` | Native replay (deferred, §7.11). |
 
@@ -218,21 +218,33 @@ transition (avoid the flaky mid-join window). This is the FIFO contract.
 
 ### 7.6 Automatic result detection (per-ROM RAM watcher)
 
-- **Signal:** poll the relevant RAM address(es) with `READ_CORE_MEMORY <addr> <len>` and detect the
-  game's round/win counters advancing. This is **the** automatic signal; there is no generic one.
+- **Signal:** poll RAM with `READ_CORE_RAM <addr> <len>` and read the per-round state. This is **the**
+  automatic signal; there is no generic one.
+- **Located on `sfiii3nr1` (spike 2026-09-21, core `GIT6bb3167`):** there is **no per-fighter win
+  counter** in the exposed 512 KB. The decisive result is read from health, with a round counter as
+  the transition trigger:
+
+  | Signal | `READ_CORE_RAM` offset | Behavior |
+  |---|---|---|
+  | P1 current health | `0x068D08` (mirror `0x068D0E`) | `0xA0` at round start; falls on damage; **saturates to `0xFF` on KO** |
+  | P2 current health | `0x0691A0` (mirror `0x0691A6`) | same |
+  | Rounds completed this match | `0x010D28` | `0,1,2…`, increments once per round **regardless of who won**; resets at match start |
+
+  A round is decisive when one health byte reaches `0xFF` (that side was KO'd and lost); on a timer
+  expiry with neither at `0xFF`, the higher health wins; both at `0xFF` is a draw. The lobby derives
+  set scores by counting these outcomes — it does **not** read a counter. (An earlier read mistook
+  `0x010D28` for a win counter; it increments for either winner.)
 - **Cost accepted:** it is **per-ROM reverse engineering**, version-sensitive to core/ROM updates.
-  Start with **`sfiii3nr1`** (Street Fighter III: 3rd Strike — the ROM the group plays now).
+  Start with **`sfiii3nr1`** (the ROM the group plays now).
 - **Both players observe independently.** Because the game is deterministic and synced, both
-  machines should compute the *same* result. If they disagree mid-session, that is a **desync alarm**
-  — surface it, do not silently pick a winner.
-- **The round/win address for `sfiii3nr1` is not yet located** — finding it is the spike's job
-  ([`10-lobby-spike.md`](10-lobby-spike.md) S4). Until it exists, automatic detection does not exist,
-  and the rotation cannot be considered desktop-complete.
+  machines compute the *same* result (verified: host/client/spectator read identical values). If they
+  disagree mid-session, that is a **desync alarm** — surface it, do not silently pick a winner.
+- **Recording:** store the addresses **and** the core revision they were validated against; re-run the
+  spike on any core/ROM change.
 - Detection feeds: the set counter, the rotation trigger (§7.4), lifetime scores (§7.9), and
   history (§7.10).
-- **How the address is found (investigation sketch):** use FBNeo's memory map / cheat tables, or
-  narrow a candidate address by watching round transitions (read a range, diff across a known round
-  win). Record the address *and* the core revision it was found against.
+- **Read cost:** the command socket services ~1 command/frame (~60/s), so read only these windows; a
+  full 512 KB sweep takes ~34 s.
 
 ### 7.7 Discovery beacon
 
@@ -312,7 +324,8 @@ frontend/src/components/
 - **Parity timing:** run the parity gate before spawning the joiner (recommended) or after? (Before —
   fail fast, no window churn.)
 - **Slot race:** exact ordering/acknowledgement between the loser's release and the challenger's
-  claim (§7.4 step 1/2) — needs the spike's live-switch confirmation.
+  claim (§7.4 step 1/2) — **confirmed 2026-09-21**: `NETPLAY_GAME_WATCH` frees the slot immediately
+  and the host auto-grants the next claim, so the release-then-claim order in §7.4 works.
 - **Two spectators wanting the same slot:** strictly FIFO, or a "next up" prompt? (FIFO recommended.)
 - **Spectator leaving mid-set:** does the queue shift, and does the loser still rotate out?
 - **Group's ROM set:** v1's watcher targets `sfiii3nr1`; the design is per-ROM, so what is the real
@@ -342,6 +355,9 @@ frontend/src/components/
 
 ## 11. Relationship to the roadmap
 
+- **Build gate cleared locally (2026-09-21):** spike items S1–S5 pass on one machine (see
+  [`10-lobby-spike.md`](10-lobby-spike.md) §1a); the **release gate** S6 (tailnet soak) and S7
+  (beacon) remain, with manual join as S7's fallback.
 - **Phase 2** was the room/KotH/ledger stack, **removed 2026-09-21**. The lobby is its replacement,
   but starts fresh and decentralized.
 - **Phase 3** ("spectate integration; gate: 2 concurrent spectators") is *code-complete* — the
@@ -353,10 +369,13 @@ frontend/src/components/
 
 ## 12. Build order
 
-Gated on the spike ([`10-lobby-spike.md`](10-lobby-spike.md)) passing its exit criteria:
+Gated on the spike ([`10-lobby-spike.md`](10-lobby-spike.md)): the **build gate S1–S5 passed locally
+on 2026-09-21** (host-as-spectator, live switching both directions, health/round RAM detection). The
+**release gate S6–S7** (tailnet soak, beacon reachability) is still pending; S7 has a manual-join
+fallback. Steps 2–4 build order:
 
-1. **Hardware spike** — host-as-spectator, live role switch both directions, RAM watcher on
-   `sfiii3nr1`, connection stability, beacon reachability. (No product code until this passes.)
+1. **Hardware spike** — S1–S5 **done locally**; S6–S7 pending online. (Build gate cleared; release
+   gate open.)
 2. **Lobby core** — room lifecycle, beacon (+ manual join), parity pre-check, control-socket plumbing.
 3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher.
 4. **History + scores** — local, per-machine, from own observation.

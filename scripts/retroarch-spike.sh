@@ -9,12 +9,24 @@
 #   scripts/retroarch-spike.sh parity [manifest]
 #   scripts/retroarch-spike.sh smoke [frames]
 #   scripts/retroarch-spike.sh host [port]
+#   scripts/retroarch-spike.sh hostspec [port]
 #   scripts/retroarch-spike.sh client <host-ip> [port]
+#   scripts/retroarch-spike.sh client2 <host-ip> [port]
 #   scripts/retroarch-spike.sh spectator <host-ip> [port]
 #   scripts/retroarch-spike.sh spectator2 <host-ip> [port]
+#   scripts/retroarch-spike.sh send <role> <command>
+#   scripts/retroarch-spike.sh memdump <role> <addr> <len> <file>
+#   scripts/retroarch-spike.sh memdiff <fileA> <fileB>
+#   scripts/retroarch-spike.sh savestate <role> <name>
+#   scripts/retroarch-spike.sh statediff <a.state> <b.state>
 #   scripts/retroarch-spike.sh measure [seconds]
 #   scripts/retroarch-spike.sh status
 #   scripts/retroarch-spike.sh stop
+#
+# Every role gets RetroArch's network command interface on its own loopback port
+# (host 55355, client 55356, spectator 55357, spectator2 55358) so the lobby
+# spike can drive NETPLAY_GAME_WATCH / READ_CORE_MEMORY locally
+# (docs/10-lobby-spike.md).
 #
 # Overrides: RETROARCH_SPIKE_DIR, RETROARCH_BIN, RETROARCH_CORE, RETROARCH_ROM.
 set -euo pipefail
@@ -48,9 +60,18 @@ case "$(uname -s)" in
     ;;
 esac
 
+# Prefer the app-managed frozen core (docs/07-retroarch-spike.md §2); the
+# RetroArch cores dir may still hold the pre-rebuild buildbot file.
+MANAGED_CORE="$HOME/Library/Application Support/com.the-cabinet.app/cores/macos-arm64/$CORE_NAME"
+if [ "$(uname -s)" = "Darwin" ] && [ -f "$MANAGED_CORE" ]; then
+  CORE_DEFAULT="$MANAGED_CORE"
+else
+  CORE_DEFAULT="$CORE_DIR_DEFAULT/$CORE_NAME"
+fi
+
 RA_BIN="${RETROARCH_BIN:-$RA_BIN_DEFAULT}"
 RA_CFG="${RETROARCH_CFG:-$RA_CFG_DEFAULT}"
-CORE="${RETROARCH_CORE:-$CORE_DIR_DEFAULT/$CORE_NAME}"
+CORE="${RETROARCH_CORE:-$CORE_DEFAULT}"
 ROM="${RETROARCH_ROM:-$ROM_DEFAULT}"
 
 # The standalone macOS Tailscale app bundles the GUI + CLI and infers which to
@@ -73,12 +94,30 @@ prepare_base() {
   fi
 }
 
+# Per-role loopback command port — one emulator per port on this machine.
+cmd_port_for() {
+  case "$1" in
+    host|hostspec) echo 55355 ;;
+    client)        echo 55356 ;;
+    spectator)     echo 55357 ;;
+    spectator2)    echo 55358 ;;
+    client2)       echo 55359 ;;
+    *)             echo 55355 ;;
+  esac
+}
+
 write_role() {
   local role="$1" extra="${2:-}"
+  # macOS: pin MoltenVK. RetroArch's Metal driver is broken on Apple Silicon +
+  # macOS 26 (~8 fps; docs/07 §14 F22); a menu-selected driver wouldn't persist
+  # anyway (config_save_on_exit=false), so the inherited config can lie.
+  local video_driver=""
+  [ "$(uname -s)" = "Darwin" ] && video_driver='video_driver = "vulkan"'
   mkdir -p "$WORK/$role/saves" "$WORK/$role/states"
   cat > "$WORK/$role/overrides.cfg" <<EOF
 config_save_on_exit = "false"
 video_fullscreen = "false"
+$video_driver
 pause_nonactive = "false"
 netplay_nat_traversal = "false"
 netplay_public_announce = "false"
@@ -87,6 +126,21 @@ netplay_ping_show = "true"
 netplay_allow_slaves = "true"
 netplay_require_slaves = "false"
 netplay_max_connections = "8"
+network_cmd_enable = "true"
+network_cmd_port   = "$(cmd_port_for "$role")"
+savestate_file_compression = "false"
+input_player2_up = "up"
+input_player2_down = "down"
+input_player2_left = "left"
+input_player2_right = "right"
+input_player2_a = "x"
+input_player2_b = "z"
+input_player2_x = "s"
+input_player2_y = "a"
+input_player2_l = "q"
+input_player2_r = "w"
+input_player2_start = "enter"
+input_player2_select = "rshift"
 savefile_directory = "$WORK/$role/saves"
 savestate_directory = "$WORK/$role/states"
 netplay_nickname = "spike-$role"
@@ -156,9 +210,122 @@ cmd_smoke() {
 }
 
 cmd_host()     { local port="${1:-$PORT_DEFAULT}"; require_bin; launch_bg host "netplay_ip_port = \"$port\"" "-H" "--port" "$port" "--nick" "spike-host"; }
+cmd_hostspec() {
+  local port="${1:-$PORT_DEFAULT}"; require_bin
+  local extra="netplay_ip_port = \"$port\""
+  extra="$extra"$'\n'"netplay_start_as_spectator = \"true\""
+  launch_bg hostspec "$extra" "-H" "--port" "$port" "--nick" "spike-hostspec"
+}
 cmd_client()   { local ip="${1:?usage: client <host-ip> [port]}"; local port="${2:-$PORT_DEFAULT}"; require_bin; launch_bg client "" "-C" "$ip" "--port" "$port" "--nick" "spike-p2"; }
+cmd_client2()  { local ip="${1:?usage: client2 <host-ip> [port]}"; local port="${2:-$PORT_DEFAULT}"; require_bin; launch_bg client2 "" "-C" "$ip" "--port" "$port" "--nick" "spike-p1"; }
 cmd_spectator(){ local ip="${1:?usage: spectator <host-ip> [port]}"; local port="${2:-$PORT_DEFAULT}"; require_bin; launch_bg spectator "netplay_start_as_spectator = \"true\"" "-C" "$ip" "--port" "$port" "--nick" "spike-spec"; }
 cmd_spectator2(){ local ip="${1:?usage: spectator2 <host-ip> [port]}"; local port="${2:-$PORT_DEFAULT}"; require_bin; launch_bg spectator2 "netplay_start_as_spectator = \"true\"" "-C" "$ip" "--port" "$port" "--nick" "spike-spec2"; }
+
+# send <role> <COMMAND...> — drive the role's loopback command socket.
+cmd_send() {
+  local role="${1:?usage: send <role> <command>}"; shift
+  [ "$#" -gt 0 ] || die "no command given"
+  local port; port="$(cmd_port_for "$role")"
+  printf '%s\n' "$*" | nc -u -w1 127.0.0.1 "$port" || true
+}
+
+# memdump <role> <addr> <len> <file> — chunked READ_CORE_RAM -> raw binary.
+# READ_CORE_RAM (retro_get_memory_data / system RAM) works with FBNeo, unlike
+# READ_CORE_MEMORY which needs a libretro memory map FBNeo does not define.
+# One UDP socket (replies cap at 336 bytes each); nc would burn ~1s per request.
+cmd_memdump() {
+  local role="${1:?usage: memdump <role> <addr> <len> <file>}"
+  local addr="${2:?}" len="${3:?}" out="${4:?}"
+  local port; port="$(cmd_port_for "$role")"
+  python3 - "$port" "$addr" "$len" "$out" <<'PY'
+import socket, sys
+port, addr, length, out = int(sys.argv[1]), int(sys.argv[2], 0), int(sys.argv[3], 0), sys.argv[4]
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(2.0)
+data, off, CH = bytearray(), 0, 256
+while off < length:
+    n = min(CH, length - off)
+    want = addr + off
+    s.sendto(("READ_CORE_RAM 0x%08X %d\n" % (want, n)).encode(), ("127.0.0.1", port))
+    resp = None
+    for _ in range(20):
+        try:
+            r = s.recv(65535).decode(errors="replace").split()
+        except socket.timeout:
+            break
+        try:
+            got = int(r[1], 16)
+        except (IndexError, ValueError):
+            continue
+        if got == want:
+            resp = r; break
+    if resp is None:
+        sys.stderr.write("memdump: no reply at 0x%08X\n" % want); break
+    if len(resp) < 3 or resp[2] == "-1":
+        sys.stderr.write("memdump: error at 0x%08X: %s\n" % (want, " ".join(resp))); break
+    data += bytes(int(b, 16) for b in resp[2:])
+    off += n
+open(out, "wb").write(bytes(data))
+print("memdump: %d bytes from 0x%X via port %d -> %s" % (len(data), addr, port, out))
+PY
+}
+
+# savestate <role> <name> — SAVE_STATE then copy the newest state to snapshots/<name>.state
+cmd_savestate() {
+  local role="${1:?usage: savestate <role> <name>}"
+  local name="${2:?usage: savestate <role> <name>}"
+  local port; port="$(cmd_port_for "$role")"
+  printf 'SAVE_STATE\n' | nc -u -w1 127.0.0.1 "$port" >/dev/null 2>&1 || true
+  sleep 1
+  local src; src="$(ls -t "$WORK/$role/states"/*/*.state 2>/dev/null | head -1)"
+  [ -n "$src" ] || die "no state written by $role"
+  mkdir -p "$WORK/snapshots"
+  cp "$src" "$WORK/snapshots/$name.state"
+  echo "savestate: $role -> $WORK/snapshots/$name.state ($(wc -c < "$src" | tr -d ' ') bytes)"
+}
+
+# statediff <a.state> <b.state> [rambase] [len] — diff only the system-RAM region
+# of two uncompressed RASTATE snapshots and report RAM addresses that changed.
+# The RAM region starts at state offset 0x214 for this core (FBNeo CPS3, GIT6bb3167).
+cmd_statediff() {
+  local a="${1:?usage: statediff <a.state> <b.state> [rambase] [len]}"
+  local b="${2:?}"
+  local base="${3:-0x214}" len="${4:-0x80000}"
+  python3 - "$a" "$b" "$base" "$len" <<'PY'
+import sys
+a = open(sys.argv[1], "rb").read(); b = open(sys.argv[2], "rb").read()
+base = int(sys.argv[3], 0); ln = int(sys.argv[4], 0)
+ra, rb = a[base:base+ln], b[base:base+ln]
+if len(ra) != ln or len(rb) != ln:
+    print("statediff: short read (a=%d b=%d want=%d)" % (len(ra), len(rb), ln)); sys.exit(1)
+inc, total = [], 0
+for i in range(ln):
+    if ra[i] != rb[i]:
+        total += 1
+        if rb[i] == ra[i] + 1: inc.append((i, ra[i], rb[i]))
+print("statediff: %d differing bytes in RAM region, %d are +1" % (total, len(inc)))
+for i, o, v in inc[:80]:
+    print("  RAM 0x%06X: %d -> %d" % (i, o, v))
+if len(inc) > 80: print("  ... (%d more +1)" % (len(inc) - 80))
+PY
+}
+
+# memdiff <fileA> <fileB> — byte offsets where two memdumps differ (old -> new).
+cmd_memdiff() {
+  local a="${1:?usage: memdiff <fileA> <fileB>}" b="${2:?}"
+  local sa sb
+  sa="$(wc -c < "$a" | tr -d ' ')"; sb="$(wc -c < "$b" | tr -d ' ')"
+  [ "$sa" = "$sb" ] || { echo "memdiff: size mismatch ($sa vs $sb)"; return 1; }
+  echo "memdiff: $sa bytes compared"
+  local report
+  report="$(cmp -l "$a" "$b" 2>/dev/null | perl -ane '
+    my $off=$F[0]-1; my $o=oct($F[1]); my $v=oct($F[2]);
+    $inc++ if $v==$o+1;
+    if ($shown<40) { printf "  0x%06X: %d -> %d%s\n",$off,$o,$v,($v==$o+1?" (+1)":""); $shown++ }
+    $total++;
+    END { printf "  %d differing bytes, %d of them +1 (shown up to 40)\n",$total,$inc }
+  ' || true)"
+  if [ -z "$report" ]; then echo "  (no differences)"; else printf '%s\n' "$report"; fi
+}
 
 cmd_status() {
   echo "workdir: $WORK"
@@ -170,6 +337,8 @@ cmd_status() {
   done
   echo "--- netplay listener/connections (port $PORT_DEFAULT) ---"
   lsof -nP -iTCP:"$PORT_DEFAULT" 2>/dev/null || echo "(none)"
+  echo "--- command sockets (UDP 55355-55359) ---"
+  lsof -nP -iUDP:55355-55359 2>/dev/null || echo "(none)"
 }
 
 cmd_measure() {
@@ -203,9 +372,16 @@ case "${1:-}" in
   parity)    shift; cmd_parity "$@" ;;
   smoke)     shift; cmd_smoke "$@" ;;
   host)      shift; cmd_host "$@" ;;
+  hostspec)  shift; cmd_hostspec "$@" ;;
   client)    shift; cmd_client "$@" ;;
+  client2)   shift; cmd_client2 "$@" ;;
   spectator) shift; cmd_spectator "$@" ;;
   spectator2) shift; cmd_spectator2 "$@" ;;
+  send)      shift; cmd_send "$@" ;;
+  memdump)   shift; cmd_memdump "$@" ;;
+  memdiff)   shift; cmd_memdiff "$@" ;;
+  savestate) shift; cmd_savestate "$@" ;;
+  statediff) shift; cmd_statediff "$@" ;;
   measure)   shift; cmd_measure "$@" ;;
   status)    shift; cmd_status "$@" ;;
   stop)      shift; cmd_stop "$@" ;;
