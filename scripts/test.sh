@@ -1,5 +1,5 @@
 #!/bin/bash
-# test — typecheck/build the frontend, run Rust tests and clippy.
+# test — typecheck/build the frontend, then run Rust fmt, tests and clippy.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,6 +10,9 @@ command -v cargo >/dev/null 2>&1 || { echo "cargo not found — run the rustup i
 
 echo "==> frontend build (tsc + vite)"
 npm run build
+
+echo "==> cargo fmt"
+(cd src-tauri && cargo fmt --check)
 
 echo "==> cargo test"
 (cd src-tauri && cargo test)

@@ -91,11 +91,12 @@ Project layout: `frontend/` (Vite + React + TS + Tailwind v4 + shadcn/ui; alias 
 ## Testing
 
 - There is no automated test suite yet. The platform launchers remain the reference implementation; the Tauri app (v1) is built to reproduce them.
-- Frontend typecheck/build: `npm run build` (root, delegates to `frontend/`). Rust checks: `cargo test` and `cargo clippy --all-targets` in `src-tauri/`.
+- Frontend typecheck/build: `npm run build` (root, delegates to `frontend/`). Rust checks in `src-tauri/`: `cargo fmt --check`, `cargo test`, and `cargo clippy --all-targets`. The same gate runs on all three OSes in `.github/workflows/ci.yml`.
 - Rust unit tests cover the Tailscale parsers, ROM scan, and launcher spec/ports. Opt-in live tests require local hardware: `cargo test -- --ignored --nocapture` (Tailscale status/ping, ROM dir, real emulator launch and loopback pair — the latter opens Wine windows).
 - Direct-connect can be tested on a single machine over loopback: the app's **Dev pair** button (or `launch_dev_pair`), or two player instances. No `WINEPREFIX` isolation is needed — two Wine instances in the shared FightCade prefix coexist.
 - For manual end-to-end tests, at least two peers must be online on the tailnet.
-- Helper scripts: `scripts/test.sh` runs the full local gate (frontend build + `cargo test` + clippy); `scripts/dev.sh` runs the app; `scripts/clean.sh` removes regenerables (`--deps`, `--wine`).
+- Helper scripts: `scripts/test.sh` runs the full local gate (frontend build + `cargo fmt --check` + `cargo test` + clippy); `scripts/dev.sh` runs the app; `scripts/clean.sh` removes regenerables (`--deps`, `--wine`).
+- `.github/workflows/smoke.yml` is a manual (`workflow_dispatch`) smoke-launch: it builds each OS with `--debug --no-bundle`, starts the app under a virtual display, and uploads a screenshot. It is not called by `ci.yml` or `release.yml`.
 
 ## Git
 

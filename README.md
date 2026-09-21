@@ -56,7 +56,7 @@ Run and build with the helper scripts (each sources the Rust env and installs de
 | `scripts/setup-linux.sh` | Linux one-shot: install system/Rust/JS deps, then build (`--dev` to run) |
 | `scripts/uninstall-linux.sh` | Reverse a Linux source build: remove the repo dir, the deps it installed, and the Rust toolchain it added (dry-run by default; `--apply` to act) |
 | `scripts/diagnose-linux.sh` | One-shot blank-window diagnosis for Linux: inspects the graphics stack and AppImage, tests the known launch workarounds (including the AppImage EGL fix), and writes `the-cabinet-report.txt` to the current directory (read-only; no sudo) |
-| `scripts/test.sh` | Frontend typecheck/build, `cargo test`, `cargo clippy -D warnings` |
+| `scripts/test.sh` | Frontend typecheck/build, `cargo fmt --check`, `cargo test`, `cargo clippy -D warnings` |
 | `scripts/clean.sh` | Remove build artifacts (`--deps` also removes `node_modules`; `--wine` stops stray Wine/emulator processes) |
 
 Opt-in tests that touch real hardware (Tailscale, ROM dir, emulator launch) are ignored by default:
