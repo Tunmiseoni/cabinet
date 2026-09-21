@@ -227,8 +227,9 @@ together with `parity-manifest.txt` and `CORE-NOTICE.txt` (licensing + source of
 Settings → RetroArch section has a **Download frozen core** button: it fetches the asset for the
 host platform (`macos-arm64`, `linux-x86_64`, `windows-x86_64`), verifies the sha256 above, and
 installs it into `<app_data_dir>/cores/<platform>/`, then points `retroarchCore` at it. The release
-has not been published yet — publishing is a deliberate manual step, so a core bump never happens
-silently.
+is **published** (2026-09-21) and the in-app download was verified end-to-end against it.
+Re-freezing a core remains a deliberate manual step (bump the tag in the script + `core.rs`, then
+re-run the script), so a core bump never happens silently.
 
 ## 9. Remaining unknowns
 
