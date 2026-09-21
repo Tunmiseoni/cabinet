@@ -376,7 +376,7 @@ min — but the logs surfaced the items below.
 |---|---|---|---|
 | F1 | Host logs `Failed to connect to client.` + `A netplay client has disconnected` twice per join (32× each; Windows + macOS hosts); never blocked play. The string is not in `network/netplay/netplay_frontend.c`. | Confirm it is expected with `netplay_nat_traversal=false` (host reverse-probe), then document it and/or drop it from captured logs. | Med — **Confirmed benign 2026-09-21: the host reverse-probe fires because `netplay_nat_traversal=false`; the netplay observer (`netplay.rs`) ignores both lines so they never surface as an error** |
 | F2 | `[FBNeo] Unknown device type for port 0/1, forcing "Classic" instead` — 18–36× per session on all OSes; the appendconfig (`retroarch::write_overrides`) sets no `input_libretro_device_p*`. | Pin the libretro input device (6-button Classic) so mappings are deterministic and the warning stops. | High — **Done 2026-09-21: `write_overrides` pins `input_libretro_device_p1/p2 = "5"` (FBNeo's `RETROPAD_CLASSIC` = `RETRO_DEVICE_ANALOG`); RetroArch's default `1` (JOYPAD) is what triggered the warning** |
-| F3 | Force-launching a client before the host binds produces `Failed to set up netplay sockets` / `Failed to initialize netplay` and exits in 6–9 s (linux `205008`/`205023`). | Improve the force path: wait/retry for the host, or clearly label a force-launch as likely to fail. | Med |
+| F3 | Force-launching a client before the host binds produces `Failed to set up netplay sockets` / `Failed to initialize netplay` and exits in 6–9 s (linux `205008`/`205023`). | Improve the force path: wait/retry for the host, or clearly label a force-launch as likely to fail. | Med — **Done 2026-09-21: a forced (non-dev) client/spectator now waits up to `HOST_WAIT_TIMEOUT` for the host like a dev client, and the warning dialog notes it may still fail** |
 | F4 | `--verbose` was always passed (`retroarch::spec`); `logging::capture_stream` wrote untimestamped, uncapped lines — spectator logs ran 600+ lines, dominated by Metal `mvk-warn` noise. | Gate `--verbose` behind `verboseLogging`; timestamp captured lines. | High — **fixed 2026-09-21 (cleanup)** |
 | F5 | Session dirs were UTC (`time::utc_stamp`) while the app log timestamped locally. | Unify timestamps or record the offset so app and emulator events correlate without arithmetic. | Low — **fixed 2026-09-21 (cleanup): app log, capture, and session dirs are all UTC** |
 | F6 | The app logs only spawn/exit — connection status, player slot, and ping live only inside the captured log. | Parse the captured netplay lines (`Connected to`, `joined as player N (ping X)`, `Netplay disconnected`) into `MatchState` and show netplay health in the UI. | High — **Done 2026-09-21: `netplay.rs` parses the captured lines into `MatchState.instances[].netplay`; the UI shows a per-instance badge (status/ping) with a capped event log** |
@@ -395,9 +395,8 @@ min — but the logs surfaced the items below.
 | F19 | A client issued `NETPLAY_CMD_LOAD_SAVESTATE`, followed by `Failed to load state` against the empty per-role savestate dirs. | Confirm netplay state sync cannot pull a stale/wrong state. | Low |
 | F20 | Per-machine `retroarchPort` isn't validated against peers; preflight only proves TCP reachability. | Validate the expected netplay port or document "host's port must match on all peers". | Low |
 
-Still open for a follow-up session: **F3** (force-launch should wait/retry for the host, or be labelled
-as likely to fail) and **F7** (default the nickname to the handle → tailnet self hostname → OS
-hostname, prompting once). F10 is intentionally deferred (see its row).
+Not selected this session: **F8** (a `netplay_max_ping` cap / spectate password) and **F17**. Deferred:
+**F10** (needs a live controller retest) and **F11** (needs all four machines online). See each row.
 
 ### Confirmed benign
 

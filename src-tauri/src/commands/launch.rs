@@ -204,9 +204,9 @@ pub fn launch_match(
         &request.rom,
         &peer_ip,
     )?;
-    let wait_for_host = request.dev
-        && provider.kind() == ProviderKind::Retroarch
-        && matches!(request.role, Role::P2 | Role::Spectator);
+    let wait_for_host = provider.kind() == ProviderKind::Retroarch
+        && matches!(request.role, Role::P2 | Role::Spectator)
+        && (request.dev || request.force);
     session::launch(
         &app,
         &plan,

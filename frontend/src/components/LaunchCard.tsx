@@ -347,6 +347,10 @@ export function LaunchCard({
 
       <LaunchWarningDialog
         warnings={warnings}
+        waitsForHost={
+          provider?.kind === "retroarch" &&
+          (role === "p2" || role === "spectator")
+        }
         onCancel={() => setWarnings(null)}
         onConfirm={() => void confirmLaunch()}
       />

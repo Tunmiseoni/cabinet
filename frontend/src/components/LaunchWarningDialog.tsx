@@ -10,12 +10,14 @@ import {
 
 interface LaunchWarningDialogProps {
   warnings: string[] | null;
+  waitsForHost?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
 export function LaunchWarningDialog({
   warnings,
+  waitsForHost = false,
   onCancel,
   onConfirm,
 }: LaunchWarningDialogProps) {
@@ -34,6 +36,12 @@ export function LaunchWarningDialog({
             <li key={warning}>{warning}</li>
           ))}
         </ul>
+        {waitsForHost ? (
+          <p className="text-muted-foreground text-sm">
+            The client waits briefly for the host before connecting, but the
+            launch may still fail.
+          </p>
+        ) : null}
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>
             Cancel
