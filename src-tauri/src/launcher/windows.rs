@@ -1,5 +1,5 @@
 use super::{Launcher, MatchConfig};
-use crate::contracts::{InstallInfo, LaunchSpec};
+use crate::contracts::{InstallInfo, LaunchSpec, PeerOverride};
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -7,20 +7,20 @@ pub const EMULATOR_EXE: &str = "fcadefbneo.exe";
 
 pub struct WindowsLauncher {
     install_dir: PathBuf,
-    peer_override: Option<String>,
+    peer_override: PeerOverride,
 }
 
 impl WindowsLauncher {
     pub fn new(install_dir: PathBuf) -> Self {
         Self {
             install_dir,
-            peer_override: None,
+            peer_override: PeerOverride::default(),
         }
     }
 
     pub fn loopback(self) -> Self {
         Self {
-            peer_override: Some("127.0.0.1".to_string()),
+            peer_override: PeerOverride::loopback(),
             ..self
         }
     }
@@ -49,7 +49,7 @@ impl Launcher for WindowsLauncher {
         "Windows (FightCade)"
     }
 
-    fn detect(&self) -> Result<InstallInfo, String> {
+    fn detect(&self) -> crate::error::Result<InstallInfo> {
         let emulator_dir = self.emulator_dir();
         let exe = emulator_dir.join(EMULATOR_EXE);
         let installed = exe.is_file();
@@ -65,7 +65,7 @@ impl Launcher for WindowsLauncher {
         emulator_dir_for(&self.install_dir)
     }
 
-    fn spec(&self, config: &MatchConfig) -> Result<LaunchSpec, String> {
+    fn spec(&self, config: &MatchConfig) -> crate::error::Result<LaunchSpec> {
         Ok(LaunchSpec {
             program: self.emulator_dir().join(EMULATOR_EXE),
             args: vec![

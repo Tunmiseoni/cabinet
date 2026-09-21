@@ -13,32 +13,33 @@ pub const KEEP_LOG_FILES: usize = 3;
 pub const SESSIONS_DIR: &str = "sessions";
 pub const EMULATOR_TARGET: &str = "emulator";
 
-pub fn app_log_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn app_log_dir(app: &AppHandle) -> crate::error::Result<PathBuf> {
     app.path()
         .app_log_dir()
         .map_err(|err| format!("cannot resolve log dir: {err}"))
+        .map_err(Into::into)
 }
 
-pub fn app_log_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn app_log_path(app: &AppHandle) -> crate::error::Result<PathBuf> {
     Ok(app_log_dir(app)?.join(format!("{APP_LOG_FILE}.log")))
 }
 
-pub fn sessions_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn sessions_dir(app: &AppHandle) -> crate::error::Result<PathBuf> {
     Ok(app_log_dir(app)?.join(SESSIONS_DIR))
 }
 
-pub fn create_session_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn create_session_dir(app: &AppHandle) -> crate::error::Result<PathBuf> {
     let dir = sessions_dir(app)?.join(crate::time::utc_stamp());
     std::fs::create_dir_all(&dir)
         .map_err(|err| format!("cannot create {}: {err}", dir.display()))?;
     Ok(dir)
 }
 
-pub fn prune_sessions(app: &AppHandle) -> Result<usize, String> {
+pub fn prune_sessions(app: &AppHandle) -> crate::error::Result<usize> {
     prune_session_dirs(&sessions_dir(app)?, crate::constants::SESSION_KEEP)
 }
 
-pub fn prune_session_dirs(dir: &Path, keep: usize) -> Result<usize, String> {
+pub fn prune_session_dirs(dir: &Path, keep: usize) -> crate::error::Result<usize> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(_) => return Ok(0),
@@ -73,7 +74,7 @@ pub fn stamp_line(line: &str) -> String {
 pub fn open_emulator_log(
     session_dir: &std::path::Path,
     role: &str,
-) -> Result<Arc<Mutex<File>>, String> {
+) -> crate::error::Result<Arc<Mutex<File>>> {
     let path = emulator_log_path(session_dir, role);
     let file = std::fs::OpenOptions::new()
         .create(true)

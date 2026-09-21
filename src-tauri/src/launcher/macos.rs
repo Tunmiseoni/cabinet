@@ -1,24 +1,24 @@
 use super::{Launcher, MatchConfig};
-use crate::contracts::{InstallInfo, LaunchSpec};
+use crate::contracts::{InstallInfo, LaunchSpec, PeerOverride};
 use std::path::PathBuf;
 
 pub const DEFAULT_APP_DIR: &str = "/Applications/FightCade2.app";
 
 pub struct MacosLauncher {
     app_dir: PathBuf,
-    peer_override: Option<String>,
+    peer_override: PeerOverride,
 }
 
 impl MacosLauncher {
     pub fn new(app_dir: PathBuf) -> Self {
         Self {
             app_dir,
-            peer_override: None,
+            peer_override: PeerOverride::default(),
         }
     }
 
     pub fn loopback(mut self) -> Self {
-        self.peer_override = Some("127.0.0.1".to_string());
+        self.peer_override = PeerOverride::loopback();
         self
     }
 
@@ -40,7 +40,7 @@ impl Launcher for MacosLauncher {
         "macOS (FightCade Wine)"
     }
 
-    fn detect(&self) -> Result<InstallInfo, String> {
+    fn detect(&self) -> crate::error::Result<InstallInfo> {
         let wine = self.wine();
         let emulator_dir = self.emulator_dir();
         let exe = emulator_dir.join("fcadefbneo.exe");
@@ -57,7 +57,7 @@ impl Launcher for MacosLauncher {
         self.app_dir.join("Contents/MacOS/emulator/fbneo")
     }
 
-    fn spec(&self, config: &MatchConfig) -> Result<LaunchSpec, String> {
+    fn spec(&self, config: &MatchConfig) -> crate::error::Result<LaunchSpec> {
         let emulator_dir = self.emulator_dir();
         let quark = config.quark_arg_overriding(self.peer_override.as_deref());
 

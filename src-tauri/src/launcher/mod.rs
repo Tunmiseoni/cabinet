@@ -16,7 +16,7 @@ pub struct MatchConfig {
 }
 
 impl MatchConfig {
-    pub fn new(rom: String, peer_ip: String, side: u8) -> Result<Self, String> {
+    pub fn new(rom: String, peer_ip: String, side: u8) -> crate::error::Result<Self> {
         let rom = rom.trim().to_string();
         let peer_ip = peer_ip.trim().to_string();
         if rom.is_empty() {
@@ -26,7 +26,7 @@ impl MatchConfig {
             return Err("a peer IP is required".into());
         }
         if side > 1 {
-            return Err(format!("side must be 0 (P1) or 1 (P2), got {side}"));
+            return Err(format!("side must be 0 (P1) or 1 (P2), got {side}").into());
         }
         Ok(Self { rom, peer_ip, side })
     }
@@ -77,9 +77,9 @@ impl MatchConfig {
 pub trait Launcher: Send + Sync {
     fn id(&self) -> &'static str;
     fn label(&self) -> &'static str;
-    fn detect(&self) -> Result<InstallInfo, String>;
+    fn detect(&self) -> crate::error::Result<InstallInfo>;
     fn emulator_dir(&self) -> PathBuf;
-    fn spec(&self, config: &MatchConfig) -> Result<LaunchSpec, String>;
+    fn spec(&self, config: &MatchConfig) -> crate::error::Result<LaunchSpec>;
 
     fn info(&self, installed: bool, detail: String) -> InstallInfo {
         InstallInfo {

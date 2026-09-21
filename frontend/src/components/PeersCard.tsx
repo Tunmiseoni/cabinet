@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import type { Peer, PeerHealth, Tailnet } from "@/lib/api";
+import type { Peer, PeerHealth, Tailnet } from "@/lib/types";
 import { formatBytes, formatLastSeen, osLabel } from "@/lib/format";
 import { Users } from "lucide-react";
 

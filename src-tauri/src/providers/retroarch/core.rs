@@ -56,12 +56,6 @@ pub(super) fn frozen_core_sha256() -> &'static str {
     FROZEN_CORE_SHA256
 }
 
-pub(super) fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
-
 fn standard_core_dirs(home: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
 
@@ -135,13 +129,7 @@ pub(super) fn managed_core_path(app_data_dir: &Path) -> PathBuf {
 }
 
 pub(super) fn is_on_path(program: &Path) -> bool {
-    if program.components().count() > 1 {
-        return program.is_file();
-    }
-    let Some(path) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path).any(|dir| dir.join(program).is_file())
+    crate::env::path_program_on_path(program)
 }
 
 #[cfg(test)]

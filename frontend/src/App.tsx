@@ -18,19 +18,20 @@ import {
   peersHealth,
   setConfig as saveConfig,
   stopMatch,
-  type Config,
-  type MatchRole,
-  type MatchState,
-  type PeerHealth,
-  MATCH_EVENT,
 } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
 import { useAsyncTask, useTauriEvent } from "@/lib/hooks";
 import { useInvoke } from "@/lib/query";
+import {
+  MATCH_EVENT,
+  type Config,
+  type MatchRole,
+  type MatchState,
+  type PeerHealth,
+} from "@/lib/types";
 import { AlertTriangle, RefreshCw, Settings, Wifi } from "lucide-react";
 
 function App() {
-  const [match, setMatch] = useState<MatchState | null>(null);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showLobby, setShowLobby] = useState(false);
@@ -47,6 +48,10 @@ function App() {
   });
   const romsQuery = useInvoke("roms", listRoms);
   const launcherQuery = useInvoke("launcher", launcherInfo);
+  const matchQuery = useInvoke("match", matchStatus);
+  const match = matchQuery.data;
+
+  useTauriEvent<MatchState>(MATCH_EVENT, (next) => matchQuery.mutate(next));
 
   const onlineIps = useMemo(
     () =>
@@ -76,14 +81,6 @@ function App() {
     if (!running) setShowLobby(false);
   }, [running]);
 
-  useEffect(() => {
-    matchStatus()
-      .then(setMatch)
-      .catch(() => undefined);
-  }, []);
-
-  useTauriEvent<MatchState>(MATCH_EVENT, setMatch);
-
   const refreshAll = () => {
     void peersQuery.refresh();
     void romsQuery.refresh();
@@ -108,17 +105,17 @@ function App() {
     force: boolean,
   ) =>
     launchAction.run(async () => {
-      setMatch(await launchMatch({ rom, peerIp, role, dev, force }));
+      matchQuery.mutate(await launchMatch({ rom, peerIp, role, dev, force }));
     });
 
   const handleStop = () =>
     launchAction.run(async () => {
-      setMatch(await stopMatch());
+      matchQuery.mutate(await stopMatch());
     });
 
   const handleLaunchDevPair = (rom: string) =>
     launchAction.run(async () => {
-      setMatch(await launchDevPair(rom));
+      matchQuery.mutate(await launchDevPair(rom));
     });
 
   const warnings = (peersQuery.data?.peers ?? [])

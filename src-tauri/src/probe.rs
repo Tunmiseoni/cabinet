@@ -12,7 +12,7 @@ pub struct PortProbe {
     pub error: Option<String>,
 }
 
-fn resolve(ip: &str, port: u16) -> Result<SocketAddr, String> {
+fn resolve(ip: &str, port: u16) -> crate::error::Result<SocketAddr> {
     if let Ok(addr) = ip.parse::<IpAddr>() {
         return Ok(SocketAddr::new(addr, port));
     }
@@ -21,6 +21,7 @@ fn resolve(ip: &str, port: u16) -> Result<SocketAddr, String> {
         .ok()
         .and_then(|mut addrs| addrs.next())
         .ok_or_else(|| format!("cannot resolve {ip}"))
+        .map_err(Into::into)
 }
 
 pub fn probe(ip: &str, port: u16, timeout: Duration) -> PortProbe {
@@ -32,7 +33,7 @@ pub fn probe(ip: &str, port: u16, timeout: Duration) -> PortProbe {
                 port,
                 reachable: false,
                 latency_ms: None,
-                error: Some(error),
+                error: Some(error.to_string()),
             };
         }
     };
@@ -68,10 +69,11 @@ pub fn wait_for_port(ip: &str, port: u16, timeout: Duration) -> bool {
     }
 }
 
-pub fn port_is_free(port: u16) -> Result<(), String> {
+pub fn port_is_free(port: u16) -> crate::error::Result<()> {
     TcpListener::bind(("0.0.0.0", port))
         .map(|_| ())
         .map_err(|err| format!("port {port} is already in use ({err})"))
+        .map_err(Into::into)
 }
 
 #[cfg(test)]

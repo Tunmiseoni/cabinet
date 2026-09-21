@@ -5,6 +5,7 @@ import {
   currentMonitor,
   getCurrentWindow,
 } from "@tauri-apps/api/window";
+import { MatchStatusPanel } from "@/components/MatchStatusPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PeerHealthBadge } from "@/components/PeerHealthBadge";
@@ -13,10 +14,9 @@ import {
   cabinetRelease,
   cabinetRequestPermission,
   cabinetStatus,
-  type CabinetRect,
-  type CabinetStatus,
-  type MatchState,
 } from "@/lib/api";
+import type { CabinetRect, CabinetStatus, MatchState } from "@/lib/types";
+import { usePolling } from "@/lib/hooks";
 import { X } from "lucide-react";
 
 const PERMISSION_MARKER = "accessibility-permission-required";
@@ -118,9 +118,8 @@ export function MatchView({ match, rttWarnMs, onShowLobby }: MatchViewProps) {
 
   useEffect(() => {
     void attach();
-    const timer = setInterval(() => void attach(), 1500);
-    return () => clearInterval(timer);
   }, [attach]);
+  usePolling(() => void attach(), 1500);
 
   useEffect(() => {
     if (windowId !== null || error) return;
@@ -133,15 +132,15 @@ export function MatchView({ match, rttWarnMs, onShowLobby }: MatchViewProps) {
   useEffect(() => {
     if (windowId === null) return;
     void place();
-    const timer = setInterval(() => void place(), REASSERT_MS);
     const element = viewportRef.current;
     const observer = element ? new ResizeObserver(() => void place()) : null;
     if (element && observer) observer.observe(element);
-    return () => {
-      clearInterval(timer);
-      observer?.disconnect();
-    };
+    return () => observer?.disconnect();
   }, [windowId, place]);
+  usePolling(
+    () => void place(),
+    windowId !== null ? REASSERT_MS : undefined,
+  );
 
   useEffect(() => {
     if (windowId === null) return;
@@ -227,55 +226,15 @@ export function MatchView({ match, rttWarnMs, onShowLobby }: MatchViewProps) {
           className="relative h-full w-full rounded-lg border border-dashed border-neutral-700 bg-black"
         >
           {windowId === null && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
-              {error ? (
-                <>
-                  <p className="max-w-md text-sm text-amber-400">{error}</p>
-                  <p className="max-w-md text-xs text-neutral-500">
-                    The app backend may be stale. Restart with scripts/dev.sh, then Retry.
-                  </p>
-                  <Button size="sm" onClick={() => void attach()}>
-                    Retry
-                  </Button>
-                </>
-              ) : !status ? (
-                <p className="text-sm text-neutral-300">Checking Cabinet mode…</p>
-              ) : !supported ? (
-                <p className="max-w-md text-sm text-neutral-300">
-                  Cabinet mode is not supported on this platform yet — the game is
-                  in its own window.
-                </p>
-              ) : timedOut ? (
-                <>
-                  <p className="max-w-md text-sm text-neutral-300">
-                    No emulator window found yet. The game may have opened in its own
-                    window.
-                  </p>
-                  <Button size="sm" onClick={() => void attach()}>
-                    Check again
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <p className="max-w-md text-sm text-neutral-300">
-                    Waiting for the emulator window…
-                  </p>
-                  {status.permission !== "granted" && (
-                    <>
-                      <p className="max-w-md text-xs text-neutral-400">
-                        {status.detail}
-                      </p>
-                      <Button size="sm" onClick={() => void grant()}>
-                        Grant Accessibility
-                      </Button>
-                    </>
-                  )}
-                </>
-              )}
-              {message && (
-                <p className="max-w-md text-xs text-amber-400">{message}</p>
-              )}
-            </div>
+            <MatchStatusPanel
+              error={error}
+              status={status}
+              supported={supported}
+              timedOut={timedOut}
+              message={message}
+              onRetry={() => void attach()}
+              onGrant={() => void grant()}
+            />
           )}
         </div>
       </main>

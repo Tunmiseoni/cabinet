@@ -13,7 +13,7 @@ fn rejects_invalid_rect_before_touching_the_window() {
     let host = MacosWindowHost::default();
     let result = host.place(1, Rect::new(0.0, 0.0, 0.0, 0.0));
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), "invalid viewport rect");
+    assert_eq!(result.unwrap_err().to_string(), "invalid viewport rect");
 }
 
 #[test]

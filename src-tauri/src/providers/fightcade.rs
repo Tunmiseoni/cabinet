@@ -26,7 +26,7 @@ impl Provider for FightCadeProvider {
         ProviderKind::Fightcade
     }
 
-    fn detect(&self) -> Result<InstallInfo, String> {
+    fn detect(&self) -> crate::error::Result<InstallInfo> {
         self.inner.detect()
     }
 
@@ -41,7 +41,7 @@ impl Provider for FightCadeProvider {
         role.side().map(MatchConfig::local_port_for_side)
     }
 
-    fn spec(&self, request: &MatchRequest) -> Result<LaunchSpec, String> {
+    fn spec(&self, request: &MatchRequest) -> crate::error::Result<LaunchSpec> {
         let side = request.role.side().ok_or_else(|| {
             "FightCade has no spectator role — pick a spectator-capable provider".to_string()
         })?;
@@ -51,7 +51,7 @@ impl Provider for FightCadeProvider {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> crate::error::Result<Box<dyn Launcher>> {
     let app_dir = cfg
         .fightcade_dir
         .clone()
@@ -66,7 +66,7 @@ pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launch
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> crate::error::Result<Box<dyn Launcher>> {
     let override_dir = cfg.fightcade_dir.clone().map(PathBuf::from);
     let rom_dir = crate::roms::resolve_rom_dir(cfg);
     let launcher = linux::LinuxLauncher::detect(override_dir, rom_dir);
@@ -75,7 +75,7 @@ pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launch
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> crate::error::Result<Box<dyn Launcher>> {
     let override_dir = cfg.fightcade_dir.clone().map(PathBuf::from);
     let launcher = windows::WindowsLauncher::detect(override_dir);
     let launcher = if dev { launcher.loopback() } else { launcher };
@@ -83,7 +83,7 @@ pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launch
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> Result<Box<dyn Launcher>, String> {
+pub(crate) fn resolve_launcher(cfg: &Config, dev: bool) -> crate::error::Result<Box<dyn Launcher>> {
     let _ = (cfg, dev);
     Err("this build only ships the macOS, Linux, and Windows launchers".into())
 }

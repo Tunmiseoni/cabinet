@@ -18,15 +18,15 @@ impl WindowHost for WindowsWindowHost {
         }
     }
 
-    fn list_windows(&self, _owner_pids: &[i32]) -> Result<Vec<WindowInfo>, String> {
+    fn list_windows(&self, _owner_pids: &[i32]) -> crate::error::Result<Vec<WindowInfo>> {
         Ok(Vec::new())
     }
 
-    fn place(&self, _window_id: u32, _target: Rect) -> Result<PlacementMode, String> {
-        Err("Windows window hosting is not implemented yet".to_string())
+    fn place(&self, _window_id: u32, _target: Rect) -> crate::error::Result<PlacementMode> {
+        Err("Windows window hosting is not implemented yet".into())
     }
 
-    fn release(&self, _window_id: u32) -> Result<(), String> {
+    fn release(&self, _window_id: u32) -> crate::error::Result<()> {
         Ok(())
     }
 }

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { DiagnosticsSection } from "@/components/DiagnosticsSection";
+import { RetroArchSettings } from "@/components/RetroArchSettings";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,8 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Config, ProviderKind } from "@/lib/api";
-import { collectDiagnostics, openLogsDir } from "@/lib/api";
+import type { Config, ProviderKind } from "@/lib/types";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -76,8 +77,6 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [form, setForm] = useState<FormState>(() => toForm(config));
   const [saving, setSaving] = useState(false);
-  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
-  const [diagnosticsStatus, setDiagnosticsStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) setForm(toForm(config));
@@ -86,26 +85,8 @@ export function SettingsDialog({
   const update = (key: keyof FormState) => (value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  async function handleOpenLogs() {
-    try {
-      const dir = await openLogsDir();
-      setDiagnosticsStatus(`Opened ${dir}`);
-    } catch (err) {
-      setDiagnosticsStatus(String(err));
-    }
-  }
-
-  async function handleCollectDiagnostics() {
-    setDiagnosticsBusy(true);
-    try {
-      const result = await collectDiagnostics();
-      setDiagnosticsStatus(`Wrote ${result.path}`);
-    } catch (err) {
-      setDiagnosticsStatus(String(err));
-    } finally {
-      setDiagnosticsBusy(false);
-    }
-  }
+  const setField = (key: keyof FormState, value: string) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
 
   async function handleSave() {
     setSaving(true);
@@ -209,61 +190,14 @@ export function SettingsDialog({
             />
           </div>
           {form.provider === "retroarch" && (
-            <>
-              <div className="grid gap-2">
-                <Label htmlFor="retroarchPath">RetroArch binary</Label>
-                <Input
-                  id="retroarchPath"
-                  value={form.retroarchPath}
-                  placeholder="/Applications/RetroArch.app/Contents/MacOS/RetroArch"
-                  onChange={(event) =>
-                    update("retroarchPath")(event.target.value)
-                  }
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="retroarchCore">FBNeo core (frozen)</Label>
-                <Input
-                  id="retroarchCore"
-                  value={form.retroarchCore}
-                  placeholder="/Users/you/Library/Application Support/RetroArch/cores/fbneo_libretro.dylib"
-                  onChange={(event) =>
-                    update("retroarchCore")(event.target.value)
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Leave blank to auto-detect the standard RetroArch core folder.
-                  Netplay refuses to sync if every machine's core revision does
-                  not match.
-                </p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="retroarchPort">Netplay port</Label>
-                  <Input
-                    id="retroarchPort"
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={form.retroarchPort}
-                    onChange={(event) =>
-                      update("retroarchPort")(event.target.value)
-                    }
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="retroarchNickname">Netplay nickname</Label>
-                  <Input
-                    id="retroarchNickname"
-                    value={form.retroarchNickname}
-                    placeholder={form.handle || "default nickname"}
-                    onChange={(event) =>
-                      update("retroarchNickname")(event.target.value)
-                    }
-                  />
-                </div>
-              </div>
-            </>
+            <RetroArchSettings
+              path={form.retroarchPath}
+              core={form.retroarchCore}
+              port={form.retroarchPort}
+              nickname={form.retroarchNickname}
+              handle={form.handle}
+              onChange={setField}
+            />
           )}
           <div className="grid gap-2">
             <Label htmlFor="tailscalePath">Tailscale binary</Label>
@@ -331,50 +265,12 @@ export function SettingsDialog({
 
           <Separator />
 
-          <div className="grid gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <div className="grid gap-1">
-                <Label htmlFor="verboseLogging">Verbose logging</Label>
-                <p className="text-xs text-muted-foreground">
-                  Raise the app log to debug level. Takes effect after a restart.
-                </p>
-              </div>
-              <input
-                id="verboseLogging"
-                type="checkbox"
-                className="size-4 shrink-0 accent-primary"
-                checked={form.verboseLogging}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    verboseLogging: event.target.checked,
-                  }))
-                }
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void handleOpenLogs()}
-              >
-                Open logs folder
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={diagnosticsBusy}
-                onClick={() => void handleCollectDiagnostics()}
-              >
-                {diagnosticsBusy ? "Collecting…" : "Collect diagnostics"}
-              </Button>
-            </div>
-            {diagnosticsStatus && (
-              <p className="break-all text-xs text-muted-foreground">
-                {diagnosticsStatus}
-              </p>
-            )}
-          </div>
+          <DiagnosticsSection
+            verboseLogging={form.verboseLogging}
+            onVerboseLoggingChange={(value) =>
+              setForm((prev) => ({ ...prev, verboseLogging: value }))
+            }
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

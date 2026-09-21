@@ -4,7 +4,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { PeerHealth } from "@/lib/api";
+import type { PeerHealth } from "@/lib/types";
 import { healthLabel, healthLevel, type HealthLevel } from "@/lib/health";
 
 const VARIANT: Record<HealthLevel, "default" | "destructive" | "outline"> = {

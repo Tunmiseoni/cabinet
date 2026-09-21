@@ -46,7 +46,7 @@ pub(super) fn provider(scratch: &Scratch) -> RetroArchProvider {
         port: 55435,
         nickname: "spike".to_string(),
         overrides_dir: scratch.dir.join("cfg"),
-        peer_override: None,
+        peer_override: Default::default(),
         verbose: true,
     }
 }

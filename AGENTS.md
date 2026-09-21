@@ -75,6 +75,7 @@ State what you intend to do, why, and how to undo it, then wait for confirmation
 - Log through the `log` crate (`log::info!`/`warn!`/`error!`/`debug!`), which `tauri-plugin-log` routes to `app_log_dir`; do not use `eprintln!`/`println!` outside `#[cfg(test)]`.
 - Lock mutexes with `sync::MutexExt::lock_or_recover` (recovers from a poisoned lock) rather than `.lock().unwrap()`.
 - Shared magic values (timeouts, intervals) live in `constants.rs`; time helpers in `time.rs`.
+- Fallible functions return `crate::error::Result<T>` (`CabinetError`), so `?` works across modules; convert to `String` only at the `#[tauri::command]` boundary via `crate::error::CommandResult<T>` (`CommandError` serializes its `Display`). Use `CabinetError::Message`/`From<String>` for user-facing text; `home_dir`/PATH probes live in `env.rs`.
 
 ## Environment setup
 

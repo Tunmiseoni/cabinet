@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import type { RomIndex } from "@/lib/api";
+import type { RomIndex } from "@/lib/types";
 import { formatBytes } from "@/lib/format";
 import { Gamepad2 } from "lucide-react";
 

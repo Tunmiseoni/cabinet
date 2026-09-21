@@ -42,7 +42,10 @@ pub(super) fn overrides_path(overrides_dir: &Path, role: Role) -> PathBuf {
     overrides_dir.join(format!("netplay-{}.cfg", role.key()))
 }
 
-pub(super) fn write_overrides(provider: &RetroArchProvider, role: Role) -> Result<PathBuf, String> {
+pub(super) fn write_overrides(
+    provider: &RetroArchProvider,
+    role: Role,
+) -> crate::error::Result<PathBuf> {
     let dir = provider.overrides_dir.join(role.key());
     let saves = dir.join("saves");
     let states = dir.join("states");
@@ -203,7 +206,7 @@ mod tests {
         let scratch = Scratch::new("dev");
         let rom = scratch.rom();
         let mut provider = provider(&scratch);
-        provider.peer_override = Some("127.0.0.1".to_string());
+        provider.peer_override = crate::contracts::PeerOverride::loopback();
         let spec = provider
             .spec(&request(Role::P2, &rom, "100.64.0.2"))
             .unwrap();

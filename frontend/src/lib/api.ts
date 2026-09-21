@@ -15,7 +15,6 @@ import type {
   Tailnet,
 } from "./types";
 
-export * from "./types";
 
 export const getConfig = () => invoke<Config>("get_config");
 

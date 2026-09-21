@@ -28,7 +28,7 @@ pub struct ParityStatus {
 pub(super) fn status(
     provider: &RetroArchProvider,
     rom_path: &Path,
-) -> Result<Option<ParityStatus>, String> {
+) -> crate::error::Result<Option<ParityStatus>> {
     let expected_git = FROZEN_CORE_GIT.to_string();
     let expected_sha = frozen_core_sha256().to_string();
     let expected_rom = FROZEN_ROM_SHA256.to_string();
@@ -77,7 +77,7 @@ pub(super) fn status(
     }))
 }
 
-fn sha256_file(path: &Path) -> Result<String, String> {
+fn sha256_file(path: &Path) -> crate::error::Result<String> {
     use sha2::{Digest, Sha256};
 
     let mut file = std::fs::File::open(path).map_err(|err| err.to_string())?;
@@ -93,7 +93,7 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn core_git(path: &Path) -> Result<Option<String>, String> {
+fn core_git(path: &Path) -> crate::error::Result<Option<String>> {
     let bytes = std::fs::read(path).map_err(|err| err.to_string())?;
     let mut found: BTreeSet<String> = BTreeSet::new();
     let mut index = 0;

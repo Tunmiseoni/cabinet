@@ -83,7 +83,7 @@ fn emit(app: &AppHandle, state: &MatchState) {
     app.emit(MATCH_EVENT, state).ok();
 }
 
-fn spawn_child(plan: &Plan, session_dir: Option<&Path>) -> Result<Child, String> {
+fn spawn_child(plan: &Plan, session_dir: Option<&Path>) -> crate::error::Result<Child> {
     let mut command = crate::process::command(&plan.spec.program);
     command
         .args(&plan.spec.args)
@@ -130,7 +130,7 @@ pub fn launch_many(
     app: &AppHandle,
     plans: &[Plan],
     options: LaunchOptions,
-) -> Result<MatchState, String> {
+) -> crate::error::Result<MatchState> {
     if plans.is_empty() {
         return Err("nothing to launch".into());
     }
@@ -241,7 +241,11 @@ pub fn launch_many(
     Ok(state)
 }
 
-pub fn launch(app: &AppHandle, plan: &Plan, options: LaunchOptions) -> Result<MatchState, String> {
+pub fn launch(
+    app: &AppHandle,
+    plan: &Plan,
+    options: LaunchOptions,
+) -> crate::error::Result<MatchState> {
     launch_many(app, std::slice::from_ref(plan), options)
 }
 
@@ -357,7 +361,7 @@ fn finish_slot(state: &mut MatchState, role: Role, code: Option<i32>) {
     }
 }
 
-pub fn stop(app: &AppHandle) -> Result<MatchState, String> {
+pub fn stop(app: &AppHandle) -> crate::error::Result<MatchState> {
     let session = app.state::<Session>();
     let mut inner = session.inner.lock_or_recover();
     inner.generation += 1;

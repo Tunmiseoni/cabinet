@@ -3,6 +3,8 @@ mod config;
 mod constants;
 mod contracts;
 mod diagnostics;
+mod env;
+pub mod error;
 mod launcher;
 mod logging;
 mod probe;
@@ -114,22 +116,22 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::get_config,
-            commands::set_config,
+            commands::config::get_config,
+            commands::config::set_config,
             commands::list_peers,
             commands::peer_health,
             commands::peers_health,
             commands::list_roms,
-            commands::launcher_info,
-            commands::parity_status,
-            commands::launch_match,
-            commands::launch_dev_pair,
-            commands::stop_match,
-            commands::match_status,
-            commands::cabinet_status,
-            commands::cabinet_place,
-            commands::cabinet_release,
-            commands::cabinet_request_permission,
+            commands::launch::launcher_info,
+            commands::launch::parity_status,
+            commands::launch::launch_match,
+            commands::launch::launch_dev_pair,
+            commands::launch::stop_match,
+            commands::launch::match_status,
+            commands::cabinet::cabinet_status,
+            commands::cabinet::cabinet_place,
+            commands::cabinet::cabinet_release,
+            commands::cabinet::cabinet_request_permission,
             commands::probe_port,
             diagnostics::log_dir,
             diagnostics::open_logs_dir,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { LaunchWarningDialog } from "@/components/LaunchWarningDialog";
 import { PeerHealthBadge } from "@/components/PeerHealthBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,14 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -33,9 +26,10 @@ import type {
   ProviderInfo,
   RomIndex,
   Tailnet,
-} from "@/lib/api";
+} from "@/lib/types";
 import { parityStatus, probePort } from "@/lib/api";
 import { healthWarning } from "@/lib/health";
+import { useInvoke } from "@/lib/query";
 import { FlaskConical, Gamepad2, Play, Square } from "lucide-react";
 
 const ROLE_LABELS: Record<MatchRole, string> = {
@@ -80,7 +74,13 @@ export function LaunchCard({
   const [role, setRole] = useState<MatchRole>("p1");
   const [dev, setDev] = useState(false);
   const [warnings, setWarnings] = useState<string[] | null>(null);
-  const [parity, setParity] = useState<ParityStatus | null>(null);
+
+  const parityQuery = useInvoke<ParityStatus | null>(
+    `parity:${rom}:${provider?.kind ?? ""}`,
+    () => parityStatus(rom),
+    { enabled: rom !== "" && provider?.kind === "retroarch" },
+  );
+  const parity = parityQuery.data;
 
   const capabilities = provider?.capabilities;
   const spectate = capabilities?.spectate ?? false;
@@ -105,24 +105,6 @@ export function LaunchCard({
   useEffect(() => {
     if (!developerMode && dev) setDev(false);
   }, [developerMode, dev]);
-
-  useEffect(() => {
-    if (!rom || provider?.kind !== "retroarch") {
-      setParity(null);
-      return;
-    }
-    let cancelled = false;
-    parityStatus(rom)
-      .then((status) => {
-        if (!cancelled) setParity(status);
-      })
-      .catch(() => {
-        if (!cancelled) setParity(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [rom, provider?.kind]);
 
   useEffect(() => {
     if (peerIp) return;
@@ -338,28 +320,11 @@ export function LaunchCard({
         )}
       </CardContent>
 
-      <Dialog open={warnings !== null} onOpenChange={(open) => !open && setWarnings(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Connection warning</DialogTitle>
-            <DialogDescription>
-              The selected peer may be unreachable, or may not give a good match.
-              Launch anyway?
-            </DialogDescription>
-          </DialogHeader>
-          <ul className="list-disc space-y-1 pl-5 text-sm">
-            {(warnings ?? []).map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setWarnings(null)}>
-              Cancel
-            </Button>
-            <Button onClick={() => void confirmLaunch()}>Launch anyway</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <LaunchWarningDialog
+        warnings={warnings}
+        onCancel={() => setWarnings(null)}
+        onConfirm={() => void confirmLaunch()}
+      />
     </Card>
   );
 }

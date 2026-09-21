@@ -8,9 +8,12 @@ the structural refactors — the `providers/` tree, the neutral `contracts` modu
 `retroarch.rs` / `windowing/macos.rs` splits plus the shared launcher helpers (§3, §4). A **fourth
 pass done 2026-09-21** landed the frontend query layer (§5), completed the identifier genericization
 (with the leaks the 2026-09-19 scrub missed), extended diagnostics redaction, and applied the
-smaller convention fixes. The remaining heavier refactors (§2 typed errors, §7 `time` crate) are
-**proposed and deferred**; none block Phase 3. This file is the backlog for a future cleanup
-session, so day-to-day feature work has a written target instead of ad-hoc churn.
+smaller convention fixes. This file is the backlog for a future cleanup session, so day-to-day
+feature work has a written target instead of ad-hoc churn. A **fifth pass done 2026-09-21** landed
+the two deferred heavy refactors — typed errors (§2) and the `time` crate (§7) — plus the
+oversized-file splits for `tailscale`, `diagnostics`, `windowing/macos`, `launcher/linux`, and
+`commands`, the backend env/PATH/peer-override dedups, and the remaining frontend query/component
+cleanup. Only a few low-value items remain deferred (see the statuses below).
 
 > **Removed 2026-09-21:** the rooms/lobbies/KotH subsystem, the local lifetime score ledger, and
 > the emulator overlay/result watcher were deleted entirely (see `docs/04-design.md` §3/§5). Some
@@ -39,18 +42,21 @@ session API ergonomics, and a lighter frontend data layer. No behavior or depend
 Conventions this established are recorded in `AGENTS.md` (log via `log`, lock via
 `lock_or_recover`, shared magic values in `constants.rs` / `time.rs`).
 
-## 2. Deferred — typed errors (`CabinetError`)
+## 2. Applied (2026-09-21) — typed errors (`CabinetError`)
 
-Current state: every fallible function returns `Result<T, String>`, and `?` across modules needs
-manual `format!`/`map_err`. Proposal:
+Landed with `thiserror`:
 
-- Add `thiserror`, define `CabinetError` with variants (`Io`, `Json`, `Tauri`, `Tailscale`,
-  `Launch`, …) and `From` impls for `std::io::Error` / `serde_json::Error`.
-- Convert to `String` **only** at the Tauri command boundary (Tauri commands serialize their
-  error; a newtype `CommandError(CabinetError)` implementing `Serialize` keeps the frontend
-  contract unchanged).
-- Rationale for deferring: it touches essentially every module and must stay clippy-clean on the
-  3-OS matrix; the payoff is ergonomics, not a fixed bug.
+- `error.rs` defines `CabinetError` (`Message`, `Tailscale`, `Launch`, `Io`, `Json`, `Tauri`,
+  `Opener`) with `From` impls for `std::io::Error` / `serde_json::Error` / `tauri::Error` /
+  `tauri_plugin_opener::Error` plus `From<String>` / `From<&str>` (the last two map to `Message`, so
+  existing `Err(format!(…))` sites stay short). `Result<T>` aliases `Result<T, CabinetError>`.
+- Every internal signature (88 `Result<_, String>` sites across all modules) and the `Launcher` /
+  `Provider` / `WindowHost` traits now return `CabinetError`.
+- The `#[tauri::command]` boundary uses `CommandResult<T>` = `Result<T, CommandError>`, where
+  `CommandError(CabinetError)` implements `Serialize` by writing the `Display` string — so the
+  frontend contract (a rejected promise carrying a string) is unchanged.
+- `?` now converts io/json/tauri errors directly; user-facing strings are preserved (contextual
+  `map_err(format!(…))` stays as `Message`), so no log or UI message text changed.
 
 ## 3. Applied (2026-09-21) — module layout
 
@@ -58,7 +64,9 @@ The provider/launcher layering is now explicit. `src-tauri/src/` reads:
 
 ```
 src-tauri/src/
-├─ contracts.rs          InstallInfo, LaunchSpec (neutral; no launcher/provider deps)
+├─ contracts.rs          InstallInfo, LaunchSpec, PeerOverride (neutral; no launcher/provider deps)
+├─ error.rs              CabinetError, CommandError, Result/CommandResult aliases
+├─ env.rs                home_dir(), on_path()/path_program_on_path()
 ├─ providers/
 │  ├─ mod.rs             Provider trait, ProviderKind, Role, Capabilities, MatchRequest, resolve_provider
 │  ├─ fightcade.rs       FightCadeProvider + per-OS resolve_launcher
@@ -66,10 +74,25 @@ src-tauri/src/
 │     ├─ mod.rs          RetroArchProvider + Provider impl
 │     ├─ core.rs         platform/core identity + path resolution
 │     ├─ parity.rs       ParityStatus, frozen constants, sha256/core-git
-│     └─ spec.rs         overrides writing + launch args/spec
-├─ launcher/{mod,macos,linux,windows}.rs
-└─ windowing/{mod,linux,windows}.rs, windowing/macos/{mod,tests}.rs
+│     ├─ spec.rs         overrides writing + launch args/spec
+│     └─ test_support.rs #[cfg(test)] Scratch/provider/request fixtures
+├─ launcher/{mod,macos,windows}.rs, launcher/linux/{mod,detect,layouts}.rs
+├─ commands/{mod,config,launch,cabinet}.rs
+├─ diagnostics/{mod,redact,bundle}.rs
+├─ tailscale/{mod,status,ping}.rs
+└─ windowing/{mod,linux,windows}.rs, windowing/macos/{mod,enumerate,place,tests}.rs
 ```
+
+- **Large-file splits (fifth pass).** `tailscale.rs` → `{status,ping}` (types/binary resolution in
+  `mod`); `diagnostics.rs` → `{redact,bundle}` (commands in `mod`); `windowing/macos/mod.rs` →
+  `{enumerate,place}` (AX placement vs CGWindowList enumeration); `launcher/linux.rs` →
+  `{detect,layouts}` (the launch-spec builders moved to `layouts`); `commands.rs` →
+  `{config,launch,cabinet}` (all `#[tauri::command]` fns live beside their helpers, and `lib.rs`
+  references the full paths, since Tauri's generated command macros are not re-exportable).
+- **Dedups (fifth pass).** `home_dir()` and the PATH probes collapsed into `env.rs`; the per-launcher
+  `peer_override: Option<String>` + `loopback()` pattern collapsed into `contracts::PeerOverride`
+  (shared by the three launchers and `RetroArchProvider`). The per-module test `Scratch`/temp-dir
+  scaffolding is **still duplicated** — low value, deferred.
 
 - **`providers/` tree.** `provider.rs` → `providers/mod.rs` and `retroarch.rs` →
   `providers/retroarch/`. `contracts.rs` is top-level (not `providers/contracts.rs`) so the edge
@@ -121,7 +144,17 @@ No dependency was added (React Query remains the heavier alternative). Frontend 
 
 Verification: `./scripts/test.sh` (frontend build + `cargo fmt --check` + `cargo test` + clippy `-D warnings`), mirrored by the 3-OS `.github/workflows/ci.yml` matrix.
 
-## 6. Deferred — logging & diagnostics follow-ups
+## 5c. Applied (2026-09-21) — fifth pass (frontend)
+
+| Area | Change | Where |
+|---|---|---|
+| Query layer | The one-off `matchStatus().then(setMatch)` effect became a `useInvoke("match", matchStatus)` query; `MATCH_EVENT` now calls `matchQuery.mutate` instead of a bare `setState`. | `App.tsx` |
+| Parity | `LaunchCard`'s manual `cancelled`-flag parity fetch became `useInvoke(\`parity:${rom}:${kind}\`, …)` with `enabled` gating. | `LaunchCard.tsx` |
+| Polling | `MatchView`'s two raw `setInterval` loops now use `usePolling` (the re-assert interval is enabled only while a window is attached). | `MatchView.tsx` |
+| Splits | Presentational components extracted: `LaunchWarningDialog`, `MatchStatusPanel`, `RetroArchSettings`, `DiagnosticsSection` (each 46–75 lines). | `components/*` |
+| API/types | `lib/api.ts` no longer re-exports types; type-only imports now come from `lib/types` directly. `lib/utils.ts` (`sameJson`) folded into `lib/query.ts` and deleted. | `lib/*`, `App.tsx`, `components/*` |
+
+## 6. Applied (2026-09-21) — logging & diagnostics follow-ups
 
 `docs/07-retroarch-spike.md` §14 already tracks the live-run findings (F1–F20). Of those, these
 belong to a logging/diagnostics cleanup:
@@ -137,11 +170,12 @@ belong to a logging/diagnostics cleanup:
 F12 (the stale `handoff-*.md` docs) was resolved in the 2026-09-21 cleanup by deleting both handoffs;
 the F-table row in `docs/07-retroarch-spike.md` §14 is marked done.
 
-## 7. Deferred — `time` crate
+## 7. Applied (2026-09-21) — `time` crate
 
-`time.rs` hand-rolls the civil-date conversion. Replacing it with the `time` crate removes ~25
-lines and a class of date bugs, at the cost of a new dependency. Deferred under the project's
-"avoid new deps casually" stance.
+`time.rs`'s hand-rolled `civil_from_days` (Hinnant algorithm) is gone; `now_ms()` and `utc_stamp()`
+now use `time::OffsetDateTime::now_utc()` and `time::macros::format_description!`, keeping the same
+`YYYYMMDD-HHMMSS` shape and the same call sites (`session`, `logging`, `diagnostics`). `time` is
+already in the lockfile as a transitive dependency, so the direct dependency adds no new tree.
 
 ## 8. Constraints and verification
 

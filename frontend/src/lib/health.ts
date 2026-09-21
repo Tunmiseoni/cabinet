@@ -1,4 +1,4 @@
-import type { PeerHealth } from "@/lib/api";
+import type { PeerHealth } from "@/lib/types";
 
 export type HealthLevel = "healthy" | "warn" | "unreachable" | "unknown";
 

@@ -9,7 +9,7 @@ pub use parity::ParityStatus;
 use super::{Capabilities, MatchRequest, Provider, ProviderKind, Role};
 use crate::config::Config;
 use crate::constants;
-use crate::contracts::{InstallInfo, LaunchSpec};
+use crate::contracts::{InstallInfo, LaunchSpec, PeerOverride};
 use std::path::{Path, PathBuf};
 
 pub struct RetroArchProvider {
@@ -18,7 +18,7 @@ pub struct RetroArchProvider {
     port: u16,
     nickname: String,
     overrides_dir: PathBuf,
-    peer_override: Option<String>,
+    peer_override: PeerOverride,
     verbose: bool,
 }
 
@@ -31,7 +31,7 @@ impl RetroArchProvider {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(core::DEFAULT_PROGRAM));
         let managed_core = core::managed_core_path(app_data_dir);
-        let home = core::home_dir();
+        let home = crate::env::home_dir();
         let candidates = core::core_candidates(&program, home.as_deref());
         let core = core::resolve_core(cfg.retroarch_core.as_deref(), &candidates, managed_core);
         let nickname = cfg
@@ -55,18 +55,20 @@ impl RetroArchProvider {
             },
             nickname: spec::sanitize_value(&nickname),
             overrides_dir: app_config_dir.join("retroarch"),
-            peer_override: dev.then(|| "127.0.0.1".to_string()),
+            peer_override: if dev {
+                PeerOverride::loopback()
+            } else {
+                PeerOverride::default()
+            },
             verbose: cfg.verbose_logging,
         }
     }
 
     fn peer(&self, fallback: &str) -> String {
-        self.peer_override
-            .clone()
-            .unwrap_or_else(|| fallback.to_string())
+        self.peer_override.resolve_or(fallback)
     }
 
-    fn write_overrides(&self, role: Role) -> Result<PathBuf, String> {
+    fn write_overrides(&self, role: Role) -> crate::error::Result<PathBuf> {
         spec::write_overrides(self, role)
     }
 }
@@ -76,7 +78,7 @@ impl Provider for RetroArchProvider {
         ProviderKind::Retroarch
     }
 
-    fn detect(&self) -> Result<InstallInfo, String> {
+    fn detect(&self) -> crate::error::Result<InstallInfo> {
         let program_ok = self.program.is_file() || core::is_on_path(&self.program);
         let core_ok = self.core.is_file();
         let installed = program_ok && core_ok;
@@ -112,9 +114,9 @@ impl Provider for RetroArchProvider {
         true
     }
 
-    fn spec(&self, request: &MatchRequest) -> Result<LaunchSpec, String> {
+    fn spec(&self, request: &MatchRequest) -> crate::error::Result<LaunchSpec> {
         if !request.rom_path.is_file() {
-            return Err(format!("ROM not found: {}", request.rom_path.display()));
+            return Err(format!("ROM not found: {}", request.rom_path.display()).into());
         }
         let overrides = self.write_overrides(request.role)?;
         let peer = self.peer(request.peer_ip);
@@ -141,7 +143,7 @@ impl Provider for RetroArchProvider {
         })
     }
 
-    fn parity(&self, rom_path: &Path) -> Result<Option<ParityStatus>, String> {
+    fn parity(&self, rom_path: &Path) -> crate::error::Result<Option<ParityStatus>> {
         parity::status(self, rom_path)
     }
 }

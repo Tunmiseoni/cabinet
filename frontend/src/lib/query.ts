@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePolling } from "./hooks";
-import { sameJson } from "./utils";
+
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 const cache = new Map<string, unknown>();
 

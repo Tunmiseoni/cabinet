@@ -1,96 +1,31 @@
-use crate::config::{self, Config};
+use super::config::{config_and_provider, provider_for};
+use crate::config::Config;
 use crate::constants;
 use crate::contracts::InstallInfo;
 use crate::probe;
 use crate::providers::{self, Capabilities, MatchRequest, Provider, ProviderKind, Role};
-use crate::roms::{self, RomIndex};
+use crate::roms;
 use crate::session::{self, MatchState, Plan};
-use crate::tailscale::{self, PeerHealth, Tailnet};
-use crate::windowing::{self, PlacementMode, Rect, WindowInfo};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-pub(crate) fn config_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|err| format!("cannot resolve config dir: {err}"))?;
-    Ok(config::config_path(dir))
-}
-
-pub(crate) fn load_config(app: &AppHandle) -> Result<Config, String> {
-    Ok(Config::load(&config_file(app)?))
-}
-
-pub(crate) fn provider_for(app: &AppHandle, dev: bool) -> Result<Box<dyn Provider>, String> {
-    let cfg = load_config(app)?;
-    providers::resolve_provider(app, &cfg, dev)
-}
-
-pub(crate) fn config_and_provider(
-    app: &AppHandle,
-    dev: bool,
-) -> Result<(Config, Box<dyn Provider>), String> {
-    let cfg = load_config(app)?;
-    let provider = providers::resolve_provider(app, &cfg, dev)?;
-    Ok((cfg, provider))
-}
-
-#[tauri::command]
-pub fn get_config(app: AppHandle) -> Result<Config, String> {
-    load_config(&app)
-}
-
-#[tauri::command]
-pub fn set_config(app: AppHandle, config: Config) -> Result<Config, String> {
-    let path = config_file(&app)?;
-    config
-        .save(&path)
-        .map_err(|err| format!("cannot save config: {err}"))?;
-    Ok(config)
-}
-
-#[tauri::command(async)]
-pub fn list_peers(app: AppHandle) -> Result<Tailnet, String> {
-    let cfg = load_config(&app)?;
-    let binary = tailscale::resolve_binary(&cfg)?;
-    tailscale::status(&binary)
-}
-
-#[tauri::command(async)]
-pub fn peer_health(app: AppHandle, ip: String) -> Result<PeerHealth, String> {
-    let cfg = load_config(&app)?;
-    let binary = tailscale::resolve_binary(&cfg)?;
-    Ok(tailscale::ping(&binary, &ip))
-}
-
-#[tauri::command(async)]
-pub fn peers_health(app: AppHandle, ips: Vec<String>) -> Result<Vec<PeerHealth>, String> {
-    let cfg = load_config(&app)?;
-    let binary = tailscale::resolve_binary(&cfg)?;
-    Ok(tailscale::ping_many(&binary, &ips))
-}
-
-#[tauri::command(async)]
-pub fn list_roms(app: AppHandle) -> Result<RomIndex, String> {
-    let cfg = load_config(&app)?;
-    Ok(roms::index(&cfg))
-}
-
-fn rom_file(cfg: &Config, rom: &str) -> Result<PathBuf, String> {
+fn rom_file(cfg: &Config, rom: &str) -> crate::error::Result<PathBuf> {
     let dir = roms::resolve_rom_dir(cfg)
         .ok_or_else(|| "no ROM directory found — set one in settings".to_string())?;
     let path = dir.join(format!("{rom}.zip"));
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!("ROM file not found: {}", path.display()))
+        Err(format!("ROM file not found: {}", path.display()).into())
     }
 }
 
-fn optional_rom_file(cfg: &Config, provider: &dyn Provider, rom: &str) -> Result<PathBuf, String> {
+fn optional_rom_file(
+    cfg: &Config,
+    provider: &dyn Provider,
+    rom: &str,
+) -> crate::error::Result<PathBuf> {
     if provider.requires_rom_file() {
         return rom_file(cfg, rom);
     }
@@ -108,7 +43,7 @@ pub struct ProviderInfo {
 }
 
 #[tauri::command(async)]
-pub fn launcher_info(app: AppHandle) -> Result<ProviderInfo, String> {
+pub fn launcher_info(app: AppHandle) -> crate::error::CommandResult<ProviderInfo> {
     let provider = provider_for(&app, false)?;
     Ok(ProviderInfo {
         kind: provider.kind(),
@@ -121,13 +56,13 @@ pub fn launcher_info(app: AppHandle) -> Result<ProviderInfo, String> {
 pub fn parity_status(
     app: AppHandle,
     rom: String,
-) -> Result<Option<providers::ParityStatus>, String> {
+) -> crate::error::CommandResult<Option<providers::ParityStatus>> {
     let (cfg, provider) = config_and_provider(&app, false)?;
     if rom.trim().is_empty() {
         return Ok(None);
     }
     let rom_path = optional_rom_file(&cfg, provider.as_ref(), &rom)?;
-    provider.parity(&rom_path)
+    Ok(provider.parity(&rom_path)?)
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,7 +91,7 @@ fn plan_for(
     role: Role,
     rom: &str,
     peer_ip: &str,
-) -> Result<Plan, String> {
+) -> crate::error::Result<Plan> {
     let rom_path = optional_rom_file(cfg, provider, rom)?;
     if let Some(status) = provider.parity(&rom_path)? {
         log::info!(
@@ -165,7 +100,7 @@ fn plan_for(
             status.detail
         );
         if !status.ok {
-            return Err(status.detail);
+            return Err(status.detail.into());
         }
     }
     let request = MatchRequest {
@@ -189,7 +124,7 @@ fn preflight(
     role: Role,
     peer_ip: &str,
     force: bool,
-) -> Result<(), String> {
+) -> crate::error::Result<()> {
     if provider.kind() != ProviderKind::Retroarch {
         return Ok(());
     }
@@ -207,7 +142,7 @@ fn preflight(
                 if force {
                     Ok(())
                 } else {
-                    Err(format!("{err} — is another instance already hosting?"))
+                    Err(format!("{err} — is another instance already hosting?").into())
                 }
             }
         },
@@ -229,14 +164,17 @@ fn preflight(
                     .unwrap_or_default();
                 Err(format!(
                     "host not reachable on {peer_ip}:{port}{detail} — start the host first, confirm the peer IP, and allow inbound TCP {port} on the host"
-                ))
+                ).into())
             }
         }
     }
 }
 
 #[tauri::command(async)]
-pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState, String> {
+pub fn launch_match(
+    app: AppHandle,
+    request: LaunchRequest,
+) -> crate::error::CommandResult<MatchState> {
     let (cfg, provider) = config_and_provider(&app, request.dev)?;
     log::info!(
         "launch request: provider={:?} role={} rom={} peer={:?} dev={} force={}",
@@ -250,7 +188,7 @@ pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState
     let install = provider.detect()?;
     if !install.installed {
         log::error!("emulator not found — {}", install.detail);
-        return Err(format!("emulator not found — {}", install.detail));
+        return Err(format!("emulator not found — {}", install.detail).into());
     }
     if request.role == Role::Spectator && !provider.capabilities().spectate {
         return Err("this provider cannot spectate".into());
@@ -278,11 +216,12 @@ pub fn launch_match(app: AppHandle, request: LaunchRequest) -> Result<MatchState
             peer_display: peer_ip,
         },
     )
+    .map_err(Into::into)
 }
 
 #[tauri::command(async)]
-pub fn stop_match(app: AppHandle) -> Result<MatchState, String> {
-    session::stop(&app)
+pub fn stop_match(app: AppHandle) -> crate::error::CommandResult<MatchState> {
+    Ok(session::stop(&app)?)
 }
 
 #[tauri::command]
@@ -291,12 +230,12 @@ pub fn match_status(app: AppHandle) -> MatchState {
 }
 
 #[tauri::command(async)]
-pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String> {
+pub fn launch_dev_pair(app: AppHandle, rom: String) -> crate::error::CommandResult<MatchState> {
     let (cfg, provider) = config_and_provider(&app, true)?;
     log::info!("launch dev pair: provider={:?} rom={rom}", provider.kind());
     let install = provider.detect()?;
     if !install.installed {
-        return Err(format!("emulator not found — {}", install.detail));
+        return Err(format!("emulator not found — {}", install.detail).into());
     }
     if !provider.capabilities().dev_pair {
         return Err("this provider has no dev pair".into());
@@ -314,94 +253,7 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> Result<MatchState, String
             peer_display: "127.0.0.1 (P1↔P2)".to_string(),
         },
     )
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CabinetStatus {
-    pub platform: String,
-    pub supported: bool,
-    pub permission: windowing::Permission,
-    pub mode: PlacementMode,
-    pub detail: String,
-    pub owner_pids: Vec<i32>,
-    pub windows: Vec<WindowInfo>,
-}
-
-pub(crate) fn session_pids(app: &AppHandle) -> Vec<i32> {
-    session::status(app)
-        .instances
-        .iter()
-        .filter_map(|instance| instance.pid.map(|pid| pid as i32))
-        .collect()
-}
-
-#[tauri::command(async)]
-pub fn cabinet_status(app: AppHandle) -> Result<CabinetStatus, String> {
-    let host = &app.state::<windowing::Host>().0;
-    let status = host.status();
-    let owner_pids = session_pids(&app);
-    let windows = host.list_windows(&owner_pids).unwrap_or_default();
-    log::debug!(
-        "cabinet_status: platform={} supported={} permission={:?} mode={:?} pids={:?} windows={}",
-        status.platform,
-        status.supported,
-        status.permission,
-        status.mode,
-        owner_pids,
-        windows.len()
-    );
-    Ok(CabinetStatus {
-        platform: status.platform,
-        supported: status.supported,
-        permission: status.permission,
-        mode: status.mode,
-        detail: status.detail,
-        owner_pids,
-        windows,
-    })
-}
-
-#[tauri::command(async)]
-pub fn cabinet_place(app: AppHandle, window_id: u32, rect: Rect) -> Result<PlacementMode, String> {
-    let host = &app.state::<windowing::Host>().0;
-    let allowed = host.list_windows(&session_pids(&app))?;
-    if !allowed.iter().any(|window| window.id == window_id) {
-        return Err(format!(
-            "window {window_id} is not part of the current match"
-        ));
-    }
-    host.place(window_id, rect.round())
-}
-
-#[tauri::command(async)]
-pub fn cabinet_release(app: AppHandle, window_id: u32) -> Result<(), String> {
-    app.state::<windowing::Host>().0.release(window_id)
-}
-
-#[tauri::command(async)]
-pub fn cabinet_request_permission() -> Result<bool, String> {
-    #[cfg(target_os = "macos")]
-    {
-        Ok(crate::windowing::macos::prompt_permission())
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        Err("no permission is required on this platform".to_string())
-    }
-}
-
-#[tauri::command(async)]
-pub fn probe_port(ip: String, port: u16, timeout_ms: Option<u64>) -> probe::PortProbe {
-    let timeout = Duration::from_millis(
-        timeout_ms
-            .unwrap_or(constants::PROBE_DEFAULT_TIMEOUT_MS)
-            .clamp(
-                constants::PROBE_TIMEOUT_MIN_MS,
-                constants::PROBE_TIMEOUT_MAX_MS,
-            ),
-    );
-    probe::probe(&ip, port, timeout)
+    .map_err(Into::into)
 }
 
 #[cfg(test)]

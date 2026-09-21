@@ -91,9 +91,9 @@ pub struct HostStatus {
 pub trait WindowHost: Send + Sync {
     fn platform(&self) -> &'static str;
     fn status(&self) -> HostStatus;
-    fn list_windows(&self, owner_pids: &[i32]) -> Result<Vec<WindowInfo>, String>;
-    fn place(&self, window_id: u32, target: Rect) -> Result<PlacementMode, String>;
-    fn release(&self, window_id: u32) -> Result<(), String>;
+    fn list_windows(&self, owner_pids: &[i32]) -> crate::error::Result<Vec<WindowInfo>>;
+    fn place(&self, window_id: u32, target: Rect) -> crate::error::Result<PlacementMode>;
+    fn release(&self, window_id: u32) -> crate::error::Result<()>;
 }
 
 #[cfg_attr(
@@ -117,15 +117,15 @@ impl WindowHost for UnsupportedWindowHost {
         }
     }
 
-    fn list_windows(&self, _owner_pids: &[i32]) -> Result<Vec<WindowInfo>, String> {
+    fn list_windows(&self, _owner_pids: &[i32]) -> crate::error::Result<Vec<WindowInfo>> {
         Ok(Vec::new())
     }
 
-    fn place(&self, _window_id: u32, _target: Rect) -> Result<PlacementMode, String> {
-        Err("window hosting is not supported on this platform".to_string())
+    fn place(&self, _window_id: u32, _target: Rect) -> crate::error::Result<PlacementMode> {
+        Err("window hosting is not supported on this platform".into())
     }
 
-    fn release(&self, _window_id: u32) -> Result<(), String> {
+    fn release(&self, _window_id: u32) -> crate::error::Result<()> {
         Ok(())
     }
 }

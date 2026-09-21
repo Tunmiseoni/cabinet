@@ -69,16 +69,16 @@ pub struct MatchRequest<'a> {
 
 pub trait Provider: Send + Sync {
     fn kind(&self) -> ProviderKind;
-    fn detect(&self) -> Result<InstallInfo, String>;
+    fn detect(&self) -> crate::error::Result<InstallInfo>;
     fn capabilities(&self) -> Capabilities;
     fn port(&self, role: Role) -> Option<u16>;
-    fn spec(&self, request: &MatchRequest) -> Result<LaunchSpec, String>;
+    fn spec(&self, request: &MatchRequest) -> crate::error::Result<LaunchSpec>;
 
     fn requires_rom_file(&self) -> bool {
         false
     }
 
-    fn parity(&self, _rom_path: &Path) -> Result<Option<ParityStatus>, String> {
+    fn parity(&self, _rom_path: &Path) -> crate::error::Result<Option<ParityStatus>> {
         Ok(None)
     }
 }
@@ -87,7 +87,7 @@ pub(crate) fn resolve_provider(
     app: &AppHandle,
     cfg: &Config,
     dev: bool,
-) -> Result<Box<dyn Provider>, String> {
+) -> crate::error::Result<Box<dyn Provider>> {
     match cfg.provider {
         ProviderKind::Fightcade => Ok(Box::new(fightcade::FightCadeProvider::new(
             fightcade::resolve_launcher(cfg, dev)?,
