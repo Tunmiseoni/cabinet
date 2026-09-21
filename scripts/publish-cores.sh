@@ -137,6 +137,10 @@ else
     "${FILES[@]}" "$MANIFEST" "$NOTICE"
 fi
 
+# A create interrupted mid-upload leaves a draft; make sure it is published so
+# the app's download URL resolves (no-op when it is already public).
+gh release edit "$TAG" --repo "$REPO" --draft=false --prerelease=false >/dev/null
+
 echo
 echo "done. assets:"
 gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name'
