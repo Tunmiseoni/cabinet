@@ -113,7 +113,14 @@ mod tests {
             2,
             None,
         )));
-        room.lock_or_recover().set_occupancy(players, spectators);
+        let mut seats = crate::lobby::sets::Seats::default();
+        for slot in 1..=players.min(2) {
+            seats.set(slot, Some(format!("player-{slot}")));
+        }
+        for index in 0..spectators {
+            seats.enqueue(format!("watcher-{index}"));
+        }
+        room.lock_or_recover().set_seats(&seats);
         let beacon = Beacon::start_on((Ipv4Addr::LOCALHOST, 0), Arc::clone(&room)).unwrap();
         (room, beacon)
     }
@@ -135,7 +142,13 @@ mod tests {
     fn reflects_updates_to_the_shared_room() {
         let (room, beacon) = beacon_with_room(0, 0);
         let port = beacon.local_port().unwrap();
-        room.lock_or_recover().set_occupancy(2, 3);
+        let mut seats = crate::lobby::sets::Seats::default();
+        seats.set(1, Some("player-one".into()));
+        seats.set(2, Some("player-two".into()));
+        for index in 0..3 {
+            seats.enqueue(format!("watcher-{index}"));
+        }
+        room.lock_or_recover().set_seats(&seats);
         let fetched = query("127.0.0.1", port, constants::LOBBY_BEACON_QUERY_TIMEOUT).unwrap();
         assert_eq!(fetched.players, 2);
         assert_eq!(fetched.spectators, 3);

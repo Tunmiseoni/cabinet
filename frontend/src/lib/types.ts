@@ -199,6 +199,19 @@ export interface LaunchRequest {
 
 export type RoomPhase = "waiting" | "playing";
 
+export interface SetScore {
+  p1Games: number;
+  p2Games: number;
+  p1Rounds: number;
+  p2Rounds: number;
+}
+
+export interface Rotation {
+  id: number;
+  loserSlot: number;
+  incoming: string | null;
+}
+
 export interface Room {
   roomId: string;
   hostNodeId: string;
@@ -209,6 +222,10 @@ export interface Room {
   players: number;
   spectators: number;
   hostSeat: number | null;
+  seats: [string | null, string | null];
+  queue: string[];
+  set: SetScore;
+  rotation: Rotation | null;
   revision: number;
 }
 

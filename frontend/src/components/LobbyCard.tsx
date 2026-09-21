@@ -17,9 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { RoomView } from "@/components/RoomView";
 import {
   lobbyDiscover,
   lobbyJoin,
+  lobbyRoom,
   lobbyStart,
   lobbyStatus,
   lobbyStop,
@@ -35,7 +37,7 @@ import type {
   Room,
   RomIndex,
 } from "@/lib/types";
-import { DoorOpen, Eye, Server, Square, Users } from "lucide-react";
+import { DoorOpen, Server, Square, Users } from "lucide-react";
 
 const FIRST_TO = [1, 2, 3];
 
@@ -80,6 +82,10 @@ export function LobbyCard({
     pollMs: 5000,
     enabled: !hosting,
   });
+  const liveRoomQuery = useInvoke("lobby-live-room", lobbyRoom, {
+    pollMs: 2000,
+    enabled: !hosting,
+  });
 
   const roms = romIndex?.roms ?? [];
   const rooms = roomsQuery.data ?? [];
@@ -118,10 +124,11 @@ export function LobbyCard({
     onMatch(await matchStatus());
   }
 
-  async function join(host: string, spectate: boolean, rom?: string) {
+  // A single Join: the backend seats you in a free player slot, or makes you a spectator when
+  // the room is full (the set-end rotation promotes the longest-waiting spectator).
+  async function join(host: string, rom?: string) {
     const outcome = await lobbyJoin({
       host,
-      spectate,
       rom: rom && rom.trim() !== "" ? rom : null,
     });
     onMatch(outcome.state);
@@ -143,6 +150,10 @@ export function LobbyCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6">
+        {running && (
+          <RoomView room={hosting ?? liveRoomQuery.data} match={match} />
+        )}
+
         {running && (
           <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
             <div className="grid gap-1">
@@ -279,21 +290,15 @@ export function LobbyCard({
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary">first to {entry.room.firstTo}</Badge>
+                      {entry.room.players >= 2 && (
+                        <Badge variant="outline">full · join as spectator</Badge>
+                      )}
                       <Button
                         size="sm"
-                        disabled={running || busy || entry.room.players >= 2}
-                        onClick={() => void action.run(() => join(entry.hostIp, false))}
+                        disabled={running || busy}
+                        onClick={() => void action.run(() => join(entry.hostIp))}
                       >
                         Join
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={running || busy}
-                        onClick={() => void action.run(() => join(entry.hostIp, true))}
-                      >
-                        <Eye className="size-4" />
-                        Watch
                       </Button>
                     </div>
                   </li>
@@ -306,7 +311,7 @@ export function LobbyCard({
         {!hosting && (
           <section className="grid gap-3">
             <h3 className="text-sm font-medium">Join by address</h3>
-            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
               <div className="grid gap-2">
                 <Label>Host</Label>
                 <Input
@@ -329,22 +334,10 @@ export function LobbyCard({
                 <Button
                   disabled={!retroarch || !manualReady || running || busy}
                   onClick={() =>
-                    void action.run(() => join(manualHost.trim(), false, manualRom))
+                    void action.run(() => join(manualHost.trim(), manualRom))
                   }
                 >
                   Join
-                </Button>
-              </div>
-              <div className="flex items-end">
-                <Button
-                  variant="outline"
-                  disabled={!retroarch || manualHost.trim() === "" || running || busy}
-                  onClick={() =>
-                    void action.run(() => join(manualHost.trim(), true, manualRom))
-                  }
-                >
-                  <Eye className="size-4" />
-                  Watch
                 </Button>
               </div>
             </div>

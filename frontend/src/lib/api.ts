@@ -74,6 +74,8 @@ export const lobbyStop = () => invoke<void>("lobby_stop");
 
 export const lobbyStatus = () => invoke<Room | null>("lobby_status");
 
+export const lobbyRoom = () => invoke<Room | null>("lobby_room");
+
 export const lobbyQuery = (host: string) =>
   invoke<Room | null>("lobby_query", { host });
 

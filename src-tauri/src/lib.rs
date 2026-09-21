@@ -145,6 +145,7 @@ pub fn run() {
             commands::lobby::lobby_start,
             commands::lobby::lobby_stop,
             commands::lobby::lobby_status,
+            commands::lobby::lobby_room,
             commands::lobby::lobby_query,
             commands::lobby::lobby_discover,
             commands::lobby::lobby_join,

@@ -102,7 +102,14 @@ fn netplay_observer(app: &AppHandle, generation: u64, role: Role) -> logging::Li
         let Some(netplay) = snapshot else {
             return;
         };
-        let occupied_seats = netplay.players.len().min(2) as u8;
+        // The host's beacon advertises the live seats and the waiting queue from what its netplay
+        // log has actually seen, so a joiner can tell whether a seat is free and spectators can
+        // see their place in line.
+        if role == Role::P1 {
+            if let Some(lobby) = app.try_state::<crate::lobby::Lobby>() {
+                lobby.observe_netplay(&netplay);
+            }
+        }
         let session = app.state::<Session>();
         let state = {
             let mut inner = session.inner.lock_or_recover();
@@ -121,13 +128,6 @@ fn netplay_observer(app: &AppHandle, generation: u64, role: Role) -> logging::Li
             inner.state.clone()
         };
         emit(&app, &state);
-        // The host's beacon advertises free seats from the peers it has actually seen join, so a
-        // joiner can pick the right input seat before launching. Spectators are not counted yet.
-        if role == Role::P1 {
-            if let Some(lobby) = app.try_state::<crate::lobby::Lobby>() {
-                lobby.set_occupancy(occupied_seats, 0);
-            }
-        }
     })
 }
 

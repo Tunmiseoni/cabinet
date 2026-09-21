@@ -34,6 +34,9 @@ pub struct NetplayInfo {
     pub self_player: Option<u8>,
     pub host: Option<String>,
     pub players: Vec<NetplayPlayer>,
+    /// Nicknames seen connecting to this instance, in the order they connected. On the host this
+    /// includes spectators, which is what the lobby's waiting queue is derived from.
+    pub connections: Vec<String>,
     pub ping_ms: Option<u64>,
     pub core_warning: bool,
     pub last_event: Option<String>,
@@ -97,7 +100,8 @@ impl NetplayTracker {
         }
 
         if let Some(rest) = message.strip_prefix("Got connection from: ") {
-            if quoted(rest).is_some() {
+            if let Some(nick) = quoted(rest) {
+                self.add_connection(nick);
                 self.push_event(at_ms, "peer", message);
                 return;
             }
@@ -124,6 +128,7 @@ impl NetplayTracker {
             .and_then(|rest| rest.strip_suffix(" has left the game"))
         {
             self.remove_player(nick);
+            self.remove_connection(nick);
             self.push_event(at_ms, "left", message);
             return;
         }
@@ -131,6 +136,7 @@ impl NetplayTracker {
         if message == "You have left the game" {
             self.set_connection(NetplayConnection::Disconnected);
             self.set_self_player(None);
+            self.info.connections.clear();
             self.push_event(at_ms, "left", message);
             return;
         }
@@ -138,6 +144,7 @@ impl NetplayTracker {
         if message.ends_with(" has disconnected") {
             if let Some(nick) = quoted(message) {
                 self.remove_player(nick);
+                self.remove_connection(nick);
                 self.push_event(at_ms, "disconnected", message);
                 return;
             }
@@ -146,6 +153,7 @@ impl NetplayTracker {
         if message == "Netplay disconnected" {
             self.set_connection(NetplayConnection::Disconnected);
             self.set_self_player(None);
+            self.info.connections.clear();
             self.push_event(at_ms, "disconnected", message);
             return;
         }
@@ -240,6 +248,21 @@ impl NetplayTracker {
             self.dirty = true;
         }
         self.refresh_ping();
+    }
+
+    fn add_connection(&mut self, nick: &str) {
+        if !self.info.connections.iter().any(|entry| entry == nick) {
+            self.info.connections.push(nick.to_string());
+            self.dirty = true;
+        }
+    }
+
+    fn remove_connection(&mut self, nick: &str) {
+        let before = self.info.connections.len();
+        self.info.connections.retain(|entry| entry != nick);
+        if self.info.connections.len() != before {
+            self.dirty = true;
+        }
     }
 
     fn refresh_ping(&mut self) {
@@ -405,6 +428,42 @@ mod tests {
             "[ERROR] [Netplay] This core does not support netplay between different platforms"
         ));
         assert_eq!(tracker.info().connection, NetplayConnection::Failed);
+    }
+
+    #[test]
+    fn connections_are_tracked_in_order_and_removed_on_leave() {
+        let mut tracker = new_tracker();
+        tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] Got connection from: \"player-two\"",
+        );
+        tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] Got connection from: \"watcher-a\"",
+        );
+        tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] Got connection from: \"player-two\"",
+        );
+        assert_eq!(tracker.info().connections, vec!["player-two", "watcher-a"]);
+
+        tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] Player player-two has left the game",
+        );
+        assert_eq!(tracker.info().connections, vec!["watcher-a"]);
+        assert!(tracker.info().players.is_empty());
+    }
+
+    #[test]
+    fn a_disconnect_clears_the_connection_list() {
+        let mut tracker = new_tracker();
+        tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] Got connection from: \"watcher-a\"",
+        );
+        tracker.feed(Role::P1, "[INFO] [Netplay] Netplay disconnected");
+        assert!(tracker.info().connections.is_empty());
     }
 
     #[test]

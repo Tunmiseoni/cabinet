@@ -21,3 +21,5 @@ pub const LOBBY_BEACON_PORT: u16 = 47812;
 pub const LOBBY_BEACON_TICK: Duration = Duration::from_millis(200);
 pub const LOBBY_BEACON_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 pub const LOBBY_BEACON_PROBE_TIMEOUT: Duration = Duration::from_millis(750);
+pub const LOBBY_SET_POLL: Duration = Duration::from_millis(500);
+pub const LOBBY_SEAT_POLL: Duration = Duration::from_millis(1500);

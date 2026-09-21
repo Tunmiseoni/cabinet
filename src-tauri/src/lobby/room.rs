@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::sets::{Rotation, Seats, SetScore};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum RoomPhase {
@@ -19,9 +21,22 @@ pub(crate) struct Room {
     pub phase: RoomPhase,
     pub players: u8,
     pub spectators: u8,
-    /// The seat the room's host itself holds, if it plays. Joiners are seated in the slot this
-    /// leaves free (seat 2 when the host is on 1, seat 1 when the host is on 2).
+    /// The seat the room's host held when it created the room, if it plays. Kept as the host's
+    /// declared intent; the live occupant of each slot is `seats`.
     pub host_seat: Option<u8>,
+    /// The netplay nickname holding each player slot (`[P1, P2]`), as the host observes it.
+    /// Defaulted so a beacon from an older app version still parses.
+    #[serde(default)]
+    pub seats: [Option<String>; 2],
+    /// Netplay nicknames waiting for a player slot, longest-waiting first.
+    #[serde(default)]
+    pub queue: Vec<String>,
+    /// The set in progress. A win is a whole game (first to two rounds); the set is first to N.
+    #[serde(default)]
+    pub set: SetScore,
+    /// The set-end rotation each machine should act on once, if a spectator is waiting.
+    #[serde(default)]
+    pub rotation: Option<Rotation>,
     pub revision: u64,
 }
 
@@ -44,19 +59,11 @@ impl Room {
             players: 0,
             spectators: 0,
             host_seat,
+            seats: [None, None],
+            queue: Vec::new(),
+            set: SetScore::default(),
+            rotation: None,
             revision: 0,
-        }
-    }
-
-    /// The seat a joiner takes when `observers` players have already joined the room, or `None`
-    /// once both slots are held. Seats fill in order around the host's own seat.
-    pub(crate) fn next_free_seat(&self, joiners: u8) -> Option<u8> {
-        match (self.host_seat, joiners) {
-            (None, 0) => Some(1),
-            (None, 1) => Some(2),
-            (Some(2), 0) => Some(1),
-            (Some(1), 0) => Some(2),
-            _ => None,
         }
     }
 
@@ -64,15 +71,54 @@ impl Room {
         self.revision = self.revision.wrapping_add(1);
     }
 
-    pub(crate) fn set_occupancy(&mut self, players: u8, spectators: u8) {
-        self.players = players;
-        self.spectators = spectators;
-        self.phase = if players >= 2 {
+    /// Replace the seated players and the waiting queue, then refresh the derived counters.
+    /// Seat-only (no queue) when the host is seeding its own slot at room creation.
+    pub(crate) fn set_seats(&mut self, seats: &Seats) {
+        if self.seats == seats.slots && self.queue == seats.queue {
+            return;
+        }
+        self.seats = seats.slots.clone();
+        self.queue = seats.queue.clone();
+        self.refresh_occupancy();
+    }
+
+    pub(crate) fn set_score(&mut self, score: SetScore) {
+        if self.set == score {
+            return;
+        }
+        self.set = score;
+        self.bump();
+    }
+
+    pub(crate) fn set_rotation(&mut self, rotation: Rotation) {
+        self.rotation = Some(rotation);
+        self.bump();
+    }
+
+    /// Recompute `players`/`spectators`/`phase` from the live seat map and queue.
+    pub(crate) fn refresh_occupancy(&mut self) {
+        let players = self.seats.iter().filter(|slot| slot.is_some()).count() as u8;
+        let spectators = self.queue.len() as u8;
+        let phase = if players >= 2 {
             RoomPhase::Playing
         } else {
             RoomPhase::Waiting
         };
+        if self.players == players && self.spectators == spectators && self.phase == phase {
+            return;
+        }
+        self.players = players;
+        self.spectators = spectators;
+        self.phase = phase;
         self.bump();
+    }
+
+    /// The live seat map / queue, as a `Seats` value for the rotation logic.
+    pub(crate) fn seats(&self) -> Seats {
+        Seats {
+            slots: self.seats.clone(),
+            queue: self.queue.clone(),
+        }
     }
 }
 
@@ -96,47 +142,65 @@ mod tests {
     }
 
     #[test]
-    fn occupancy_flips_the_phase_and_bumps_the_revision() {
+    fn seats_drive_the_phase_and_bump_the_revision() {
         let mut room = Room::new("r", "node", "player-one", "sfiii3nr1", 2, None);
-        room.set_occupancy(1, 0);
+        let mut seats = Seats::default();
+        seats.set(1, Some("player-one".into()));
+        room.set_seats(&seats);
         assert_eq!(room.phase, RoomPhase::Waiting);
+        assert_eq!(room.players, 1);
         assert_eq!(room.revision, 1);
-        room.set_occupancy(2, 1);
+
+        seats.set(2, Some("player-two".into()));
+        seats.enqueue("player-three".into());
+        room.set_seats(&seats);
         assert_eq!(room.phase, RoomPhase::Playing);
+        assert_eq!(room.players, 2);
         assert_eq!(room.spectators, 1);
         assert_eq!(room.revision, 2);
     }
 
     #[test]
-    fn a_spectating_host_seats_joiners_one_then_two() {
-        let room = Room::new("r", "node", "player-one", "sfiii3nr1", 2, None);
-        assert_eq!(room.next_free_seat(0), Some(1));
-        assert_eq!(room.next_free_seat(1), Some(2));
-        assert_eq!(room.next_free_seat(2), None);
+    fn setting_identical_seats_does_not_bump_the_revision() {
+        let mut room = Room::new("r", "node", "player-one", "sfiii3nr1", 2, None);
+        let mut seats = Seats::default();
+        seats.set(1, Some("player-one".into()));
+        room.set_seats(&seats);
+        let revision = room.revision;
+        room.set_seats(&seats);
+        assert_eq!(room.revision, revision);
     }
 
     #[test]
-    fn a_host_on_seat_one_leaves_seat_two_free() {
-        let room = Room::new("r", "node", "player-one", "sfiii3nr1", 2, Some(1));
-        assert_eq!(room.next_free_seat(0), Some(2));
-        assert_eq!(room.next_free_seat(1), None);
-    }
-
-    #[test]
-    fn a_host_on_seat_two_leaves_seat_one_free() {
-        let room = Room::new("r", "node", "player-one", "sfiii3nr1", 2, Some(2));
-        assert_eq!(room.next_free_seat(0), Some(1));
-        assert_eq!(room.next_free_seat(1), None);
+    fn the_score_is_tracked_and_bumps_the_revision() {
+        let mut room = Room::new("r", "node", "player-one", "sfiii3nr1", 2, None);
+        room.set_score(SetScore {
+            p1_games: 1,
+            ..Default::default()
+        });
+        assert_eq!(room.set.p1_games, 1);
+        assert_eq!(room.revision, 1);
+        room.set_score(SetScore {
+            p1_games: 1,
+            ..Default::default()
+        });
+        assert_eq!(room.revision, 1);
     }
 
     #[test]
     fn round_trips_through_json() {
         let mut room = Room::new("r", "node", "player-one", "sfiii3nr1", 3, Some(2));
-        room.set_occupancy(2, 1);
+        let mut seats = Seats::default();
+        seats.set(1, Some("player-two".into()));
+        seats.set(2, Some("player-one".into()));
+        seats.enqueue("player-three".into());
+        room.set_seats(&seats);
         let json = serde_json::to_string(&room).unwrap();
         assert!(json.contains("\"phase\":\"playing\""));
         assert!(json.contains("\"firstTo\":3"));
         assert!(json.contains("\"hostSeat\":2"));
+        assert!(json.contains("\"seats\":[\"player-two\",\"player-one\"]"));
+        assert!(json.contains("\"queue\":[\"player-three\"]"));
         let loaded: Room = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded, room);
     }

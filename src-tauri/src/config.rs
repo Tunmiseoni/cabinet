@@ -145,6 +145,27 @@ pub fn config_path(app_config_dir: PathBuf) -> PathBuf {
     app_config_dir.join("config.json")
 }
 
+/// The netplay nickname a provider will use, and the identity the lobby keys seats by: the explicit
+/// `retroarchNickname`, else the handle, else the tailnet hostname, else the OS hostname, else
+/// `"player"`. Must stay in step with how the RetroArch provider resolves `--nick`.
+pub(crate) fn netplay_nickname(cfg: &Config, tailnet_hostname: Option<&str>) -> String {
+    let explicit = cfg
+        .retroarch_nickname
+        .as_deref()
+        .or(cfg.handle.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let tailnet = tailnet_hostname
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let nickname = explicit
+        .map(str::to_string)
+        .or_else(|| tailnet.map(str::to_string))
+        .or_else(crate::env::os_hostname)
+        .unwrap_or_else(|| "player".to_string());
+    nickname.replace(['"', '\n', '\r'], "")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

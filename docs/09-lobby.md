@@ -8,8 +8,10 @@ in [`10-lobby-spike.md`](10-lobby-spike.md) — read that before writing code. *
 2026-09-21:** the RetroArch command-socket plumbing (`providers/retroarch/command.rs`, per-instance
 command ports, `network_cmd_enable`), per-ROM RAM result detection (`lobby/results.rs`, the
 `sfiii3nr1` address table and round-outcome watcher), the room model + HTTP beacon (`lobby/room.rs`,
-`lobby/beacon.rs`), hosting, the seat/role split, the client join flow (`lobby_*` commands), and
-`LobbyCard.tsx`. **Not implemented:** sets/rotation, history/scores, `RoomView.tsx`.
+`lobby/beacon.rs`), hosting, the seat/role split, the client join flow (`lobby_*` commands),
+`LobbyCard.tsx`, and the **sets + rotation** layer (`lobby/sets.rs` first-to-N machine and FIFO
+queue, the host set runner, the joiner seat follower, `RoomView.tsx`, and the single **Join**).
+**Not implemented:** history/scores (local ledger), game-boundary `RESET` (spike S9).
 
 **The lobby is the preferred home-screen path.** `LobbyCard.tsx` hosts/joins rooms and is rendered
 first; the direct **Launch match** card is hidden unless the `developerMode` setting is on (and
@@ -122,6 +124,8 @@ without inventing a signaling service (which is the v1 shape we are deliberately
   room: **`Player 1` (default) / `Player 2` / `Spectate (table)`** (`hostSeat` on `lobby_start`). A
   seated host plays; the **Spectate** choice is the non-playing spectator server (the "table") for
   rotation, so the host machine is not forced onto a controller when it is only arbitrating.
+  Seats are keyed by **netplay nickname**, the identity each machine can observe independently (the
+  host sees it in its netplay log; a client computes the same value from its config).
   (Corrected 2026-09-21: the built version originally *always* hosted as a non-playing spectator,
   which left a two-person session with a single player — the host had no way to take a seat because
   the live toggle below is not built yet.)
@@ -156,10 +160,15 @@ secrets.
 - **Manual fallback is mandatory in v1:** a host can paste/hand out `host-ip:netplay-port`, and a
   joiner can enter it directly. A broken or blocked beacon must never prevent play.
 
-**Join flow:** query beacon → show room (host handle, ROM, phase, occupancy) → joiner confirms →
+**Join flow:** query beacon → show room (host handle, ROM, phase, seats, queue) → joiner confirms →
 **parity gate** (frontend version, core revision, content CRC — the gate already exists in
 `providers/retroarch/parity.rs`) using the beacon's ROM identity → spawn the joiner's instance as a
 client/spectator (`-C <host>`). If parity fails, the joiner is told before anything launches.
+
+**One Join (built 2026-09-21).** The UI no longer offers separate **Join** and **Watch** buttons:
+`assign_join` seats you in the first open slot from the beacon's `seats`, and joins you as a
+spectator when both are held (no error on a full room). The §7.4 rotation promotes the
+longest-waiting spectator when a seat opens.
 
 **Seat vs. role (resolved 2026-09-21; corrected 2026-09-21).** The room host assigns each
 connecting client a player slot, but `Role` coupled connection direction with the player slot:
@@ -213,7 +222,8 @@ or join a room, and the room assigns you a seat." Three seat types remain:
 3. The room is `waiting` until two players are seated, then `playing`.
 4. On set end (automatic detection, §7.6): winner stays **and keeps their slot/side**; the loser
    toggles to spectator; the **longest-waiting spectator** toggles into the vacated player slot.
-   Both toggles are driven by the app over the command socket.
+   Both toggles are driven by each machine's own app over its local command socket, from a
+   **rotation instruction** the host advertises on the beacon (§7.4).
 5. With **no waiting spectators**, the two players keep playing indefinitely — no rotation. The set
    counter still runs, but nothing changes hands until a spectator wants in.
 6. Host app closes / host emulator exits → room ends; all clients disconnect and return to idle.
@@ -251,16 +261,31 @@ or join a room, and the room assigns you a seat." Three seat types remain:
 
 ### 7.4 Live role switching (the rotation mechanism)
 
-Driven from the app via `NETPLAY_GAME_WATCH` on the relevant instance's command socket. Ordering on
-set end, to avoid a slot race:
+The command socket is **loopback-only per machine** (§7.5), so the host app cannot toggle a remote
+client's instance. Rotation is therefore an **advertised instruction** that every machine acts on
+locally, keeping the actual toggle on that machine's own command socket and preserving "no
+cross-machine control protocol" (§1):
 
-1. Loser toggles **player → spectator** (immediate, releases the device slot). Wait for the slot to
-   be free/announced.
-2. Longest-waiting spectator toggles **spectator → player**; the host auto-grants the now-free slot.
-3. Winner does nothing.
+1. The host's **set runner** watches its own instance's RAM (`lobby/results.rs` + `lobby/sets.rs`),
+   rolls rounds into games and games into a first-to-N set, and publishes `set` on the beacon.
+2. On set end the host computes `rotation { id, loserSlot, incoming }` — the losing slot and the
+   queue head — and advertises it on the beacon (`announce_rotation`). Seats and the queue
+   themselves are always derived from the host's **netplay observation**, never asserted.
+3. Each machine (host included) runs a **reconciler**: on a new rotation `id`, the machine whose
+   nick is `incoming` toggles **spectator → player**, and the machine sitting in `loserSlot`
+   toggles **player → spectator**, over its own command socket (`NETPLAY_GAME_WATCH`). The first
+   room a freshly-joined client sees only primes its rotation id, so an in-flight rotation is never
+   replayed.
+4. The host auto-grants the freed slot to the incoming claim; the winner does nothing.
 
 A would-be challenger must **already be connected as a spectator** — no fresh join during the
-transition (avoid the flaky mid-join window). This is the FIFO contract.
+transition (avoid the flaky mid-join window). This is the FIFO contract. With nobody waiting the
+host advertises no rotation and the same two players start the next set.
+
+**Implemented 2026-09-21** (`lobby/sets.rs`, `Lobby::announce_rotation`, `spawn_set_runner`,
+`spawn_seat_follower`, `reconcile_rotation`). **Needs live validation (see §9):** that the host
+actually observes spectator nicks in its netplay log (so the queue head is known) and that a host
+that steps out updates its own `self_player`.
 
 ### 7.5 Control plane
 
@@ -369,7 +394,7 @@ src-tauri/src/
 │  ├─ beacon.rs      -> serve + query the read-only discovery beacon         [built]
 │  ├─ service.rs     -> the hosting room + beacon lifecycle                  [built]
 │  ├─ control.rs     -> the RetroArch command socket (NETPLAY_GAME_WATCH, READ_CORE_RAM, …) [built in providers/retroarch/command.rs]
-│  ├─ sets.rs        -> set/rotation state machine (first-to-N, FIFO)         [proposed]
+│  ├─ sets.rs        -> set/rotation state machine (first-to-N, FIFO)         [built]
 │  └─ results.rs     -> per-ROM RAM watcher (address table + desync cross-check) [built]
 ├─ commands/lobby.rs -> lobby_start/stop/status/query/discover/join             [built]
 ├─ scores.rs         -> local per-opponent ledger (observed locally)          [proposed]
@@ -378,7 +403,7 @@ src-tauri/src/
 
 frontend/src/components/
 ├─ LobbyCard.tsx     -> host/join room, room list, manual address, stop       [built; preferred home screen]
-└─ RoomView.tsx      -> seats, set score, rotation state                      [proposed]
+└─ RoomView.tsx      -> seats, set score, queue, rotation state               [built]
 ```
 
 ## 9. Open questions
@@ -407,6 +432,13 @@ frontend/src/components/
   and the host auto-grants the next claim, so the release-then-claim order in §7.4 works.
 - **Two spectators wanting the same slot:** strictly FIFO, or a "next up" prompt? (FIFO recommended.)
 - **Spectator leaving mid-set:** does the queue shift, and does the loser still rotate out?
+- **Rotation observability (needs a live run):** the queue head comes from the host's netplay log
+  (`connections` — the `Got connection from: "nick"` lines, minus seated players). If RetroArch does
+  not log a joining *spectator's* nick, the host's queue is empty and rotation never fires. Likewise,
+  a host that toggles to spectator must have its own `self_player` clear for the host reconciler to
+  step out correctly. Both are unverified and are the first thing the next tailnet run should check;
+  if spectator nicks are not visible, the fallback is to have joiners include their nick in the
+  beacon query and have the host register it.
 - **Group's ROM set:** v1's watcher targets `sfiii3nr1`; the design is per-ROM, so what is the real
   target list, and is per-ROM RE acceptable for each?
 - **Always-on "table" machine:** do we designate one, or accept host-laptop dependency?
@@ -461,15 +493,12 @@ fallback. Steps 2–4 build order:
    `Spectate` for the non-playing server), the `lobby_*` commands, and the **client join flow** (`lobby_join`, with the seat/bind split
    of §5 and host occupancy advertised from the netplay observer). `LobbyCard.tsx` hosts/joins rooms
    and joins by address. `RoomView.tsx` (seats/set score) still belongs to step 3.
-3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher. **Result
-   detection started 2026-09-21:** `lobby/results.rs` reads the `sfiii3nr1` health/round addresses and
-   classifies rounds; the first-to-N set machine and rotation remain. Also pending here (recorded
-   2026-09-21, deferred to this step):
-   - **Collapse Join/Watch into one Join.** Today `LobbyCard.tsx` offers separate **Join** and
-     **Watch** buttons and `assign_join` errors when the room is full. Replace them with a single
-     **Join** that seats you if a player slot is free and otherwise joins as a spectator, with the
-     §7.4 FIFO promoting you into the seat when it opens (no error on a full room).
-   - **Game-boundary `RESET`** for character select (§7.3) and its spike item.
+3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher.
+   **Built 2026-09-21:** `lobby/sets.rs` (first-to-N game/set machine + FIFO seats/queue), the host
+   set runner and joiner seat follower (`commands/lobby.rs`), the advertised rotation instruction
+   (§7.4), the single **Join** (`assign_join`), and `RoomView.tsx`. Still pending:
+   - **Game-boundary `RESET`** for character select (§7.3) and its spike item (S9).
+   - **Live validation** of the rotation observability caveats in §7.4/§9.
 4. **History + scores** — local, per-machine, from own observation.
 5. **Replays** — only after the `.replay`-during-netplay spike (S8) passes.
 
