@@ -65,6 +65,8 @@ pub(super) fn write_overrides(
     content.push_str("netplay_allow_slaves = \"true\"\n");
     content.push_str("netplay_require_slaves = \"false\"\n");
     content.push_str("netplay_max_connections = \"8\"\n");
+    content.push_str("input_libretro_device_p1 = \"5\"\n");
+    content.push_str("input_libretro_device_p2 = \"5\"\n");
     content.push_str(&format!("netplay_ip_port = \"{}\"\n", provider.port));
     content.push_str(&format!("netplay_nickname = \"{}\"\n", provider.nickname));
     content.push_str(&format!("savefile_directory = \"{}\"\n", saves.display()));
@@ -187,6 +189,8 @@ mod tests {
         assert!(overrides.contains("pause_nonactive = \"false\""));
         assert!(overrides.contains("config_save_on_exit = \"false\""));
         assert!(overrides.contains("netplay_nat_traversal = \"false\""));
+        assert!(overrides.contains("input_libretro_device_p1 = \"5\""));
+        assert!(overrides.contains("input_libretro_device_p2 = \"5\""));
     }
 
     #[test]
