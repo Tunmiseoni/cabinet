@@ -6,6 +6,7 @@ pub(super) struct Args<'a> {
     pub core: &'a Path,
     pub rom_path: &'a Path,
     pub overrides: &'a Path,
+    pub base_config: Option<&'a Path>,
     pub verbose: bool,
     pub role: Role,
     pub peer: &'a str,
@@ -18,9 +19,13 @@ pub(super) fn launch_args(args: &Args) -> Vec<String> {
         "-L".to_string(),
         args.core.to_string_lossy().to_string(),
         args.rom_path.to_string_lossy().to_string(),
-        "--appendconfig".to_string(),
-        args.overrides.to_string_lossy().to_string(),
     ];
+    if let Some(base) = args.base_config {
+        argv.push("-c".to_string());
+        argv.push(base.to_string_lossy().to_string());
+    }
+    argv.push("--appendconfig".to_string());
+    argv.push(args.overrides.to_string_lossy().to_string());
     if args.verbose {
         argv.push("--verbose".to_string());
     }
@@ -70,11 +75,20 @@ pub(super) fn write_overrides(
     content.push_str("input_libretro_device_p2 = \"5\"\n");
     content.push_str(&format!("netplay_ip_port = \"{}\"\n", provider.port));
     content.push_str(&format!("netplay_nickname = \"{}\"\n", nickname));
+    if provider.max_ping_ms > 0 {
+        content.push_str(&format!(
+            "netplay_max_ping = \"{}\"\n",
+            provider.max_ping_ms
+        ));
+    }
     content.push_str("savestate_auto_load = \"false\"\n");
     content.push_str(&format!("savefile_directory = \"{}\"\n", saves.display()));
     content.push_str(&format!("savestate_directory = \"{}\"\n", states.display()));
     if role == Role::Spectator {
         content.push_str("netplay_start_as_spectator = \"true\"\n");
+        if provider.mute_spectators {
+            content.push_str("audio_mute_enable = \"true\"\n");
+        }
     }
 
     let path = overrides_path(&provider.overrides_dir, role);
@@ -82,6 +96,33 @@ pub(super) fn write_overrides(
         .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
     log::debug!(target: "retroarch", "appendconfig {}:\n{}", path.display(), content);
     Ok(path)
+}
+
+pub(super) fn base_config_path(overrides_dir: &Path) -> PathBuf {
+    overrides_dir.join("base.cfg")
+}
+
+pub(super) fn write_base_config(
+    provider: &RetroArchProvider,
+) -> crate::error::Result<Option<PathBuf>> {
+    if !provider.isolated_config {
+        return Ok(None);
+    }
+    std::fs::create_dir_all(&provider.overrides_dir)
+        .map_err(|err| format!("cannot create {}: {err}", provider.overrides_dir.display()))?;
+
+    let mut content = String::new();
+    content.push_str("config_save_on_exit = \"false\"\n");
+    content.push_str("savestate_auto_load = \"false\"\n");
+    if let Some(dir) = &provider.autoconfig_dir {
+        content.push_str(&format!("input_autoconfig_dir = \"{}\"\n", dir.display()));
+    }
+
+    let path = base_config_path(&provider.overrides_dir);
+    std::fs::write(&path, &content)
+        .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
+    log::debug!(target: "retroarch", "base config {}:\n{}", path.display(), content);
+    Ok(Some(path))
 }
 
 pub(super) fn sanitize_value(value: &str) -> String {
@@ -228,5 +269,113 @@ mod tests {
         assert!(provider(&scratch)
             .spec(&request(Role::P1, &rom, "100.64.0.2"))
             .is_err());
+    }
+
+    #[test]
+    fn spectator_audio_is_muted_by_default() {
+        let scratch = Scratch::new("mute-on");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        provider
+            .spec(&request(Role::Spectator, &rom, "100.64.0.2"))
+            .unwrap();
+        let overrides =
+            std::fs::read_to_string(overrides_path(&provider.overrides_dir, Role::Spectator))
+                .unwrap();
+        assert!(overrides.contains("audio_mute_enable = \"true\""));
+    }
+
+    #[test]
+    fn spectator_audio_can_be_left_on() {
+        let scratch = Scratch::new("mute-off");
+        let rom = scratch.rom();
+        let mut provider = provider(&scratch);
+        provider.mute_spectators = false;
+        provider
+            .spec(&request(Role::Spectator, &rom, "100.64.0.2"))
+            .unwrap();
+        let overrides =
+            std::fs::read_to_string(overrides_path(&provider.overrides_dir, Role::Spectator))
+                .unwrap();
+        assert!(!overrides.contains("audio_mute_enable"));
+    }
+
+    #[test]
+    fn players_are_never_muted() {
+        let scratch = Scratch::new("mute-player");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let overrides =
+            std::fs::read_to_string(overrides_path(&provider.overrides_dir, Role::P1)).unwrap();
+        assert!(!overrides.contains("audio_mute_enable"));
+    }
+
+    #[test]
+    fn max_ping_is_emitted_only_when_set() {
+        let scratch = Scratch::new("max-ping");
+        let rom = scratch.rom();
+        let mut provider = provider(&scratch);
+        provider.max_ping_ms = 150;
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let overrides =
+            std::fs::read_to_string(overrides_path(&provider.overrides_dir, Role::P1)).unwrap();
+        assert!(overrides.contains("netplay_max_ping = \"150\""));
+
+        provider.max_ping_ms = 0;
+        provider
+            .spec(&request(Role::P2, &rom, "100.64.0.2"))
+            .unwrap();
+        let overrides =
+            std::fs::read_to_string(overrides_path(&provider.overrides_dir, Role::P2)).unwrap();
+        assert!(!overrides.contains("netplay_max_ping"));
+    }
+
+    #[test]
+    fn isolated_config_adds_a_base_config_with_the_autoconfig_dir() {
+        let scratch = Scratch::new("isolated");
+        let rom = scratch.rom();
+        let autoconfig = scratch.dir.join("user-autoconfig");
+        std::fs::create_dir_all(&autoconfig).unwrap();
+        let mut provider = provider(&scratch);
+        provider.isolated_config = true;
+        provider.autoconfig_dir = Some(autoconfig.clone());
+
+        let spec = provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let base = base_config_path(&provider.overrides_dir);
+        let flag = spec.args.iter().position(|arg| arg == "-c").unwrap();
+        assert_eq!(spec.args[flag + 1], base.to_str().unwrap());
+        let append = spec
+            .args
+            .iter()
+            .position(|arg| arg == "--appendconfig")
+            .unwrap();
+        assert!(flag < append);
+
+        let content = std::fs::read_to_string(&base).unwrap();
+        assert!(content.contains(&format!(
+            "input_autoconfig_dir = \"{}\"",
+            autoconfig.display()
+        )));
+        assert!(content.contains("config_save_on_exit = \"false\""));
+        assert!(content.contains("savestate_auto_load = \"false\""));
+    }
+
+    #[test]
+    fn isolated_config_is_off_by_default() {
+        let scratch = Scratch::new("not-isolated");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        let spec = provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        assert!(!spec.args.iter().any(|arg| arg == "-c"));
+        assert!(!base_config_path(&provider.overrides_dir).exists());
     }
 }

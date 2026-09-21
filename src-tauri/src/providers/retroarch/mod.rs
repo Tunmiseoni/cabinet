@@ -22,6 +22,10 @@ pub struct RetroArchProvider {
     overrides_dir: PathBuf,
     peer_override: PeerOverride,
     verbose: bool,
+    mute_spectators: bool,
+    max_ping_ms: u32,
+    isolated_config: bool,
+    autoconfig_dir: Option<PathBuf>,
 }
 
 impl RetroArchProvider {
@@ -47,6 +51,7 @@ impl RetroArchProvider {
             .filter(|value| !value.trim().is_empty())
             .map(str::to_string);
         let tailscale_binary = crate::tailscale::resolve_binary(cfg).ok();
+        let autoconfig_dir = core::resolve_autoconfig_dir(&program, home.as_deref());
         Self {
             program,
             core,
@@ -65,6 +70,10 @@ impl RetroArchProvider {
                 PeerOverride::default()
             },
             verbose: cfg.verbose_logging,
+            mute_spectators: cfg.retroarch_mute_spectators,
+            max_ping_ms: cfg.retroarch_max_ping_ms,
+            isolated_config: cfg.retroarch_isolated_config,
+            autoconfig_dir,
         }
     }
 
@@ -147,11 +156,13 @@ impl Provider for RetroArchProvider {
         }
         let nickname = self.resolve_nickname();
         let overrides = self.write_overrides(request.role, &nickname)?;
+        let base_config = spec::write_base_config(self)?;
         let peer = self.peer(request.peer_ip);
         let args = spec::launch_args(&spec::Args {
             core: &self.core,
             rom_path: request.rom_path,
             overrides: &overrides,
+            base_config: base_config.as_deref(),
             verbose: self.verbose,
             role: request.role,
             peer: &peer,

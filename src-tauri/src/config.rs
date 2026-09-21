@@ -21,6 +21,9 @@ pub struct Config {
     pub retroarch_core: Option<String>,
     pub retroarch_port: u16,
     pub retroarch_nickname: Option<String>,
+    pub retroarch_mute_spectators: bool,
+    pub retroarch_max_ping_ms: u32,
+    pub retroarch_isolated_config: bool,
     pub verbose_logging: bool,
     pub developer_mode: bool,
 }
@@ -41,6 +44,9 @@ impl Default for Config {
             retroarch_core: None,
             retroarch_port: crate::constants::RETROARCH_DEFAULT_PORT,
             retroarch_nickname: None,
+            retroarch_mute_spectators: true,
+            retroarch_max_ping_ms: 0,
+            retroarch_isolated_config: false,
             verbose_logging: false,
             developer_mode: false,
         }
@@ -93,6 +99,9 @@ mod tests {
         assert!(config.cabinet_mode);
         assert!(!config.verbose_logging);
         assert!(!config.developer_mode);
+        assert!(config.retroarch_mute_spectators);
+        assert_eq!(config.retroarch_max_ping_ms, 0);
+        assert!(!config.retroarch_isolated_config);
     }
 
     #[test]
@@ -112,5 +121,20 @@ mod tests {
         assert_eq!(loaded.retroarch_core.as_deref(), Some("/tmp/fbneo.so"));
         assert_eq!(loaded.retroarch_port, 60000);
         assert_eq!(loaded.retroarch_nickname.as_deref(), Some("player-one"));
+    }
+
+    #[test]
+    fn round_trips_the_retroarch_netplay_fields() {
+        let config = Config {
+            retroarch_mute_spectators: false,
+            retroarch_max_ping_ms: 150,
+            retroarch_isolated_config: true,
+            ..Config::default()
+        };
+        let raw = serde_json::to_string(&config).unwrap();
+        let loaded: Config = serde_json::from_str(&raw).unwrap();
+        assert!(!loaded.retroarch_mute_spectators);
+        assert_eq!(loaded.retroarch_max_ping_ms, 150);
+        assert!(loaded.retroarch_isolated_config);
     }
 }

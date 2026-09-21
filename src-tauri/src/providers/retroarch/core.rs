@@ -90,6 +90,53 @@ fn standard_core_dirs(home: Option<&Path>) -> Vec<PathBuf> {
     dirs
 }
 
+fn autoconfig_dirs(program: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = home {
+            dirs.push(home.join("Library/Application Support/RetroArch/autoconfig"));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+            dirs.push(PathBuf::from(xdg).join("retroarch/autoconfig"));
+        }
+        if let Some(home) = home {
+            dirs.push(home.join(".config/retroarch/autoconfig"));
+            dirs.push(home.join(".var/app/org.libretro.RetroArch/config/retroarch/autoconfig"));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let _ = home;
+        dirs.push(PathBuf::from("C:/RetroArch-Win64/autoconfig"));
+        dirs.push(PathBuf::from("C:/RetroArch/autoconfig"));
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            dirs.push(PathBuf::from(appdata).join("RetroArch/autoconfig"));
+        }
+    }
+
+    if let Some(parent) = program
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        dirs.push(parent.join("autoconfig"));
+    }
+
+    dirs
+}
+
+pub(super) fn resolve_autoconfig_dir(program: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    autoconfig_dirs(program, home)
+        .into_iter()
+        .find(|dir| dir.is_dir())
+}
+
 pub(super) fn core_candidates(program: &Path, home: Option<&Path>) -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(parent) = program
@@ -210,5 +257,42 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|path| path.to_string_lossy().contains("RetroArch-Win64")));
+    }
+
+    #[test]
+    fn autoconfig_candidates_include_the_host_standard_dir() {
+        let home = Path::new("/home/player");
+        let dirs = autoconfig_dirs(Path::new("retroarch"), Some(home));
+        #[cfg(target_os = "macos")]
+        assert!(dirs.contains(&home.join("Library/Application Support/RetroArch/autoconfig")));
+        #[cfg(target_os = "linux")]
+        assert!(dirs.contains(&home.join(".config/retroarch/autoconfig")));
+        #[cfg(target_os = "windows")]
+        assert!(dirs
+            .iter()
+            .any(|path| path.to_string_lossy().contains("RetroArch-Win64")));
+    }
+
+    #[test]
+    fn resolve_autoconfig_dir_prefers_the_first_existing_directory() {
+        let scratch = Scratch::new("autoconfig");
+        let program = scratch.dir.join("RetroArch.app/Contents/MacOS/retroarch");
+        let program_autoconfig = program.parent().unwrap().join("autoconfig");
+        std::fs::create_dir_all(&program_autoconfig).unwrap();
+        let home = scratch.dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        assert_eq!(
+            resolve_autoconfig_dir(&program, Some(&home)),
+            Some(program_autoconfig)
+        );
+    }
+
+    #[test]
+    fn resolve_autoconfig_dir_is_none_when_nothing_exists() {
+        let scratch = Scratch::new("no-autoconfig");
+        let program = scratch.dir.join("bin/retroarch");
+        let home = scratch.dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        assert!(resolve_autoconfig_dir(&program, Some(&home)).is_none());
     }
 }

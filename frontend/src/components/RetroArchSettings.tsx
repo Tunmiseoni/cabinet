@@ -5,7 +5,12 @@ export type RetroArchField =
   | "retroarchPath"
   | "retroarchCore"
   | "retroarchPort"
-  | "retroarchNickname";
+  | "retroarchNickname"
+  | "retroarchMaxPingMs";
+
+export type RetroArchToggle =
+  | "retroarchMuteSpectators"
+  | "retroarchIsolatedConfig";
 
 interface RetroArchSettingsProps {
   path: string;
@@ -13,7 +18,11 @@ interface RetroArchSettingsProps {
   port: string;
   nickname: string;
   handle: string;
+  maxPingMs: string;
+  muteSpectators: boolean;
+  isolatedConfig: boolean;
   onChange: (key: RetroArchField, value: string) => void;
+  onToggle: (key: RetroArchToggle, value: boolean) => void;
 }
 
 export function RetroArchSettings({
@@ -22,7 +31,11 @@ export function RetroArchSettings({
   port,
   nickname,
   handle,
+  maxPingMs,
+  muteSpectators,
+  isolatedConfig,
   onChange,
+  onToggle,
 }: RetroArchSettingsProps) {
   return (
     <>
@@ -69,6 +82,57 @@ export function RetroArchSettings({
             onChange={(event) => onChange("retroarchNickname", event.target.value)}
           />
         </div>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="retroarchMaxPingMs">Max ping (ms)</Label>
+        <Input
+          id="retroarchMaxPingMs"
+          type="number"
+          min={0}
+          value={maxPingMs}
+          onChange={(event) => onChange("retroarchMaxPingMs", event.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          0 disables the cap. Set a ceiling so netplay drops a connection that
+          drifts too far behind instead of desyncing.
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="grid gap-1">
+          <Label htmlFor="retroarchMuteSpectators">Mute spectators</Label>
+          <p className="text-xs text-muted-foreground">
+            Launch spectator instances with audio muted so a second copy of the
+            game does not play over the match.
+          </p>
+        </div>
+        <input
+          id="retroarchMuteSpectators"
+          type="checkbox"
+          className="size-4 shrink-0 accent-primary"
+          checked={muteSpectators}
+          onChange={(event) =>
+            onToggle("retroarchMuteSpectators", event.target.checked)
+          }
+        />
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="grid gap-1">
+          <Label htmlFor="retroarchIsolatedConfig">Isolate session config</Label>
+          <p className="text-xs text-muted-foreground">
+            Start netplay from a minimal config instead of your RetroArch profile,
+            so shaders and playlists do not leak into a match. Controller
+            autoconfigs still load.
+          </p>
+        </div>
+        <input
+          id="retroarchIsolatedConfig"
+          type="checkbox"
+          className="size-4 shrink-0 accent-primary"
+          checked={isolatedConfig}
+          onChange={(event) =>
+            onToggle("retroarchIsolatedConfig", event.target.checked)
+          }
+        />
       </div>
     </>
   );

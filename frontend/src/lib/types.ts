@@ -16,6 +16,9 @@ export interface Config {
   retroarchCore: string | null;
   retroarchPort: number;
   retroarchNickname: string | null;
+  retroarchMuteSpectators: boolean;
+  retroarchMaxPingMs: number;
+  retroarchIsolatedConfig: boolean;
   verboseLogging: boolean;
   developerMode: boolean;
 }

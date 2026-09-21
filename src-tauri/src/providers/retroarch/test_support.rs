@@ -50,6 +50,10 @@ pub(super) fn provider(scratch: &Scratch) -> RetroArchProvider {
         overrides_dir: scratch.dir.join("cfg"),
         peer_override: Default::default(),
         verbose: true,
+        mute_spectators: true,
+        max_ping_ms: 0,
+        isolated_config: false,
+        autoconfig_dir: None,
     }
 }
 

@@ -43,6 +43,9 @@ interface FormState {
   retroarchCore: string;
   retroarchPort: string;
   retroarchNickname: string;
+  retroarchMuteSpectators: boolean;
+  retroarchMaxPingMs: string;
+  retroarchIsolatedConfig: boolean;
   verboseLogging: boolean;
   developerMode: boolean;
 }
@@ -62,6 +65,9 @@ function toForm(config: Config | null): FormState {
     retroarchCore: config?.retroarchCore ?? "",
     retroarchPort: String(config?.retroarchPort ?? 55435),
     retroarchNickname: config?.retroarchNickname ?? "",
+    retroarchMuteSpectators: config?.retroarchMuteSpectators ?? true,
+    retroarchMaxPingMs: String(config?.retroarchMaxPingMs ?? 0),
+    retroarchIsolatedConfig: config?.retroarchIsolatedConfig ?? false,
     verboseLogging: config?.verboseLogging ?? false,
     developerMode: config?.developerMode ?? false,
   };
@@ -88,6 +94,9 @@ export function SettingsDialog({
   const setField = (key: keyof FormState, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
+  const setToggle = (key: keyof FormState, value: boolean) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -105,6 +114,9 @@ export function SettingsDialog({
         retroarchCore: emptyToNull(form.retroarchCore),
         retroarchPort: Number(form.retroarchPort) || 55435,
         retroarchNickname: emptyToNull(form.retroarchNickname),
+        retroarchMuteSpectators: form.retroarchMuteSpectators,
+        retroarchMaxPingMs: Math.max(0, Number(form.retroarchMaxPingMs) || 0),
+        retroarchIsolatedConfig: form.retroarchIsolatedConfig,
         verboseLogging: form.verboseLogging,
         developerMode: form.developerMode,
       });
@@ -196,7 +208,11 @@ export function SettingsDialog({
               port={form.retroarchPort}
               nickname={form.retroarchNickname}
               handle={form.handle}
+              maxPingMs={form.retroarchMaxPingMs}
+              muteSpectators={form.retroarchMuteSpectators}
+              isolatedConfig={form.retroarchIsolatedConfig}
               onChange={setField}
+              onToggle={setToggle}
             />
           )}
           <div className="grid gap-2">
