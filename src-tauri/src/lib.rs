@@ -1,13 +1,13 @@
 mod commands;
 mod config;
 mod constants;
+mod contracts;
 mod diagnostics;
 mod launcher;
 mod logging;
 mod probe;
 mod process;
-mod provider;
-mod retroarch;
+mod providers;
 mod roms;
 mod session;
 mod sync;

@@ -1,5 +1,5 @@
 use crate::logging;
-use crate::provider;
+use crate::providers;
 use crate::session;
 use crate::tailscale;
 use serde::Serialize;
@@ -97,7 +97,7 @@ fn diagnostics_text(app: &AppHandle) -> String {
     );
 
     let _ = writeln!(out, "\n--- provider ---");
-    match provider::resolve_provider(app, &cfg, false) {
+    match providers::resolve_provider(app, &cfg, false) {
         Ok(provider) => {
             let _ = writeln!(out, "kind: {:?}", provider.kind());
             match provider.detect() {

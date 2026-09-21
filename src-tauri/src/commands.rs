@@ -1,9 +1,8 @@
 use crate::config::{self, Config};
 use crate::constants;
-use crate::launcher::InstallInfo;
+use crate::contracts::InstallInfo;
 use crate::probe;
-use crate::provider::{self, Capabilities, MatchRequest, Provider, ProviderKind, Role};
-use crate::retroarch;
+use crate::providers::{self, Capabilities, MatchRequest, Provider, ProviderKind, Role};
 use crate::roms::{self, RomIndex};
 use crate::session::{self, MatchState, Plan};
 use crate::tailscale::{self, PeerHealth, Tailnet};
@@ -27,7 +26,7 @@ pub(crate) fn load_config(app: &AppHandle) -> Result<Config, String> {
 
 pub(crate) fn provider_for(app: &AppHandle, dev: bool) -> Result<Box<dyn Provider>, String> {
     let cfg = load_config(app)?;
-    provider::resolve_provider(app, &cfg, dev)
+    providers::resolve_provider(app, &cfg, dev)
 }
 
 pub(crate) fn config_and_provider(
@@ -35,7 +34,7 @@ pub(crate) fn config_and_provider(
     dev: bool,
 ) -> Result<(Config, Box<dyn Provider>), String> {
     let cfg = load_config(app)?;
-    let provider = provider::resolve_provider(app, &cfg, dev)?;
+    let provider = providers::resolve_provider(app, &cfg, dev)?;
     Ok((cfg, provider))
 }
 
@@ -122,7 +121,7 @@ pub fn launcher_info(app: AppHandle) -> Result<ProviderInfo, String> {
 pub fn parity_status(
     app: AppHandle,
     rom: String,
-) -> Result<Option<retroarch::ParityStatus>, String> {
+) -> Result<Option<providers::ParityStatus>, String> {
     let (cfg, provider) = config_and_provider(&app, false)?;
     if rom.trim().is_empty() {
         return Ok(None);

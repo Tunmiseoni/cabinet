@@ -1,4 +1,5 @@
-use super::{InstallInfo, LaunchSpec, Launcher, MatchConfig};
+use super::{Launcher, MatchConfig};
+use crate::contracts::{InstallInfo, LaunchSpec};
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -37,17 +38,6 @@ impl WindowsLauncher {
         }
         Self::new(default_install_dir())
     }
-
-    fn quark(&self, config: &MatchConfig) -> String {
-        match &self.peer_override {
-            Some(peer) => {
-                let mut overridden = config.clone();
-                overridden.peer_ip = peer.clone();
-                overridden.quark_arg()
-            }
-            None => config.quark_arg(),
-        }
-    }
 }
 
 impl Launcher for WindowsLauncher {
@@ -68,12 +58,7 @@ impl Launcher for WindowsLauncher {
         } else {
             format!("missing {}", exe.display())
         };
-        Ok(InstallInfo {
-            id: self.id().to_string(),
-            label: self.label().to_string(),
-            installed,
-            detail,
-        })
+        Ok(self.info(installed, detail))
     }
 
     fn emulator_dir(&self) -> PathBuf {
@@ -83,7 +68,10 @@ impl Launcher for WindowsLauncher {
     fn spec(&self, config: &MatchConfig) -> Result<LaunchSpec, String> {
         Ok(LaunchSpec {
             program: self.emulator_dir().join(EMULATOR_EXE),
-            args: vec![self.quark(config), "-w".to_string()],
+            args: vec![
+                config.quark_arg_overriding(self.peer_override.as_deref()),
+                "-w".to_string(),
+            ],
             cwd: self.emulator_dir(),
             envs: Vec::new(),
         })

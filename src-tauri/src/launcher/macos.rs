@@ -1,4 +1,5 @@
-use super::{InstallInfo, LaunchSpec, Launcher, MatchConfig};
+use super::{Launcher, MatchConfig};
+use crate::contracts::{InstallInfo, LaunchSpec};
 use std::path::PathBuf;
 
 pub const DEFAULT_APP_DIR: &str = "/Applications/FightCade2.app";
@@ -16,11 +17,9 @@ impl MacosLauncher {
         }
     }
 
-    pub fn loopback_with(app_dir: PathBuf) -> Self {
-        Self {
-            app_dir,
-            peer_override: Some("127.0.0.1".to_string()),
-        }
+    pub fn loopback(mut self) -> Self {
+        self.peer_override = Some("127.0.0.1".to_string());
+        self
     }
 
     fn wine(&self) -> PathBuf {
@@ -51,12 +50,7 @@ impl Launcher for MacosLauncher {
         } else {
             format!("missing {} or {}", wine.display(), exe.display())
         };
-        Ok(InstallInfo {
-            id: self.id().to_string(),
-            label: self.label().to_string(),
-            installed,
-            detail,
-        })
+        Ok(self.info(installed, detail))
     }
 
     fn emulator_dir(&self) -> PathBuf {
@@ -65,14 +59,7 @@ impl Launcher for MacosLauncher {
 
     fn spec(&self, config: &MatchConfig) -> Result<LaunchSpec, String> {
         let emulator_dir = self.emulator_dir();
-        let quark = match &self.peer_override {
-            Some(peer) => {
-                let mut overridden = config.clone();
-                overridden.peer_ip = peer.clone();
-                overridden.quark_arg()
-            }
-            None => config.quark_arg(),
-        };
+        let quark = config.quark_arg_overriding(self.peer_override.as_deref());
 
         Ok(LaunchSpec {
             program: self.wine(),
@@ -128,7 +115,7 @@ mod tests {
 
     #[test]
     fn loopback_rewrites_peer_ip() {
-        let launcher = MacosLauncher::loopback_with(PathBuf::from(DEFAULT_APP_DIR));
+        let launcher = MacosLauncher::new(PathBuf::from(DEFAULT_APP_DIR)).loopback();
         let spec = launcher.spec(&config()).unwrap();
         assert_eq!(
             spec.args[1],
@@ -142,7 +129,7 @@ mod tests {
         use std::process::Command;
         use std::time::Duration;
 
-        let launcher = MacosLauncher::loopback_with(PathBuf::from(DEFAULT_APP_DIR));
+        let launcher = MacosLauncher::new(PathBuf::from(DEFAULT_APP_DIR)).loopback();
         let install = launcher.detect().unwrap();
         if !install.installed {
             eprintln!("skipping: {}", install.detail);

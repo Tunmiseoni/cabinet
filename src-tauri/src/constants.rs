@@ -8,3 +8,4 @@ pub const HOST_WAIT_TIMEOUT: Duration = Duration::from_secs(20);
 pub const HEALTH_INTERVAL: Duration = Duration::from_secs(4);
 pub const MONITOR_INTERVAL: Duration = Duration::from_millis(300);
 pub const SESSION_KEEP: usize = 20;
+pub const RETROARCH_DEFAULT_PORT: u16 = 55435;

@@ -1,0 +1,61 @@
+use super::core::DEFAULT_PROGRAM;
+use super::RetroArchProvider;
+use crate::providers::{MatchRequest, Role};
+use std::path::{Path, PathBuf};
+
+pub(super) struct Scratch {
+    pub dir: PathBuf,
+}
+
+impl Scratch {
+    pub(super) fn new(tag: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!(
+            "cabinet-retroarch-{}-{}-{tag}",
+            std::process::id(),
+            unique()
+        ));
+        std::fs::create_dir_all(&dir).expect("create scratch dir");
+        Self { dir }
+    }
+
+    pub(super) fn rom(&self) -> PathBuf {
+        let path = self.dir.join("sfiii3nr1.zip");
+        std::fs::write(&path, b"rom-bytes").expect("write rom");
+        path
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.dir).ok();
+    }
+}
+
+fn unique() -> u128 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0)
+}
+
+pub(super) fn provider(scratch: &Scratch) -> RetroArchProvider {
+    RetroArchProvider {
+        program: PathBuf::from(DEFAULT_PROGRAM),
+        core: PathBuf::from("/app/cores/fbneo_libretro.dylib"),
+        port: 55435,
+        nickname: "spike".to_string(),
+        overrides_dir: scratch.dir.join("cfg"),
+        peer_override: None,
+        verbose: true,
+    }
+}
+
+pub(super) fn request<'a>(role: Role, rom: &'a Path, peer: &'a str) -> MatchRequest<'a> {
+    MatchRequest {
+        role,
+        rom: "sfiii3nr1",
+        rom_path: rom,
+        peer_ip: peer,
+    }
+}

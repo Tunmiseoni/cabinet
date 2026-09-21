@@ -3,7 +3,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::provider::ProviderKind;
+use crate::providers::ProviderKind;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -39,7 +39,7 @@ impl Default for Config {
             provider: ProviderKind::default(),
             retroarch_path: None,
             retroarch_core: None,
-            retroarch_port: crate::retroarch::DEFAULT_PORT,
+            retroarch_port: crate::constants::RETROARCH_DEFAULT_PORT,
             retroarch_nickname: None,
             verbose_logging: false,
             developer_mode: false,
@@ -76,7 +76,10 @@ mod tests {
     fn defaults_to_the_fightcade_provider() {
         let config = Config::default();
         assert_eq!(config.provider, ProviderKind::Fightcade);
-        assert_eq!(config.retroarch_port, crate::retroarch::DEFAULT_PORT);
+        assert_eq!(
+            config.retroarch_port,
+            crate::constants::RETROARCH_DEFAULT_PORT
+        );
         assert!(config.retroarch_core.is_none());
     }
 

@@ -1,9 +1,9 @@
 use crate::config::{self, Config};
 use crate::constants;
-use crate::launcher::LaunchSpec;
+use crate::contracts::LaunchSpec;
 use crate::logging;
 use crate::probe;
-use crate::provider::Role;
+use crate::providers::Role;
 use crate::sync::MutexExt;
 use crate::tailscale::{self, PeerHealth};
 use crate::time;

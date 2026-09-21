@@ -1,163 +1,16 @@
+mod core;
+mod parity;
+mod spec;
+#[cfg(test)]
+mod test_support;
+
+pub use parity::ParityStatus;
+
+use super::{Capabilities, MatchRequest, Provider, ProviderKind, Role};
 use crate::config::Config;
-use crate::launcher::{InstallInfo, LaunchSpec};
-use crate::provider::{Capabilities, MatchRequest, Provider, ProviderKind, Role};
-use serde::Serialize;
-use std::collections::BTreeSet;
-use std::io::Read;
+use crate::constants;
+use crate::contracts::{InstallInfo, LaunchSpec};
 use std::path::{Path, PathBuf};
-
-pub const DEFAULT_PORT: u16 = 55435;
-pub const FROZEN_CORE_GIT: &str = "GIT6bb3167";
-pub const FROZEN_ROM_SHA256: &str =
-    "4ed142c90fc1a4632d20600d2f5b46caac813422caab62cce3fa9f85ee5cc4dc";
-
-#[allow(dead_code)]
-const FROZEN_CORE_SHA256_MACOS: &str =
-    "6472c6312fe6ad49a8001efabbdc4d2b542848a7c964d0a082cd736e01e8a4eb";
-#[allow(dead_code)]
-const FROZEN_CORE_SHA256_LINUX: &str =
-    "a154a08d0f97ff1c66e6ec22a5c209854f31eb2ed7d831b2cb4c0101d48a2448";
-#[allow(dead_code)]
-const FROZEN_CORE_SHA256_WINDOWS: &str =
-    "0a92f3b61dba68b34df0a93afe1b24b98debb3c25dfe63bf21c02034fdfa1179";
-
-#[cfg(target_os = "macos")]
-pub const DEFAULT_PROGRAM: &str = "/Applications/RetroArch.app/Contents/MacOS/RetroArch";
-#[cfg(target_os = "linux")]
-pub const DEFAULT_PROGRAM: &str = "retroarch";
-#[cfg(target_os = "windows")]
-pub const DEFAULT_PROGRAM: &str = "retroarch.exe";
-
-pub const fn core_file_name() -> &'static str {
-    #[cfg(target_os = "macos")]
-    {
-        "fbneo_libretro.dylib"
-    }
-    #[cfg(target_os = "linux")]
-    {
-        "fbneo_libretro.so"
-    }
-    #[cfg(target_os = "windows")]
-    {
-        "fbneo_libretro.dll"
-    }
-}
-
-pub fn platform_tag() -> &'static str {
-    #[cfg(target_os = "macos")]
-    return if cfg!(target_arch = "aarch64") {
-        "macos-arm64"
-    } else {
-        "macos-x86_64"
-    };
-    #[cfg(target_os = "linux")]
-    return if cfg!(target_arch = "aarch64") {
-        "linux-aarch64"
-    } else {
-        "linux-x86_64"
-    };
-    #[cfg(target_os = "windows")]
-    return "windows-x86_64";
-    #[allow(unreachable_code)]
-    "unsupported"
-}
-
-pub fn frozen_core_sha256() -> &'static str {
-    #[cfg(target_os = "macos")]
-    return FROZEN_CORE_SHA256_MACOS;
-    #[cfg(target_os = "linux")]
-    return FROZEN_CORE_SHA256_LINUX;
-    #[cfg(target_os = "windows")]
-    return FROZEN_CORE_SHA256_WINDOWS;
-    #[allow(unreachable_code)]
-    ""
-}
-
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
-
-fn standard_core_dirs(home: Option<&Path>) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-
-    if cfg!(target_os = "macos") {
-        if let Some(home) = home {
-            dirs.push(home.join("Library/Application Support/RetroArch/cores"));
-        }
-    }
-
-    if cfg!(target_os = "linux") {
-        if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
-            dirs.push(PathBuf::from(xdg).join("retroarch/cores"));
-        }
-        if let Some(home) = home {
-            dirs.push(home.join(".config/retroarch/cores"));
-            dirs.push(home.join(".var/app/org.libretro.RetroArch/config/retroarch/cores"));
-        }
-    }
-
-    if cfg!(target_os = "windows") {
-        dirs.push(PathBuf::from("C:/RetroArch-Win64/cores"));
-        dirs.push(PathBuf::from("C:/RetroArch/cores"));
-        if let Some(appdata) = std::env::var_os("APPDATA") {
-            dirs.push(PathBuf::from(appdata).join("RetroArch/cores"));
-        }
-    }
-
-    dirs
-}
-
-fn core_candidates(program: &Path, home: Option<&Path>) -> Vec<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(parent) = program
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        candidates.push(parent.join("cores").join(core_file_name()));
-    }
-    candidates.extend(
-        standard_core_dirs(home)
-            .into_iter()
-            .map(|dir| dir.join(core_file_name())),
-    );
-    candidates
-}
-
-fn resolve_core(configured: Option<&str>, candidates: &[PathBuf], managed: PathBuf) -> PathBuf {
-    if let Some(value) = configured.map(str::trim).filter(|value| !value.is_empty()) {
-        return PathBuf::from(value);
-    }
-    candidates
-        .iter()
-        .find(|candidate| candidate.is_file())
-        .cloned()
-        .unwrap_or(managed)
-}
-
-pub fn managed_core_path(app_data_dir: &Path) -> PathBuf {
-    app_data_dir
-        .join("cores")
-        .join(platform_tag())
-        .join(core_file_name())
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ParityStatus {
-    pub applicable: bool,
-    pub ok: bool,
-    pub core_path: String,
-    pub core_git: Option<String>,
-    pub core_sha256: Option<String>,
-    pub expected_git: String,
-    pub expected_sha256: String,
-    pub rom_path: String,
-    pub rom_sha256: Option<String>,
-    pub expected_rom_sha256: String,
-    pub detail: String,
-}
 
 pub struct RetroArchProvider {
     program: PathBuf,
@@ -176,11 +29,11 @@ impl RetroArchProvider {
             .as_deref()
             .filter(|value| !value.trim().is_empty())
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_PROGRAM));
-        let managed_core = managed_core_path(app_data_dir);
-        let home = home_dir();
-        let candidates = core_candidates(&program, home.as_deref());
-        let core = resolve_core(cfg.retroarch_core.as_deref(), &candidates, managed_core);
+            .unwrap_or_else(|| PathBuf::from(core::DEFAULT_PROGRAM));
+        let managed_core = core::managed_core_path(app_data_dir);
+        let home = core::home_dir();
+        let candidates = core::core_candidates(&program, home.as_deref());
+        let core = core::resolve_core(cfg.retroarch_core.as_deref(), &candidates, managed_core);
         let nickname = cfg
             .retroarch_nickname
             .as_deref()
@@ -196,11 +49,11 @@ impl RetroArchProvider {
             program,
             core,
             port: if cfg.retroarch_port == 0 {
-                DEFAULT_PORT
+                constants::RETROARCH_DEFAULT_PORT
             } else {
                 cfg.retroarch_port
             },
-            nickname: sanitize_value(&nickname),
+            nickname: spec::sanitize_value(&nickname),
             overrides_dir: app_config_dir.join("retroarch"),
             peer_override: dev.then(|| "127.0.0.1".to_string()),
             verbose: cfg.verbose_logging,
@@ -213,44 +66,8 @@ impl RetroArchProvider {
             .unwrap_or_else(|| fallback.to_string())
     }
 
-    fn overrides_path(&self, role: Role) -> PathBuf {
-        self.overrides_dir
-            .join(format!("netplay-{}.cfg", role.key()))
-    }
-
     fn write_overrides(&self, role: Role) -> Result<PathBuf, String> {
-        let dir = self.overrides_dir.join(role.key());
-        let saves = dir.join("saves");
-        let states = dir.join("states");
-        std::fs::create_dir_all(&saves)
-            .map_err(|err| format!("cannot create {}: {err}", saves.display()))?;
-        std::fs::create_dir_all(&states)
-            .map_err(|err| format!("cannot create {}: {err}", states.display()))?;
-
-        let mut content = String::new();
-        content.push_str("config_save_on_exit = \"false\"\n");
-        content.push_str("video_fullscreen = \"false\"\n");
-        content.push_str("pause_nonactive = \"false\"\n");
-        content.push_str("netplay_nat_traversal = \"false\"\n");
-        content.push_str("netplay_public_announce = \"false\"\n");
-        content.push_str("netplay_check_frames = \"600\"\n");
-        content.push_str("netplay_ping_show = \"true\"\n");
-        content.push_str("netplay_allow_slaves = \"true\"\n");
-        content.push_str("netplay_require_slaves = \"false\"\n");
-        content.push_str("netplay_max_connections = \"8\"\n");
-        content.push_str(&format!("netplay_ip_port = \"{}\"\n", self.port));
-        content.push_str(&format!("netplay_nickname = \"{}\"\n", self.nickname));
-        content.push_str(&format!("savefile_directory = \"{}\"\n", saves.display()));
-        content.push_str(&format!("savestate_directory = \"{}\"\n", states.display()));
-        if role == Role::Spectator {
-            content.push_str("netplay_start_as_spectator = \"true\"\n");
-        }
-
-        let path = self.overrides_path(role);
-        std::fs::write(&path, &content)
-            .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
-        log::debug!(target: "retroarch", "appendconfig {}:\n{}", path.display(), content);
-        Ok(path)
+        spec::write_overrides(self, role)
     }
 }
 
@@ -260,7 +77,7 @@ impl Provider for RetroArchProvider {
     }
 
     fn detect(&self) -> Result<InstallInfo, String> {
-        let program_ok = self.program.is_file() || is_on_path(&self.program);
+        let program_ok = self.program.is_file() || core::is_on_path(&self.program);
         let core_ok = self.core.is_file();
         let installed = program_ok && core_ok;
         let detail = if installed {
@@ -296,27 +113,17 @@ impl Provider for RetroArchProvider {
             return Err(format!("ROM not found: {}", request.rom_path.display()));
         }
         let overrides = self.write_overrides(request.role)?;
-        let mut args = vec![
-            "-L".to_string(),
-            self.core.to_string_lossy().to_string(),
-            request.rom_path.to_string_lossy().to_string(),
-            "--appendconfig".to_string(),
-            overrides.to_string_lossy().to_string(),
-        ];
-        if self.verbose {
-            args.push("--verbose".to_string());
-        }
-        match request.role {
-            Role::P1 => args.push("-H".to_string()),
-            Role::P2 | Role::Spectator => {
-                args.push("-C".to_string());
-                args.push(self.peer(request.peer_ip));
-            }
-        }
-        args.push("--port".to_string());
-        args.push(self.port.to_string());
-        args.push("--nick".to_string());
-        args.push(self.nickname.clone());
+        let peer = self.peer(request.peer_ip);
+        let args = spec::launch_args(&spec::Args {
+            core: &self.core,
+            rom_path: request.rom_path,
+            overrides: &overrides,
+            verbose: self.verbose,
+            role: request.role,
+            peer: &peer,
+            port: self.port,
+            nickname: &self.nickname,
+        });
 
         Ok(LaunchSpec {
             program: self.program.clone(),
@@ -331,295 +138,14 @@ impl Provider for RetroArchProvider {
     }
 
     fn parity(&self, rom_path: &Path) -> Result<Option<ParityStatus>, String> {
-        let expected_git = FROZEN_CORE_GIT.to_string();
-        let expected_sha = frozen_core_sha256().to_string();
-        let expected_rom = FROZEN_ROM_SHA256.to_string();
-
-        let core_sha = sha256_file(&self.core).ok();
-        let core_git = core_git(&self.core).ok().flatten();
-        let rom_sha = sha256_file(rom_path).ok();
-
-        let core_ok = core_sha.as_deref() == Some(expected_sha.as_str())
-            && core_git.as_deref() == Some(expected_git.as_str());
-        let rom_ok = rom_sha.as_deref() == Some(expected_rom.as_str());
-        let ok = core_ok && rom_ok;
-
-        let detail = if ok {
-            "PARITY OK (core revision + sha256, ROM sha256)".to_string()
-        } else {
-            let mut parts = Vec::new();
-            if core_sha.is_none() {
-                parts.push(format!(
-                    "core not found at {} — set the FBNeo core in Settings",
-                    self.core.display()
-                ));
-            } else if !core_ok {
-                parts.push("core revision or sha256 differs from the frozen set".to_string());
-            }
-            if rom_sha.is_none() {
-                parts.push(format!("ROM not readable: {}", rom_path.display()));
-            } else if !rom_ok {
-                parts.push("ROM sha256 differs from the frozen reference".to_string());
-            }
-            format!("PARITY MISMATCH — {}", parts.join("; "))
-        };
-
-        Ok(Some(ParityStatus {
-            applicable: true,
-            ok,
-            core_path: self.core.to_string_lossy().to_string(),
-            core_git,
-            core_sha256: core_sha,
-            expected_git,
-            expected_sha256: expected_sha,
-            rom_path: rom_path.to_string_lossy().to_string(),
-            rom_sha256: rom_sha,
-            expected_rom_sha256: expected_rom,
-            detail,
-        }))
+        parity::status(self, rom_path)
     }
-}
-
-fn is_on_path(program: &Path) -> bool {
-    if program.components().count() > 1 {
-        return program.is_file();
-    }
-    let Some(path) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path).any(|dir| dir.join(program).is_file())
-}
-
-fn sanitize_value(value: &str) -> String {
-    value.replace(['"', '\n', '\r'], "")
-}
-
-fn sha256_file(path: &Path) -> Result<String, String> {
-    use sha2::{Digest, Sha256};
-
-    let mut file = std::fs::File::open(path).map_err(|err| err.to_string())?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer).map_err(|err| err.to_string())?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
-fn core_git(path: &Path) -> Result<Option<String>, String> {
-    let bytes = std::fs::read(path).map_err(|err| err.to_string())?;
-    let mut found: BTreeSet<String> = BTreeSet::new();
-    let mut index = 0;
-    while index + 3 <= bytes.len() {
-        if &bytes[index..index + 3] == b"GIT" {
-            let mut end = index + 3;
-            while end < bytes.len() && bytes[end].is_ascii_hexdigit() {
-                end += 1;
-            }
-            if end > index + 3 && end - index <= 40 {
-                found.insert(String::from_utf8_lossy(&bytes[index..end]).to_string());
-            }
-            index = end;
-        } else {
-            index += 1;
-        }
-    }
-    Ok(found.into_iter().next())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct Scratch {
-        dir: PathBuf,
-    }
-
-    impl Scratch {
-        fn new(tag: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!(
-                "cabinet-retroarch-{}-{}-{tag}",
-                std::process::id(),
-                unique()
-            ));
-            std::fs::create_dir_all(&dir).expect("create scratch dir");
-            Self { dir }
-        }
-
-        fn rom(&self) -> PathBuf {
-            let path = self.dir.join("sfiii3nr1.zip");
-            std::fs::write(&path, b"rom-bytes").expect("write rom");
-            path
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            std::fs::remove_dir_all(&self.dir).ok();
-        }
-    }
-
-    fn unique() -> u128 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or(0)
-    }
-
-    fn provider(scratch: &Scratch) -> RetroArchProvider {
-        RetroArchProvider {
-            program: PathBuf::from(DEFAULT_PROGRAM),
-            core: PathBuf::from("/app/cores/fbneo_libretro.dylib"),
-            port: 55435,
-            nickname: "spike".to_string(),
-            overrides_dir: scratch.dir.join("cfg"),
-            peer_override: None,
-            verbose: true,
-        }
-    }
-
-    fn request<'a>(role: Role, rom: &'a Path, peer: &'a str) -> MatchRequest<'a> {
-        MatchRequest {
-            role,
-            rom: "sfiii3nr1",
-            rom_path: rom,
-            peer_ip: peer,
-        }
-    }
-
-    #[test]
-    fn p1_spec_hosts_on_loopback_port() {
-        let scratch = Scratch::new("p1");
-        let rom = scratch.rom();
-        let spec = provider(&scratch)
-            .spec(&request(Role::P1, &rom, "100.64.0.2"))
-            .unwrap();
-        assert_eq!(spec.program, PathBuf::from(DEFAULT_PROGRAM));
-        assert_eq!(
-            spec.args,
-            vec![
-                "-L",
-                "/app/cores/fbneo_libretro.dylib",
-                rom.to_str().unwrap(),
-                "--appendconfig",
-                scratch
-                    .dir
-                    .join("cfg")
-                    .join("netplay-p1.cfg")
-                    .to_str()
-                    .unwrap(),
-                "--verbose",
-                "-H",
-                "--port",
-                "55435",
-                "--nick",
-                "spike",
-            ]
-        );
-    }
-
-    #[test]
-    fn p2_spec_connects_to_the_peer() {
-        let scratch = Scratch::new("p2");
-        let rom = scratch.rom();
-        let spec = provider(&scratch)
-            .spec(&request(Role::P2, &rom, "100.64.0.2"))
-            .unwrap();
-        assert_eq!(
-            spec.args,
-            vec![
-                "-L",
-                "/app/cores/fbneo_libretro.dylib",
-                rom.to_str().unwrap(),
-                "--appendconfig",
-                scratch
-                    .dir
-                    .join("cfg")
-                    .join("netplay-p2.cfg")
-                    .to_str()
-                    .unwrap(),
-                "--verbose",
-                "-C",
-                "100.64.0.2",
-                "--port",
-                "55435",
-                "--nick",
-                "spike",
-            ]
-        );
-    }
-
-    #[test]
-    fn spectator_spec_connects_and_sets_the_spectator_flag() {
-        let scratch = Scratch::new("spec");
-        let rom = scratch.rom();
-        let provider = provider(&scratch);
-        let spec = provider
-            .spec(&request(Role::Spectator, &rom, "100.64.0.2"))
-            .unwrap();
-        let connect = spec.args.iter().position(|arg| arg == "-C").unwrap();
-        assert_eq!(spec.args[connect + 1], "100.64.0.2");
-        let overrides = std::fs::read_to_string(provider.overrides_path(Role::Spectator)).unwrap();
-        assert!(overrides.contains("netplay_start_as_spectator = \"true\""));
-        provider
-            .spec(&request(Role::P2, &rom, "100.64.0.2"))
-            .unwrap();
-        let player = std::fs::read_to_string(provider.overrides_path(Role::P2)).unwrap();
-        assert!(!player.contains("netplay_start_as_spectator"));
-    }
-
-    #[test]
-    fn overrides_disable_pause_and_never_touch_the_user_config() {
-        let scratch = Scratch::new("overrides");
-        let rom = scratch.rom();
-        provider(&scratch)
-            .spec(&request(Role::P1, &rom, "100.64.0.2"))
-            .unwrap();
-        let overrides =
-            std::fs::read_to_string(scratch.dir.join("cfg").join("netplay-p1.cfg")).unwrap();
-        assert!(overrides.contains("pause_nonactive = \"false\""));
-        assert!(overrides.contains("config_save_on_exit = \"false\""));
-        assert!(overrides.contains("netplay_nat_traversal = \"false\""));
-    }
-
-    #[test]
-    fn verbose_flag_is_gated_on_the_setting() {
-        let scratch = Scratch::new("verbose-off");
-        let rom = scratch.rom();
-        let mut provider = provider(&scratch);
-        provider.verbose = false;
-        let spec = provider
-            .spec(&request(Role::P1, &rom, "100.64.0.2"))
-            .unwrap();
-        assert!(!spec.args.iter().any(|arg| arg == "--verbose"));
-    }
-
-    #[test]
-    fn dev_launch_rewrites_the_peer_to_loopback() {
-        let scratch = Scratch::new("dev");
-        let rom = scratch.rom();
-        let mut provider = provider(&scratch);
-        provider.peer_override = Some("127.0.0.1".to_string());
-        let spec = provider
-            .spec(&request(Role::P2, &rom, "100.64.0.2"))
-            .unwrap();
-        let connect = spec.args.iter().position(|arg| arg == "-C").unwrap();
-        assert_eq!(spec.args[connect + 1], "127.0.0.1");
-    }
-
-    #[test]
-    fn missing_rom_fails_before_launching() {
-        let scratch = Scratch::new("missing");
-        let rom = scratch.dir.join("nope.zip");
-        assert!(provider(&scratch)
-            .spec(&request(Role::P1, &rom, "100.64.0.2"))
-            .is_err());
-    }
+    use crate::providers::retroarch::test_support::{provider, request, Scratch};
 
     #[test]
     fn capabilities_match_the_degrade_paths() {
@@ -627,154 +153,6 @@ mod tests {
         let caps = provider(&scratch).capabilities();
         assert!(caps.spectate);
         assert!(caps.dev_pair);
-    }
-
-    #[test]
-    fn parity_detects_mismatch_against_the_frozen_set() {
-        let scratch = Scratch::new("parity");
-        let rom = scratch.rom();
-        let status = provider(&scratch)
-            .parity(&rom)
-            .unwrap()
-            .expect("retroarch has a parity gate");
-        assert!(!status.ok);
-        assert!(status.detail.starts_with("PARITY MISMATCH"));
-        assert_eq!(status.expected_git, FROZEN_CORE_GIT);
-        assert_eq!(status.expected_rom_sha256, FROZEN_ROM_SHA256);
-    }
-
-    #[test]
-    fn reads_the_core_git_revision() {
-        let scratch = Scratch::new("git");
-        let core = scratch.dir.join("core.bin");
-        std::fs::write(&core, b"....GIT6bb3167....extra GIT deadbeef").unwrap();
-        assert_eq!(core_git(&core).unwrap().as_deref(), Some("GIT6bb3167"));
-    }
-
-    #[test]
-    fn resolve_core_prefers_the_configured_path() {
-        let scratch = Scratch::new("configured");
-        let resolved = resolve_core(
-            Some("/custom/fbneo.dylib"),
-            &[scratch.dir.join("standard.dylib")],
-            scratch.dir.join("managed.dylib"),
-        );
-        assert_eq!(resolved, PathBuf::from("/custom/fbneo.dylib"));
-    }
-
-    #[test]
-    fn resolve_core_uses_the_first_existing_candidate() {
-        let scratch = Scratch::new("candidates");
-        let absent = scratch.dir.join("absent.dylib");
-        let present = scratch.dir.join("present.dylib");
-        std::fs::write(&present, b"core").unwrap();
-        let resolved = resolve_core(
-            Some("   "),
-            &[absent, present.clone()],
-            scratch.dir.join("managed.dylib"),
-        );
-        assert_eq!(resolved, present);
-    }
-
-    #[test]
-    fn resolve_core_falls_back_to_the_managed_path() {
-        let scratch = Scratch::new("managed");
-        let managed = scratch.dir.join("managed.dylib");
-        let resolved = resolve_core(None, &[scratch.dir.join("absent.dylib")], managed.clone());
-        assert_eq!(resolved, managed);
-    }
-
-    #[test]
-    fn managed_core_path_uses_the_platform_tag_and_file_name() {
-        let path = managed_core_path(Path::new("/data/the-cabinet"));
-        assert_eq!(
-            path,
-            PathBuf::from("/data/the-cabinet")
-                .join("cores")
-                .join(platform_tag())
-                .join(core_file_name())
-        );
-    }
-
-    #[test]
-    fn core_candidates_start_with_the_program_directory() {
-        let program = Path::new("/opt/RetroArch/retroarch");
-        let candidates = core_candidates(program, Some(Path::new("/home/player")));
-        assert_eq!(
-            candidates.first(),
-            Some(&PathBuf::from("/opt/RetroArch/cores").join(core_file_name()))
-        );
-    }
-
-    #[test]
-    fn core_candidates_include_the_host_standard_dir() {
-        let home = Path::new("/home/player");
-        let candidates = core_candidates(Path::new("retroarch"), Some(home));
-        #[cfg(target_os = "macos")]
-        assert!(candidates.contains(
-            &home
-                .join("Library/Application Support/RetroArch/cores")
-                .join(core_file_name())
-        ));
-        #[cfg(target_os = "linux")]
-        assert!(candidates.contains(&home.join(".config/retroarch/cores").join(core_file_name())));
-        #[cfg(target_os = "windows")]
-        assert!(candidates
-            .iter()
-            .any(|path| path.to_string_lossy().contains("RetroArch-Win64")));
-    }
-
-    fn managed_core_on_this_machine() -> Option<PathBuf> {
-        let home = std::env::var_os("HOME").map(PathBuf::from)?;
-        let app_dir = if cfg!(target_os = "macos") {
-            home.join("Library/Application Support/com.the-cabinet.app")
-        } else if cfg!(target_os = "windows") {
-            PathBuf::from(std::env::var_os("APPDATA")?).join("com.the-cabinet.app")
-        } else {
-            std::env::var_os("XDG_DATA_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join(".local/share"))
-                .join("com.the-cabinet.app")
-        };
-        let core = managed_core_path(&app_dir);
-        core.is_file().then_some(core)
-    }
-
-    #[test]
-    #[ignore = "reads the app-managed frozen core and FightCade ROM on this machine"]
-    fn live_managed_core_matches_the_frozen_set() {
-        let Some(rom_dir) = crate::roms::resolve_rom_dir(&Config::default()) else {
-            eprintln!("skipping: no ROM directory found");
-            return;
-        };
-        let rom = rom_dir.join("sfiii3nr1.zip");
-        if !rom.is_file() {
-            eprintln!("skipping: {} not present", rom.display());
-            return;
-        }
-        let Some(core) = managed_core_on_this_machine() else {
-            eprintln!("skipping: managed core not present on this machine");
-            return;
-        };
-        let scratch = Scratch::new("live-managed-parity");
-        let cfg = Config {
-            retroarch_core: Some(core.to_string_lossy().to_string()),
-            ..Config::default()
-        };
-        let provider = RetroArchProvider::new(&cfg, &scratch.dir, &scratch.dir, false);
-        let status = provider
-            .parity(&rom)
-            .unwrap()
-            .expect("retroarch has a parity gate");
-        eprintln!(
-            "core={} git={:?} rom={} detail={}",
-            status.core_path, status.core_git, status.rom_path, status.detail
-        );
-        assert!(
-            status.ok,
-            "expected the app-managed frozen core to match: {}",
-            status.detail
-        );
     }
 
     #[test]

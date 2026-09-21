@@ -1,4 +1,5 @@
-use super::{InstallInfo, LaunchSpec, Launcher, MatchConfig};
+use super::{Launcher, MatchConfig};
+use crate::contracts::{InstallInfo, LaunchSpec};
 use crate::process;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -117,17 +118,6 @@ impl LinuxLauncher {
         }
         None
     }
-
-    fn quark(&self, config: &MatchConfig) -> String {
-        match &self.peer_override {
-            Some(peer) => {
-                let mut overridden = config.clone();
-                overridden.peer_ip = peer.clone();
-                overridden.quark_arg()
-            }
-            None => config.quark_arg(),
-        }
-    }
 }
 
 impl Launcher for LinuxLauncher {
@@ -151,12 +141,7 @@ impl Launcher for LinuxLauncher {
             },
             Layout::Unavailable { detail } => detail.clone(),
         };
-        Ok(InstallInfo {
-            id: self.id().to_string(),
-            label: self.label().to_string(),
-            installed,
-            detail,
-        })
+        Ok(self.info(installed, detail))
     }
 
     fn emulator_dir(&self) -> PathBuf {
@@ -168,7 +153,7 @@ impl Launcher for LinuxLauncher {
     }
 
     fn spec(&self, config: &MatchConfig) -> Result<LaunchSpec, String> {
-        let quark = self.quark(config);
+        let quark = config.quark_arg_overriding(self.peer_override.as_deref());
         match &self.layout {
             Layout::Flatpak { data_dir } => {
                 let inner = format!(

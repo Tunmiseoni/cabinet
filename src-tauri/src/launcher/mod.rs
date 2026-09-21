@@ -1,4 +1,4 @@
-use serde::Serialize;
+use crate::contracts::{InstallInfo, LaunchSpec};
 use std::path::PathBuf;
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -7,15 +7,6 @@ pub mod linux;
 pub mod macos;
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub mod windows;
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstallInfo {
-    pub id: String,
-    pub label: String,
-    pub installed: bool,
-    pub detail: String,
-}
 
 #[derive(Debug, Clone)]
 pub struct MatchConfig {
@@ -70,14 +61,17 @@ impl MatchConfig {
             self.side
         )
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct LaunchSpec {
-    pub program: PathBuf,
-    pub args: Vec<String>,
-    pub cwd: PathBuf,
-    pub envs: Vec<(String, String)>,
+    pub fn quark_arg_overriding(&self, peer_override: Option<&str>) -> String {
+        match peer_override {
+            Some(peer) => {
+                let mut overridden = self.clone();
+                overridden.peer_ip = peer.to_string();
+                overridden.quark_arg()
+            }
+            None => self.quark_arg(),
+        }
+    }
 }
 
 pub trait Launcher: Send + Sync {
@@ -86,6 +80,15 @@ pub trait Launcher: Send + Sync {
     fn detect(&self) -> Result<InstallInfo, String>;
     fn emulator_dir(&self) -> PathBuf;
     fn spec(&self, config: &MatchConfig) -> Result<LaunchSpec, String>;
+
+    fn info(&self, installed: bool, detail: String) -> InstallInfo {
+        InstallInfo {
+            id: self.id().to_string(),
+            label: self.label().to_string(),
+            installed,
+            detail,
+        }
+    }
 }
 
 #[cfg(test)]
