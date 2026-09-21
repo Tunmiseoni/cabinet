@@ -117,6 +117,11 @@ pub trait Provider: Send + Sync {
     fn input_map(&self) -> Option<InputMap> {
         None
     }
+
+    /// Stage the core where the emulator can resolve it before launching (no-op by default).
+    fn ensure_core_visible(&self) -> crate::error::Result<()> {
+        Ok(())
+    }
 }
 
 pub(crate) fn resolve_provider(

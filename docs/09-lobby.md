@@ -237,6 +237,17 @@ or join a room, and the room assigns you a seat." Three seat types remain:
   same two players replay it.
 - The set ends when one side reaches N game wins; that transition triggers the rotation in §7.2
   step 4.
+- **Game boundary / character select (recorded 2026-09-21, not built).** SF3's own arcade rule leaves
+  the winner on their character and the loser re-picking, and netplay sessions are symmetric — the
+  app never reloads content (that would restart the emulator and lose the netplay session). At a game
+  boundary (the RAM watcher's game-end), the **host** issues a netplay-synced **`RESET`** over the
+  command socket: `command.h` maps `RESET` → `RARCH_RESET`, which netplay routes to
+  `RARCH_NETPLAY_CTL_RESET` → `netplay_core_reset()` and broadcasts as `NETPLAY_CMD_RESET`; **only the
+  host may reset** (a client reset is NAK'd, `network/netplay/netplay_frontend.c`). Both peers then
+  coin+start into a fresh select screen. Fallback if that feels clunky: a netplay-synced
+  `LOAD_STATE` (`RARCH_NETPLAY_CTL_LOAD_SAVESTATE`) to a per-ROM "fresh match" savestate. The
+  native winner-lock behaviour is otherwise left as-is; see [`10-lobby-spike.md`](10-lobby-spike.md)
+  §3 S9 (the `RESET`/`LOAD_STATE` boundary spike).
 
 ### 7.4 Live role switching (the rotation mechanism)
 
@@ -452,7 +463,13 @@ fallback. Steps 2–4 build order:
    and joins by address. `RoomView.tsx` (seats/set score) still belongs to step 3.
 3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher. **Result
    detection started 2026-09-21:** `lobby/results.rs` reads the `sfiii3nr1` health/round addresses and
-   classifies rounds; the first-to-N set machine and rotation remain.
+   classifies rounds; the first-to-N set machine and rotation remain. Also pending here (recorded
+   2026-09-21, deferred to this step):
+   - **Collapse Join/Watch into one Join.** Today `LobbyCard.tsx` offers separate **Join** and
+     **Watch** buttons and `assign_join` errors when the room is full. Replace them with a single
+     **Join** that seats you if a player slot is free and otherwise joins as a spectator, with the
+     §7.4 FIFO promoting you into the seat when it opens (no error on a full room).
+   - **Game-boundary `RESET`** for character select (§7.3) and its spike item.
 4. **History + scores** — local, per-machine, from own observation.
 5. **Replays** — only after the `.replay`-during-netplay spike (S8) passes.
 

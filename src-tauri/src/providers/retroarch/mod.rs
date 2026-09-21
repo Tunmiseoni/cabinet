@@ -40,6 +40,7 @@ pub struct RetroArchProvider {
     isolated_config: bool,
     autoconfig_dir: Option<PathBuf>,
     host_config: Option<PathBuf>,
+    core_dir: Option<PathBuf>,
     input: RetroArchInput,
     input_enabled: bool,
 }
@@ -70,6 +71,8 @@ impl RetroArchProvider {
         let tailscale_binary = crate::tailscale::resolve_binary(cfg).ok();
         let autoconfig_dir = core::resolve_autoconfig_dir(&program, home.as_deref());
         let host_config = core::resolve_host_config(&program, home.as_deref());
+        let core_dir =
+            core::resolve_retroarch_core_dir(host_config.as_deref(), &program, home.as_deref());
         Self {
             program,
             core,
@@ -98,6 +101,7 @@ impl RetroArchProvider {
             isolated_config: cfg.retroarch_isolated_config,
             autoconfig_dir,
             host_config,
+            core_dir,
             input: cfg.retroarch_input.clone(),
             input_enabled: cfg.retroarch_input_enabled,
         }
@@ -147,6 +151,15 @@ impl RetroArchProvider {
         start_as_spectator: bool,
     ) -> crate::error::Result<PathBuf> {
         spec::write_overrides(self, role, seat, nickname, start_as_spectator)
+    }
+
+    /// Make the core basename visible to RetroArch's own core scan, so its netplay capability
+    /// resolves instead of reading as an unsupported core. See `core::ensure_core_visible`.
+    pub(crate) fn ensure_core_visible(&self) -> crate::error::Result<()> {
+        let Some(core_dir) = self.core_dir.as_deref() else {
+            return Ok(());
+        };
+        core::ensure_core_visible(&self.core, core_dir).map(|_| ())
     }
 
     pub(crate) fn hotkey_map(&self) -> InputMap {
@@ -256,6 +269,10 @@ impl Provider for RetroArchProvider {
 
     fn input_map(&self) -> Option<InputMap> {
         Some(self.hotkey_map())
+    }
+
+    fn ensure_core_visible(&self) -> crate::error::Result<()> {
+        RetroArchProvider::ensure_core_visible(self)
     }
 }
 

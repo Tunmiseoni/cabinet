@@ -56,6 +56,7 @@ pub(super) fn provider(scratch: &Scratch) -> RetroArchProvider {
         isolated_config: false,
         autoconfig_dir: None,
         host_config: None,
+        core_dir: None,
         input: crate::config::RetroArchInput::default(),
         input_enabled: true,
     }

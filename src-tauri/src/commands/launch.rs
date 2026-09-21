@@ -214,6 +214,10 @@ pub(crate) fn launch_match_inner(
     if request.role == Role::Spectator && !provider.capabilities().spectate {
         return Err("this provider cannot spectate".into());
     }
+    if let Err(err) = provider.ensure_core_visible() {
+        log::error!("cannot stage the emulator core: {err}");
+        return Err(err);
+    }
     let peer_ip = effective_peer(request.dev, &request.peer_ip);
     if !request.dev {
         preflight(provider.as_ref(), request.role, &peer_ip, request.force)?;

@@ -29,6 +29,28 @@ pub(super) const fn core_file_name() -> &'static str {
     }
 }
 
+/// RetroArch resolves a loaded core's capability metadata by matching
+/// `path_basename_nocompression(core_path)` against its own scanned core list (`core_info_find_internal`
+/// in `core_info.c`). A miss leaves a zeroed entry, so `core_info_current_supports_netplay()` reports
+/// no netplay support even for a perfectly good core. Placing this `.info` beside a core in a scanned
+/// directory makes the lookup hit and declares deterministic savestates. See docs/10-lobby-spike.md (L9).
+pub(super) fn core_info_file_name() -> String {
+    let stem = core_file_name()
+        .rsplit_once('.')
+        .map_or(core_file_name(), |(stem, _)| stem);
+    format!("{stem}.info")
+}
+
+pub(super) const CORE_INFO_BODY: &str = "\
+display_name = \"FinalBurn Neo\"
+corename = \"FBNeo\"
+categories = \"Emulator\"
+authors = \"FBNeo team\"
+license = \"Non-commercial\"
+savestate = \"true\"
+savestate_features = \"deterministic\"
+";
+
 pub(super) fn platform_tag() -> &'static str {
     #[cfg(target_os = "macos")]
     {
@@ -189,6 +211,130 @@ pub(super) fn resolve_host_config(program: &Path, home: Option<&Path>) -> Option
         }
     }
     candidates.into_iter().find(|path| path.is_file())
+}
+
+/// Read a `key = "value"` line from a RetroArch config, ignoring comments and blank lines.
+fn config_value(contents: &str, key: &str) -> Option<String> {
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        if name.trim() != key {
+            continue;
+        }
+        let value = value.trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap_or(value);
+        return Some(value.to_string());
+    }
+    None
+}
+
+fn expand_tilde(value: &str, home: Option<&Path>) -> Option<PathBuf> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if value == "~" {
+        return home.map(Path::to_path_buf);
+    }
+    if let Some(rest) = value.strip_prefix("~/") {
+        return home.map(|home| home.join(rest));
+    }
+    Some(PathBuf::from(value))
+}
+
+/// The directories RetroArch may scan for cores, most authoritative first: the host config's
+/// `libretro_directory`, then the program-relative `cores/`, then the per-OS standard paths.
+pub(super) fn retroarch_core_dirs(
+    host_config: Option<&Path>,
+    program: &Path,
+    home: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    let push = |dirs: &mut Vec<PathBuf>, dir: PathBuf| {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    };
+
+    if let Some(config) = host_config {
+        if let Ok(contents) = std::fs::read_to_string(config) {
+            if let Some(value) = config_value(&contents, "libretro_directory") {
+                if let Some(dir) = expand_tilde(&value, home) {
+                    push(&mut dirs, dir);
+                }
+            }
+        }
+    }
+    if let Some(parent) = program
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        push(&mut dirs, parent.join("cores"));
+    }
+    for dir in standard_core_dirs(home) {
+        push(&mut dirs, dir);
+    }
+    dirs
+}
+
+/// The directory to install the core into: the first candidate that already exists, else the first
+/// non-program standard path (so a fresh install lands where RetroArch scans by default).
+pub(super) fn resolve_retroarch_core_dir(
+    host_config: Option<&Path>,
+    program: &Path,
+    home: Option<&Path>,
+) -> Option<PathBuf> {
+    let dirs = retroarch_core_dirs(host_config, program, home);
+    if let Some(existing) = dirs.iter().find(|dir| dir.is_dir()) {
+        return Some(existing.clone());
+    }
+    standard_core_dirs(home).into_iter().next()
+}
+
+/// Write the FBNeo `.info` into `dir` if it is absent, so RetroArch can resolve the core's
+/// netplay capability. Returns the path either way.
+pub(super) fn write_core_info(dir: &Path) -> crate::error::Result<PathBuf> {
+    let path = dir.join(core_info_file_name());
+    if path.exists() {
+        return Ok(path);
+    }
+    std::fs::create_dir_all(dir)
+        .map_err(|err| format!("cannot create {}: {err}", dir.display()))?;
+    std::fs::write(&path, CORE_INFO_BODY)
+        .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
+    Ok(path)
+}
+
+/// Guarantee a core named exactly `fbneo_libretro.<ext>` exists in `core_dir`, so RetroArch's
+/// basename lookup hits. An existing file is left untouched; otherwise the core we are about to
+/// load (`source`) is copied in. Returns whether the copy happened.
+pub(super) fn ensure_core_visible(source: &Path, core_dir: &Path) -> crate::error::Result<bool> {
+    let dest = core_dir.join(core_file_name());
+    if dest.is_file() {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(core_dir)
+        .map_err(|err| format!("cannot create {}: {err}", core_dir.display()))?;
+    std::fs::copy(source, &dest).map_err(|err| {
+        format!(
+            "cannot place the FBNeo core in {} ({err}) — check permissions, or install FBNeo through RetroArch's core downloader",
+            core_dir.display()
+        )
+    })?;
+    write_core_info(core_dir)?;
+    log::info!(
+        "placed the FBNeo core in {} so RetroArch can resolve its netplay support",
+        core_dir.display()
+    );
+    Ok(true)
 }
 
 pub(super) fn core_candidates(program: &Path, home: Option<&Path>) -> Vec<PathBuf> {
@@ -365,6 +511,7 @@ pub(crate) fn download_managed_core(
     if legacy.is_file() {
         let _ = std::fs::remove_file(&legacy);
     }
+    write_core_info(parent)?;
     log::info!("installed frozen core at {}", dest.display());
     Ok(dest)
 }
@@ -605,6 +752,111 @@ mod tests {
         let home = scratch.dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
         assert!(resolve_host_config(&program, Some(&home)).is_none());
+    }
+
+    #[test]
+    fn core_info_file_name_replaces_the_extension_with_info() {
+        assert_eq!(core_info_file_name(), "fbneo_libretro.info");
+    }
+
+    #[test]
+    fn config_value_reads_a_quoted_setting() {
+        let contents = "# comment\nfoo = \"bar\"\nlibretro_directory = \"/cores/here\"\n";
+        assert_eq!(
+            config_value(contents, "libretro_directory").as_deref(),
+            Some("/cores/here")
+        );
+        assert_eq!(config_value(contents, "missing"), None);
+        assert_eq!(config_value("x = y", "x").as_deref(), Some("y"));
+    }
+
+    #[test]
+    fn expand_tilde_uses_the_home_dir() {
+        let home = Path::new("/home/player");
+        assert_eq!(
+            expand_tilde("~/r", Some(home)),
+            Some(PathBuf::from("/home/player/r"))
+        );
+        assert_eq!(
+            expand_tilde("~", Some(home)),
+            Some(PathBuf::from("/home/player"))
+        );
+        assert_eq!(
+            expand_tilde("/abs", Some(home)),
+            Some(PathBuf::from("/abs"))
+        );
+        assert_eq!(expand_tilde("  ", Some(home)), None);
+    }
+
+    #[test]
+    fn retroarch_core_dirs_prefers_the_configured_directory() {
+        let scratch = Scratch::new("core-dirs");
+        let config = scratch.dir.join("retroarch.cfg");
+        std::fs::write(&config, "libretro_directory = \"~/retroarch-cores\"\n").unwrap();
+        let home = Path::new("/home/player");
+        let dirs = retroarch_core_dirs(Some(&config), Path::new("/opt/retroarch"), Some(home));
+        assert_eq!(dirs.first(), Some(&home.join("retroarch-cores")));
+    }
+
+    #[test]
+    fn resolve_retroarch_core_dir_prefers_the_existing_directory() {
+        let scratch = Scratch::new("core-dir-existing");
+        let configured = scratch.dir.join("configured-cores");
+        std::fs::create_dir_all(&configured).unwrap();
+        let config = scratch.dir.join("retroarch.cfg");
+        std::fs::write(
+            &config,
+            format!("libretro_directory = \"{}\"\n", configured.display()),
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_retroarch_core_dir(Some(&config), Path::new("/opt/retroarch"), None),
+            Some(configured)
+        );
+    }
+
+    #[test]
+    fn ensure_core_visible_installs_a_missing_core_and_info() {
+        let scratch = Scratch::new("ensure-core");
+        let source = scratch.dir.join("source-core");
+        std::fs::write(&source, b"core-bytes").unwrap();
+        let core_dir = scratch.dir.join("retroarch/cores");
+
+        assert!(ensure_core_visible(&source, &core_dir).unwrap());
+        assert_eq!(
+            std::fs::read(core_dir.join(core_file_name())).unwrap(),
+            b"core-bytes"
+        );
+        let contents = std::fs::read_to_string(core_dir.join(core_info_file_name())).unwrap();
+        assert!(contents.contains("savestate = \"true\""));
+        assert!(contents.contains("savestate_features = \"deterministic\""));
+        assert!(contents.contains("corename = \"FBNeo\""));
+    }
+
+    #[test]
+    fn ensure_core_visible_leaves_an_existing_core_untouched() {
+        let scratch = Scratch::new("ensure-core-existing");
+        let source = scratch.dir.join("source-core");
+        std::fs::write(&source, b"ours").unwrap();
+        let core_dir = scratch.dir.join("retroarch/cores");
+        std::fs::create_dir_all(&core_dir).unwrap();
+        let existing = core_dir.join(core_file_name());
+        std::fs::write(&existing, b"theirs").unwrap();
+
+        assert!(!ensure_core_visible(&source, &core_dir).unwrap());
+        assert_eq!(std::fs::read(&existing).unwrap(), b"theirs");
+        assert!(!core_dir.join(core_info_file_name()).exists());
+    }
+
+    #[test]
+    fn ensure_core_visible_reports_a_copy_failure() {
+        let scratch = Scratch::new("ensure-core-fail");
+        let error = ensure_core_visible(
+            &scratch.dir.join("absent-core"),
+            &scratch.dir.join("retroarch/cores"),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("FBNeo core"));
     }
 
     #[test]

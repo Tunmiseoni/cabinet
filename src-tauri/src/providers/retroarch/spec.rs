@@ -130,6 +130,10 @@ pub(super) fn write_overrides(
     content.push_str("netplay_nat_traversal = \"false\"\n");
     content.push_str("netplay_public_announce = \"false\"\n");
     content.push_str("netplay_check_frames = \"600\"\n");
+    // Newer RetroArch skips the core-info savestate gate when this is set. Harmless on builds that
+    // predate the setting (unknown keys are ignored); the real fix is placing the core where
+    // RetroArch scans it. See core::ensure_core_visible.
+    content.push_str("core_info_savestate_bypass = \"true\"\n");
     content.push_str("netplay_ping_show = \"true\"\n");
     content.push_str("netplay_allow_slaves = \"true\"\n");
     content.push_str("netplay_require_slaves = \"false\"\n");
@@ -328,6 +332,7 @@ mod tests {
         assert!(overrides.contains("pause_nonactive = \"false\""));
         assert!(overrides.contains("config_save_on_exit = \"false\""));
         assert!(overrides.contains("netplay_nat_traversal = \"false\""));
+        assert!(overrides.contains("core_info_savestate_bypass = \"true\""));
         assert!(overrides.contains("input_libretro_device_p1 = \"5\""));
         assert!(overrides.contains("input_libretro_device_p2 = \"5\""));
         assert!(overrides.contains("savestate_auto_load = \"false\""));

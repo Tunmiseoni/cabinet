@@ -150,6 +150,16 @@ impl NetplayTracker {
             return;
         }
 
+        // Emitted by `init_netplay` when the core reads as not netplay-capable (a core-info
+        // lookup miss) or declares INCOMPLETE/SINGLE_SESSION serialization quirks.
+        if message.starts_with("Core does not support netplay")
+            || message.starts_with("This core does not support netplay")
+        {
+            self.set_connection(NetplayConnection::Failed);
+            self.push_event(at_ms, "unsupported", message);
+            return;
+        }
+
         if message.starts_with("Failed to initialize netplay")
             || message.starts_with("Failed to set up netplay sockets")
         {
@@ -375,6 +385,24 @@ mod tests {
         assert!(tracker.feed(
             Role::P2,
             "[ERROR] [Netplay] Failed to set up netplay sockets."
+        ));
+        assert_eq!(tracker.info().connection, NetplayConnection::Failed);
+    }
+
+    #[test]
+    fn an_unsupported_core_marks_the_connection_failed() {
+        let mut tracker = new_tracker();
+        assert!(tracker.feed(Role::P2, "[ERROR] [Netplay] Core does not support netplay."));
+        assert_eq!(tracker.info().connection, NetplayConnection::Failed);
+        assert_eq!(tracker.info().events.last().unwrap().kind, "unsupported");
+    }
+
+    #[test]
+    fn a_platform_dependent_core_marks_the_connection_failed() {
+        let mut tracker = new_tracker();
+        assert!(tracker.feed(
+            Role::P1,
+            "[ERROR] [Netplay] This core does not support netplay between different platforms"
         ));
         assert_eq!(tracker.info().connection, NetplayConnection::Failed);
     }

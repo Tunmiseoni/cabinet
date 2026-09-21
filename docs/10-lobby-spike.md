@@ -20,6 +20,7 @@ decision, not just an implementation detail.
 | S6 | Netplay stays connected under the target load | v1's room "dropped" (cause unnamed — suspected network); this is the regression proof. |
 | S7 | The discovery beacon is reachable across all three OSes | Discovery "not working well" is not root-caused; if it was firewall/socket, the beacon must be redesigned. |
 | S8 | `.replay` recording works during netplay | Replays are deferred behind this; **optional** for the lobby gate. |
+| S9 | A game-boundary `RESET` returns both peers to character select | Character select is native winner-locked; the lobby needs a synced boundary it can trigger without relaunching. |
 
 This spike folds in **07-F11** (2 concurrent spectators over the tailnet), which was the last unmet
 Phase 3 acceptance criterion.
@@ -41,9 +42,10 @@ Phase 3 acceptance criterion.
 | S6 | Stability soak | 2 players + 2 spectators over the tailnet, **≥ 20 min**, with zero unintended disconnects, CRC failures, or timeouts |
 | S7 | Beacon reachable on all three OSes | A listener on the planned beacon port answers a query from every other machine; firewall rules documented |
 | S8 | (Optional) Replay during netplay | A netplay match recorded host-side replays deterministically; both players' inputs present |
+| S9 | Game-boundary `RESET` | The host's `RESET` resets both peers in sync to a fresh select screen (a client `RESET` is refused); record `RESET` vs `LOAD_STATE` |
 
-**Build gate (local): S1–S5.** **Release gate (online): S6–S7.** S8 can be deferred to the replays
-phase without blocking the lobby. Note S1's original "host outbound ≈ 0 B/s" wording was wrong — a
+**Build gate (local): S1–S5.** **Release gate (online): S6–S7.** S8 and S9 can be deferred (replays
+phase / sets+rotation) without blocking the lobby core. Note S1's original "host outbound ≈ 0 B/s" wording was wrong — a
 non-playing host is still a relay and forwards both clients' traffic; the real signal is that it holds
 no player slot.
 
@@ -192,6 +194,19 @@ discovery is unreliable, ship manual join first and treat discovery as a later i
 **Pass:** recording during netplay works and captures both inputs. Otherwise replays stay out of
 scope until the format/approach is re-decided.
 
+### S9 — Game-boundary `RESET` for character select
+
+1. With a host + one client in netplay (S1/S2), send `RESET` to the **host** instance's command
+   socket and confirm via `GET_STATUS`/logs that it resets and that the client follows in sync
+   (`NETPLAY_CMD_RESET`); confirm a `RESET` sent to the **client** is refused (NAK).
+2. Repeat at a real game boundary driven by the RAM watcher, then coin+start into a fresh character
+   select on both peers.
+3. If the reset flow feels clunky, probe the fallback: `LOAD_STATE` (netplay-synced
+   `RARCH_NETPLAY_CTL_LOAD_SAVESTATE`) to a per-ROM "fresh match" savestate and compare.
+
+**Pass:** the host can return both peers to a fresh select screen at a game boundary without
+relaunching. **Record:** which mechanism (`RESET` vs `LOAD_STATE`) and the core revision.
+
 ## 4. Procedure / order
 
 1. Freeze the reference set on all machines (07 §2); confirm content CRC `0x46119843`.
@@ -200,7 +215,7 @@ scope until the format/approach is re-decided.
 4. Run **S2 → S3 → S4** as one live-switch sequence against the S1 topology.
 5. Run **S5** alongside S1/S4 (round transitions occur during normal play).
 6. Schedule the **S6** tailnet soak last, when all four peers are online; run **S7** opportunistically.
-7. **S8** only if replays are being pulled forward.
+7. **S8** only if replays are being pulled forward; **S9** when sets + rotation are built.
 
 ## 5. Evidence log
 
@@ -214,6 +229,7 @@ scope until the format/approach is re-decided.
 | S6 | | duration: | pending |
 | S7 | | | pending |
 | S8 | | | not run |
+| S9 | | | not run |
 
 ## 6. Derived tasks
 
@@ -227,6 +243,7 @@ scope until the format/approach is re-decided.
 | L8 | **Live 2026-09-21:** after the host-seat change, a host seated at **P1** had controls but a **joining client seated at P2** did not — its config bound only `input_player2_*`. Root cause: `get_self_input_state` (`network/netplay/netplay_frontend.c`) captures a participant's local input from the **first local device of the matching type** (local device 0 -> `input_player1_*`), not from the player slot it was assigned; the slot is chosen by `netplay_request_device_pN`. | Bind the keyboard preset to `input_player1_*` for **any** seated instance (plus an `input_player2_*` duplicate for seat 2, as a hedge); set `netplay_request_device_p1`/`p2` from the host's seat so "play as P2" is real; leave clients unset so RetroArch auto-assigns the free slot. | High — **Fixed 2026-09-21 (v0.1.10).** |
 | L6 | Host-as-spectator and live switching all work, and the loser's health saturates to `0xFF`. | Record `0x068D08`, `0x0691A0`, `0x010D28` + core `GIT6bb3167` in the design; re-validate on core/ROM change. | Medium |
 | L7 | External research (FBNeo training-mode `sfiii3.lua`, MAME cheats) independently agrees there is **no** P1/P2 win byte and that result logic uses health + timer. It also lists timer `0x02011377`, match state `0x020154A6`, and player structs `0x02068C6C`/`0x02069104` (0x498 apart — matches ours). Its health `0x02068D0B`/`0x020691A3` read `00` on our ROM (ours read `A0`); they are parent-`sfiii3` offsets, **+3** from `sfiii3nr1`. | Validate `0x011377` (timer) and `0x0154A6` (match state) on `sfiii3nr1` in a live round — the timer may be a cleaner round-transition trigger than `0x010D28`. Never blind-copy parent-ROM offsets. | Medium |
+| L9 | **Live 2026-09-21 (Linux friend, `misc/logs-linux-21-09-2026`):** a perfectly good frozen FBNeo core launched and then netplay was refused with `[ERROR] [Netplay] Core does not support netplay.` Root cause is **not** the core build or RetroArch's version: `init_netplay` (`network/netplay/netplay_frontend.c`) consults `core_info_current_supports_netplay()`, and RetroArch resolves a loaded core's capability metadata by **basename** (`path_basename_nocompression(core_path)`) against its own **scanned** core list (`core_info_find_internal`, `core_info.c`). Our managed core lives under the app data dir, outside that list, and the friend had no other FBNeo installed, so `core_info_list_get_info` left a **`memset` zeroed** entry (`savestate_support_level = 0`) and `core_info_load` returned false without repairing it → refused. The macOS peer only passed by luck: it happens to have `~/Library/Application Support/RetroArch/cores/fbneo_libretro.dylib` (no `.info`), and a scanned core with a missing `.info` defaults to `SAVESTATE_DETERMINISTIC` (`core_info.c` ~2128). This holds on 1.14.0 *and* 1.22.2 alike; `core_info_savestate_bypass` (a newer setting) does not exist on 1.14.0. | Guarantee a `fbneo_libretro.<ext>` exists in the directory RetroArch scans (`libretro_directory`, else the per-OS default) with a deterministic `.info` beside it — install the frozen core on launch preflight when the basename is missing, never clobbering an existing file — and keep loading our own core for parity. Surface `Core does not support netplay` (and the platform-dependent variant) in the tracker. | High — **Fixed 2026-09-21** (`core::ensure_core_visible`, launch preflight). |
 
 ## 7. Decision matrix
 
@@ -240,6 +257,7 @@ scope until the format/approach is re-decided.
 | S6 fails | Diagnose the disconnect before building; discovery/netplay stability may be the real v1 root cause. |
 | S7 fails | Ship manual join first; beacon is a follow-up investigation. |
 | S8 fails | Replays remain deferred; the lobby is unaffected. |
+| S9 fails | Character select keeps SF3's native winner-lock; the boundary just waits for both peers to coin+start (or use `LOAD_STATE`), and the app does not force a reset. |
 
 ## 8. Reference
 
