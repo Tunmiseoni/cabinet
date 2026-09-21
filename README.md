@@ -153,7 +153,7 @@ FUSE2 is missing, install `fuse2` or run the AppImage with
 the-cabinet/
 ├─ frontend/     Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias @/* -> frontend/src/*)
 ├─ src-tauri/    Rust backend (Tauri v2)
-│  └─ src/       config, tailscale, roms, launcher, session, provider, retroarch, windowing, commands
+│  └─ src/       config, contracts, tailscale, roms, launcher, providers, session, windowing, commands
 ├─ scripts/      helper scripts + the original per-OS FightCade launchers
 └─ docs/         investigation record (01–03) and current spec (04)
 ```
