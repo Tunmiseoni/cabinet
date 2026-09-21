@@ -110,6 +110,14 @@ pub(super) fn write_overrides(
     let mut content = String::new();
     content.push_str("config_save_on_exit = \"false\"\n");
     content.push_str("video_fullscreen = \"false\"\n");
+    // macOS: pin MoltenVK for the session. RetroArch's Metal driver is broken on
+    // Apple Silicon + macOS 26 (~8 fps; libretro/RetroArch#18442), and a
+    // menu-selected driver is not persisted (`config_save_on_exit = "false"`), so
+    // the host config can hide that RetroArch is running Metal. Linux/Windows keep
+    // the user's driver.
+    if cfg!(target_os = "macos") {
+        content.push_str("video_driver = \"vulkan\"\n");
+    }
     content.push_str("pause_nonactive = \"false\"\n");
     content.push_str("netplay_nat_traversal = \"false\"\n");
     content.push_str("netplay_public_announce = \"false\"\n");
@@ -293,6 +301,22 @@ mod tests {
         assert!(overrides.contains("input_libretro_device_p1 = \"5\""));
         assert!(overrides.contains("input_libretro_device_p2 = \"5\""));
         assert!(overrides.contains("savestate_auto_load = \"false\""));
+    }
+
+    #[test]
+    fn macos_sessions_pin_a_known_good_video_driver() {
+        let scratch = Scratch::new("video-driver");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let content = overrides(&provider, Role::P1);
+        if cfg!(target_os = "macos") {
+            assert!(content.contains("video_driver = \"vulkan\""));
+        } else {
+            assert!(!content.contains("video_driver"));
+        }
     }
 
     #[test]

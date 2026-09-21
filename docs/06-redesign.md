@@ -194,6 +194,15 @@ voice, input recording / match history, and the RetroArch migration.
 - **Wayland:** no reparenting; frame-follow or separate window only.
 - **Multi-instance (Dev pair):** two emulator windows on one machine must not be confused.
 - **FightCade updates** can change window titles/behaviour; keep matching defensive.
+- **macOS emulator fullscreen + window feel (2026-09-21).** A user report of RetroArch
+  "severely slowing down" in macOS native fullscreen was **not reproduced** on Vulkan (windowed and
+  native fullscreen, single/4-instance/netplay, all ~50–56 fps); the real fault was RetroArch's
+  **Metal** driver (~8 fps on Apple Silicon + macOS 26, libretro/RetroArch#18442), now guarded by
+  pinning `video_driver = "vulkan"` for macOS app sessions (`07-retroarch-spike.md` F22). The
+  separate "maximizing/interacting doesn't feel macOS-ish" complaint is **open**: AX placement is
+  inherently programmatic (the 2 s re-assert re-positions the emulator window), so it will not feel
+  like a native window drag/resize. Decide whether Cabinet mode should back off while the user is
+  manipulating the window, or whether frame-follow is the better default.
 - **Does the redesign fit "coordination layer, not a FightCade clone"?** The bezel must not start
   emulating FightCade's client chrome; it frames a direct-connect match, nothing more.
 
