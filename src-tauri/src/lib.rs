@@ -6,6 +6,7 @@ mod diagnostics;
 mod env;
 pub mod error;
 mod launcher;
+mod lobby;
 mod logging;
 mod netplay;
 mod probe;

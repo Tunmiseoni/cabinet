@@ -1,6 +1,7 @@
 mod fightcade;
 mod retroarch;
 
+pub(crate) use retroarch::command;
 pub(crate) use retroarch::InputMap;
 pub use retroarch::ParityStatus;
 pub(crate) use retroarch::RetroArchProvider;

@@ -1,5 +1,5 @@
 #[allow(dead_code)]
-mod command;
+pub(crate) mod command;
 mod core;
 mod hotkeys;
 mod parity;
@@ -377,6 +377,7 @@ mod tests {
         }
 
         let read = command::read_core_ram_bytes(port, 0x010D28, 1);
+        let snapshot = crate::lobby::results::read_snapshot(port, crate::lobby::results::SFIII3NR1);
 
         let _ = child.kill();
         let _ = child.wait();
@@ -388,5 +389,6 @@ mod tests {
         let read = read.expect("read the round counter over READ_CORE_RAM");
         assert_eq!(read.address, 0x010D28);
         assert_eq!(read.bytes.len(), 1);
+        assert!(snapshot.is_ok(), "read a health snapshot: {snapshot:?}");
     }
 }

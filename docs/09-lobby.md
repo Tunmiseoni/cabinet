@@ -1,10 +1,14 @@
 # Design: The Cabinet — Tailnet lobby (rooms, sets, spectating rotation)
 
-Status: **design agreed in a `/grill-me` session (2026-09-21); nothing implemented.** This document
+Status: **design agreed in a `/grill-me` session (2026-09-21); the lobby core has started.** This document
 supersedes the removed rooms/KotH subsystem ([`04-design.md`](04-design.md) §5) for the *replacement*
 lobby. It is a design, not a spec: [`04-design.md`](04-design.md) remains the top-level spec and will
 be updated as the pieces land. The **build order is gated on a hardware spike**, specified separately
-in [`10-lobby-spike.md`](10-lobby-spike.md) — read that before writing code.
+in [`10-lobby-spike.md`](10-lobby-spike.md) — read that before writing code. **Implemented
+2026-09-21:** the RetroArch command-socket plumbing (`providers/retroarch/command.rs`, per-instance
+command ports, `network_cmd_enable`) and per-ROM RAM result detection (`lobby/results.rs`, the
+`sfiii3nr1` address table and round-outcome watcher). **Not implemented:** rooms, beacon/manual join,
+sets/rotation, history/scores.
 
 Motivation: the current flow makes the user pick a **role** (P1 / P2 / Spectator) against a peer by
 hand, and there is no way to *find* a session. The lobby reframes this around a **room**: create one,
@@ -296,26 +300,28 @@ socket related.
 - Accepted risk: a core/ROM update silently invalidates old replays; the stored identity lets
   playback refuse clearly rather than desync.
 
-## 8. Module map (proposed, not built)
+## 8. Module map (partially built)
 
 Indicative only; names may change. It slots into the existing `src-tauri` layout without reviving
-any deleted module.
+any deleted module. **Built 2026-09-21:** the command socket lives in
+`providers/retroarch/command.rs` (with per-instance port allocation in the provider), and the
+per-ROM RAM watcher is `lobby/results.rs`. The items marked *proposed* are not built.
 
 ```
 src-tauri/src/
 ├─ lobby/
-│  ├─ room.rs        -> room model (rom, firstTo, seats, phase, node ids)
-│  ├─ beacon.rs      -> serve + query the read-only discovery beacon
-│  ├─ control.rs     -> the RetroArch command socket (NETPLAY_GAME_WATCH, READ_CORE_MEMORY, …)
-│  ├─ sets.rs        -> set/rotation state machine (first-to-N, FIFO)
-│  └─ results.rs     -> per-ROM RAM watcher (address table + desync cross-check)
-├─ scores.rs         -> local per-opponent ledger (observed locally)
-├─ history.rs        -> local set/round index
-└─ providers/retroarch -> gains command-socket plumbing (port allocation, overrides)
+│  ├─ room.rs        -> room model (rom, firstTo, seats, phase, node ids)   [proposed]
+│  ├─ beacon.rs      -> serve + query the read-only discovery beacon         [proposed]
+│  ├─ control.rs     -> the RetroArch command socket (NETPLAY_GAME_WATCH, READ_CORE_RAM, …) [built in providers/retroarch/command.rs]
+│  ├─ sets.rs        -> set/rotation state machine (first-to-N, FIFO)         [proposed]
+│  └─ results.rs     -> per-ROM RAM watcher (address table + desync cross-check) [built]
+├─ scores.rs         -> local per-opponent ledger (observed locally)          [proposed]
+├─ history.rs        -> local set/round index                                 [proposed]
+└─ providers/retroarch -> command-socket plumbing (port allocation, overrides) [built]
 
 frontend/src/components/
-├─ LobbyCard.tsx     -> create/join room, room list
-└─ RoomView.tsx      -> seats, set score, rotation state
+├─ LobbyCard.tsx     -> create/join room, room list                           [proposed]
+└─ RoomView.tsx      -> seats, set score, rotation state                      [proposed]
 ```
 
 ## 9. Open questions
@@ -377,7 +383,11 @@ fallback. Steps 2–4 build order:
 1. **Hardware spike** — S1–S5 **done locally**; S6–S7 pending online. (Build gate cleared; release
    gate open.)
 2. **Lobby core** — room lifecycle, beacon (+ manual join), parity pre-check, control-socket plumbing.
-3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher.
+   **Started 2026-09-21:** control-socket plumbing done (`providers/retroarch/command.rs`); room
+   lifecycle, beacon, and parity pre-check remain.
+3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher. **Result
+   detection started 2026-09-21:** `lobby/results.rs` reads the `sfiii3nr1` health/round addresses and
+   classifies rounds; the first-to-N set machine and rotation remain.
 4. **History + scores** — local, per-machine, from own observation.
 5. **Replays** — only after the `.replay`-during-netplay spike (S8) passes.
 
