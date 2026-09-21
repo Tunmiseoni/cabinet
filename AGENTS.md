@@ -49,7 +49,7 @@ State what you intend to do, why, and how to undo it, then wait for confirmation
 
 ## Repository layout
 
-- `docs/` — investigation and design. `01`–`03` are the historical troubleshooting record; `04-design.md` is the current spec; `08-cleanup.md` is the cleanup backlog (applied pass + deferred refactors).
+- `docs/` — investigation and design. `01`–`03` are the historical troubleshooting record; `04-design.md` is the current spec; `08-cleanup.md` is the cleanup backlog (applied pass + deferred refactors); `11-training-mode.md` is research-only (Fightcade/peon2 training and `3rd_training_lua`, gated on licensing + a `/grill-me` session).
 - `frontend/` — Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias `@/*` -> `frontend/src/*`).
 - `src-tauri/` — Rust backend (`config`, `tailscale`, `roms`, `launcher`, `contracts`, `providers/{fightcade,retroarch/{core,hotkeys,parity,spec}}`, `session`, `windowing`, `commands`).
 - `scripts/` — helper scripts (`dev.sh`, `build.sh`, `test.sh`, `clean.sh`, `setup-linux.sh`, `uninstall-linux.sh`, `diagnose-linux.sh`, `tauri-build.sh`, `patch-appimage.sh`, `retroarch-spike.sh`, `publish-cores.sh`) plus the reference per-OS launchers (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`, `fcade-lan-windows-firewall.bat`). `publish-cores.sh` uploads the frozen cores as assets of a published `retroarch-cores-v1` release on the public repo (never the repo tree); run it only on the user's say-so.

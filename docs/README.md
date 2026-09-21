@@ -30,6 +30,7 @@ is the current spec; `01`–`03` are the original investigation into
 | [`08-cleanup.md`](08-cleanup.md) | Cleanup backlog: the applied refactor pass and the deferred proposals |
 | [`09-lobby.md`](09-lobby.md) | Design for the replacement lobby (rooms, sets, winner-stays rotation, automatic RAM result detection, local scores/history) — agreed in a `/grill-me` session 2026-09-21, not implemented |
 | [`10-lobby-spike.md`](10-lobby-spike.md) | Hardware spike that gates the lobby: host-as-spectator, live role switching, RAM result detection, tailnet stability, beacon reachability |
+| [`11-training-mode.md`](11-training-mode.md) | Research (no code): Fightcade's bundled peon2 training script, `3rd_training_lua`, the FBNeo `--lua` launch hook, and the offline/licensing gates on a future Cabinet Practice mode |
 
 ## Environment (as observed)
 
