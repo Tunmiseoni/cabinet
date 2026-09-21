@@ -3808,7 +3808,7 @@ dependencies = [
 
 [[package]]
 name = "the-cabinet"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "accessibility-sys",
  "core-foundation",
