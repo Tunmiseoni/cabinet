@@ -28,6 +28,8 @@ is the current spec; `01`–`03` are the original investigation into
 | [`06-redesign.md`](06-redesign.md) | Proposal (gated on a /grill-me session): Cabinet mode (the emulator hosted inside the app) and the wider redesign pass. Also answers "does FightCade need to be installed?" |
 | [`07-retroarch-spike.md`](07-retroarch-spike.md) | Phase 0 RetroArch netplay/spectator spike: frozen core/ROM parity, harness, local loopback verification (2 players + 2 spectators), and the live feel-test protocol |
 | [`08-cleanup.md`](08-cleanup.md) | Cleanup backlog: the applied refactor pass and the deferred proposals |
+| [`09-lobby.md`](09-lobby.md) | Design for the replacement lobby (rooms, sets, winner-stays rotation, automatic RAM result detection, local scores/history) — agreed in a `/grill-me` session 2026-09-21, not implemented |
+| [`10-lobby-spike.md`](10-lobby-spike.md) | Hardware spike that gates the lobby: host-as-spectator, live role switching, RAM result detection, tailnet stability, beacon reachability |
 
 ## Environment (as observed)
 

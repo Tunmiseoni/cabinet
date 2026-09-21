@@ -1,4 +1,6 @@
+use super::hotkeys;
 use super::RetroArchProvider;
+use crate::config::RetroArchInput;
 use crate::providers::Role;
 use std::path::{Path, PathBuf};
 
@@ -47,6 +49,51 @@ pub(super) fn overrides_path(overrides_dir: &Path, role: Role) -> PathBuf {
     overrides_dir.join(format!("netplay-{}.cfg", role.key()))
 }
 
+/// The 12 preset keys mapped to their FBNeo Classic RetroPad bind suffix. P1 (host) uses
+/// `input_player1_*`; P2 (client) uses `input_player2_*`, matching RetroArch netplay's
+/// default `netplay_client_swap_input = false`. Spectators send no input.
+fn preset_binds(input: &RetroArchInput) -> [(&'static str, &'static str, &str); 12] {
+    [
+        ("up", "Up", &input.up),
+        ("down", "Down", &input.down),
+        ("left", "Left", &input.left),
+        ("right", "Right", &input.right),
+        ("y", "Light Punch", &input.light_punch),
+        ("x", "Medium Punch", &input.medium_punch),
+        ("l", "Heavy Punch", &input.heavy_punch),
+        ("b", "Light Kick", &input.light_kick),
+        ("a", "Medium Kick", &input.medium_kick),
+        ("r", "Heavy Kick", &input.heavy_kick),
+        ("start", "Start", &input.start),
+        ("select", "Coin", &input.coin),
+    ]
+}
+
+fn write_preset_binds(
+    content: &mut String,
+    input: &RetroArchInput,
+    role: Role,
+) -> crate::error::Result<()> {
+    let Some(prefix) = (match role {
+        Role::P1 => Some("input_player1"),
+        Role::P2 => Some("input_player2"),
+        Role::Spectator => None,
+    }) else {
+        return Ok(());
+    };
+    for (suffix, label, key) in preset_binds(input) {
+        let key = key.trim();
+        if !hotkeys::is_valid_key(key) {
+            return Err(format!("invalid RetroArch key \"{key}\" for {label}").into());
+        }
+        content.push_str(&format!(
+            "{prefix}_{suffix} = \"{}\"\n",
+            sanitize_value(key)
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn write_overrides(
     provider: &RetroArchProvider,
     role: Role,
@@ -73,6 +120,17 @@ pub(super) fn write_overrides(
     content.push_str("netplay_max_connections = \"8\"\n");
     content.push_str("input_libretro_device_p1 = \"5\"\n");
     content.push_str("input_libretro_device_p2 = \"5\"\n");
+    if provider.input_enabled {
+        write_preset_binds(&mut content, &provider.input, role)?;
+        let host_cfg = if provider.isolated_config {
+            None
+        } else {
+            provider.host_config.as_deref()
+        };
+        for config_key in hotkeys::colliding_hotkeys(host_cfg, &provider.input) {
+            content.push_str(&format!("{config_key} = \"nul\"\n"));
+        }
+    }
     content.push_str(&format!("netplay_ip_port = \"{}\"\n", provider.port));
     content.push_str(&format!("netplay_nickname = \"{}\"\n", nickname));
     if provider.max_ping_ms > 0 {
@@ -377,5 +435,126 @@ mod tests {
             .unwrap();
         assert!(!spec.args.iter().any(|arg| arg == "-c"));
         assert!(!base_config_path(&provider.overrides_dir).exists());
+    }
+
+    fn overrides(provider: &RetroArchProvider, role: Role) -> String {
+        std::fs::read_to_string(overrides_path(&provider.overrides_dir, role)).unwrap()
+    }
+
+    #[test]
+    fn preset_binds_are_written_for_each_player_role() {
+        let scratch = Scratch::new("preset-roles");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let p1 = overrides(&provider, Role::P1);
+        assert!(p1.contains("input_player1_up = \"space\""));
+        assert!(p1.contains("input_player1_y = \"u\""));
+        assert!(p1.contains("input_player1_x = \"i\""));
+        assert!(p1.contains("input_player1_l = \"o\""));
+        assert!(p1.contains("input_player1_b = \"j\""));
+        assert!(p1.contains("input_player1_a = \"k\""));
+        assert!(p1.contains("input_player1_r = \"l\""));
+        assert!(p1.contains("input_player1_start = \"num1\""));
+        assert!(p1.contains("input_player1_select = \"num5\""));
+        assert!(!p1.contains("input_player2_"));
+
+        provider
+            .spec(&request(Role::P2, &rom, "100.64.0.2"))
+            .unwrap();
+        let p2 = overrides(&provider, Role::P2);
+        assert!(p2.contains("input_player2_y = \"u\""));
+        assert!(!p2.contains("input_player1_"));
+
+        provider
+            .spec(&request(Role::Spectator, &rom, "100.64.0.2"))
+            .unwrap();
+        let spectator = overrides(&provider, Role::Spectator);
+        assert!(!spectator.contains("input_player1_"));
+        assert!(!spectator.contains("input_player2_"));
+    }
+
+    #[test]
+    fn preset_is_omitted_when_disabled() {
+        let scratch = Scratch::new("preset-off");
+        let rom = scratch.rom();
+        let mut provider = provider(&scratch);
+        provider.input_enabled = false;
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let content = overrides(&provider, Role::P1);
+        assert!(!content.contains("input_player1_y"));
+        assert!(!content.contains("input_cheat_toggle = \"nul\""));
+    }
+
+    #[test]
+    fn colliding_hotkeys_are_neutralized_and_others_preserved() {
+        let scratch = Scratch::new("preset-hotkeys");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let content = overrides(&provider, Role::P1);
+        for key in [
+            "input_toggle_fast_forward",
+            "input_hold_fast_forward",
+            "input_frame_advance",
+            "input_cheat_toggle",
+            "input_netplay_game_watch",
+        ] {
+            assert!(
+                content.contains(&format!("{key} = \"nul\"")),
+                "not neutralized: {key}"
+            );
+        }
+        assert!(!content.contains("input_save_state = \"nul\""));
+        assert!(!content.contains("input_screenshot = \"nul\""));
+    }
+
+    #[test]
+    fn the_host_config_controls_which_hotkeys_are_neutralized() {
+        let scratch = Scratch::new("preset-hostcfg");
+        let rom = scratch.rom();
+        let host_cfg = scratch.dir.join("retroarch.cfg");
+        std::fs::write(&host_cfg, "input_toggle_fast_forward = \"backslash\"\n").unwrap();
+        let mut provider = provider(&scratch);
+        provider.host_config = Some(host_cfg);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let content = overrides(&provider, Role::P1);
+        assert!(!content.contains("input_toggle_fast_forward = \"nul\""));
+        assert!(content.contains("input_hold_fast_forward = \"nul\""));
+    }
+
+    #[test]
+    fn isolated_config_ignores_the_host_config_for_hotkeys() {
+        let scratch = Scratch::new("preset-isolated-hotkeys");
+        let rom = scratch.rom();
+        let host_cfg = scratch.dir.join("retroarch.cfg");
+        std::fs::write(&host_cfg, "input_toggle_fast_forward = \"backslash\"\n").unwrap();
+        let mut provider = provider(&scratch);
+        provider.host_config = Some(host_cfg);
+        provider.isolated_config = true;
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let content = overrides(&provider, Role::P1);
+        assert!(content.contains("input_toggle_fast_forward = \"nul\""));
+    }
+
+    #[test]
+    fn an_invalid_preset_key_is_rejected() {
+        let scratch = Scratch::new("preset-invalid");
+        let rom = scratch.rom();
+        let mut provider = provider(&scratch);
+        provider.input.heavy_kick = "1".to_string();
+        assert!(provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .is_err());
     }
 }

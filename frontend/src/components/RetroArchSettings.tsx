@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { downloadRetroArchCore } from "@/lib/api";
+import { getRetroArchHotkeys, downloadRetroArchCore } from "@/lib/api";
+import type { HotkeyBinding, RetroArchInput } from "@/lib/types";
 
 export type RetroArchField =
   | "retroarchPath"
@@ -13,7 +14,100 @@ export type RetroArchField =
 
 export type RetroArchToggle =
   | "retroarchMuteSpectators"
-  | "retroarchIsolatedConfig";
+  | "retroarchIsolatedConfig"
+  | "retroarchInputEnabled";
+
+const INPUT_FIELDS: { key: keyof RetroArchInput; label: string }[] = [
+  { key: "up", label: "Up" },
+  { key: "down", label: "Down" },
+  { key: "left", label: "Left" },
+  { key: "right", label: "Right" },
+  { key: "lightPunch", label: "Light Punch" },
+  { key: "mediumPunch", label: "Medium Punch" },
+  { key: "heavyPunch", label: "Heavy Punch" },
+  { key: "lightKick", label: "Light Kick" },
+  { key: "mediumKick", label: "Medium Kick" },
+  { key: "heavyKick", label: "Heavy Kick" },
+  { key: "start", label: "Start" },
+  { key: "coin", label: "Coin" },
+];
+
+const KEY_ALIASES: Record<string, string> = {
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  " ": "space",
+  Enter: "enter",
+  Escape: "escape",
+  Tab: "tab",
+  Backspace: "backspace",
+  Shift: "shift",
+  Control: "ctrl",
+  Alt: "alt",
+  Home: "home",
+  End: "end",
+  PageUp: "pageup",
+  PageDown: "pagedown",
+  Insert: "insert",
+  Delete: "del",
+  ",": "comma",
+  ".": "period",
+  "/": "slash",
+  ";": "semicolon",
+  "'": "quote",
+  "[": "leftbracket",
+  "]": "rightbracket",
+  "\\": "backslash",
+  "-": "minus",
+  "=": "equals",
+  "`": "backquote",
+};
+
+const KEY_LABELS: Record<string, string> = {
+  up: "↑",
+  down: "↓",
+  left: "←",
+  right: "→",
+  space: "Space",
+  enter: "Enter",
+  escape: "Esc",
+  tab: "Tab",
+  backspace: "Backspace",
+  shift: "Shift",
+  ctrl: "Ctrl",
+  alt: "Alt",
+  pageup: "Page Up",
+  pagedown: "Page Down",
+  insert: "Insert",
+  del: "Delete",
+  comma: ",",
+  period: ".",
+  slash: "/",
+  semicolon: ";",
+  quote: "'",
+  leftbracket: "[",
+  rightbracket: "]",
+  backslash: "\\",
+  minus: "-",
+  equals: "=",
+  backquote: "`",
+};
+
+function canonicalKey(event: KeyboardEvent): string | null {
+  const key = event.key;
+  if (key in KEY_ALIASES) return KEY_ALIASES[key];
+  if (/^[a-zA-Z]$/.test(key)) return key.toLowerCase();
+  if (/^[0-9]$/.test(key)) return `num${key}`;
+  if (/^F([1-9]|1[0-2])$/.test(key)) return key.toLowerCase();
+  return null;
+}
+
+function keyLabel(key: string): string {
+  if (key in KEY_LABELS) return KEY_LABELS[key];
+  if (/^[a-z]$/.test(key)) return key.toUpperCase();
+  return key;
+}
 
 interface RetroArchSettingsProps {
   path: string;
@@ -24,8 +118,12 @@ interface RetroArchSettingsProps {
   maxPingMs: string;
   muteSpectators: boolean;
   isolatedConfig: boolean;
+  input: RetroArchInput;
+  inputEnabled: boolean;
   onChange: (key: RetroArchField, value: string) => void;
   onToggle: (key: RetroArchToggle, value: boolean) => void;
+  onInputChange: (key: keyof RetroArchInput, value: string) => void;
+  onInputReplace: (input: RetroArchInput) => void;
   onCoreDownloaded: (path: string) => void;
 }
 
@@ -38,12 +136,50 @@ export function RetroArchSettings({
   maxPingMs,
   muteSpectators,
   isolatedConfig,
+  input,
+  inputEnabled,
   onChange,
   onToggle,
+  onInputChange,
+  onInputReplace,
   onCoreDownloaded,
 }: RetroArchSettingsProps) {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [hotkeys, setHotkeys] = useState<HotkeyBinding[]>([]);
+  const [defaults, setDefaults] = useState<RetroArchInput | null>(null);
+  const [captureField, setCaptureField] = useState<keyof RetroArchInput | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let active = true;
+    getRetroArchHotkeys()
+      .then((map) => {
+        if (!active) return;
+        setHotkeys(map.bindings);
+        setDefaults(map.defaults);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!captureField) return;
+    const handler = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key !== "Escape") {
+        const canonical = canonicalKey(event);
+        if (canonical) onInputChange(captureField, canonical);
+      }
+      setCaptureField(null);
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [captureField, onInputChange]);
 
   async function handleDownload() {
     setDownloading(true);
@@ -57,6 +193,13 @@ export function RetroArchSettings({
       setDownloading(false);
     }
   }
+
+  const collisionFor = (value: string) =>
+    hotkeys.find(
+      (hotkey) =>
+        hotkey.collides &&
+        hotkey.key.toLowerCase() === value.trim().toLowerCase(),
+    );
 
   return (
     <>
@@ -115,7 +258,9 @@ export function RetroArchSettings({
             id="retroarchNickname"
             value={nickname}
             placeholder={handle || "default nickname"}
-            onChange={(event) => onChange("retroarchNickname", event.target.value)}
+            onChange={(event) =>
+              onChange("retroarchNickname", event.target.value)
+            }
           />
         </div>
       </div>
@@ -126,7 +271,9 @@ export function RetroArchSettings({
           type="number"
           min={0}
           value={maxPingMs}
-          onChange={(event) => onChange("retroarchMaxPingMs", event.target.value)}
+          onChange={(event) =>
+            onChange("retroarchMaxPingMs", event.target.value)
+          }
         />
         <p className="text-xs text-muted-foreground">
           0 disables the cap. Set a ceiling so netplay drops a connection that
@@ -155,9 +302,9 @@ export function RetroArchSettings({
         <div className="grid gap-1">
           <Label htmlFor="retroarchIsolatedConfig">Isolate session config</Label>
           <p className="text-xs text-muted-foreground">
-            Start netplay from a minimal config instead of your RetroArch profile,
-            so shaders and playlists do not leak into a match. Controller
-            autoconfigs still load.
+            Start netplay from a minimal config instead of your RetroArch
+            profile, so shaders and playlists do not leak into a match.
+            Controller autoconfigs still load.
           </p>
         </div>
         <input
@@ -169,6 +316,73 @@ export function RetroArchSettings({
             onToggle("retroarchIsolatedConfig", event.target.checked)
           }
         />
+      </div>
+      <div className="grid gap-3 rounded-lg border p-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="grid gap-1">
+            <Label>Keyboard preset (FBNeo Classic)</Label>
+            <p className="text-xs text-muted-foreground">
+              A 6-button fighting-game layout for Cabinet launches. Each action
+              takes one key; the host binds P1 and the client binds P2.
+              RetroArch hotkeys that share a preset key are disabled for the
+              session.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!inputEnabled || !defaults}
+            onClick={() => defaults && onInputReplace(defaults)}
+          >
+            Reset
+          </Button>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <Label htmlFor="retroarchInputEnabled" className="text-xs">
+            Enable preset
+          </Label>
+          <input
+            id="retroarchInputEnabled"
+            type="checkbox"
+            className="size-4 shrink-0 accent-primary"
+            checked={inputEnabled}
+            onChange={(event) =>
+              onToggle("retroarchInputEnabled", event.target.checked)
+            }
+          />
+        </div>
+        <div
+          className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${
+            inputEnabled ? "" : "opacity-50"
+          }`}
+        >
+          {INPUT_FIELDS.map(({ key, label }) => {
+            const value = input[key];
+            const collision = collisionFor(value);
+            const capturing = captureField === key;
+            return (
+              <div key={key} className="grid gap-1">
+                <Label className="text-xs text-muted-foreground">{label}</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!inputEnabled}
+                  onClick={() => setCaptureField(capturing ? null : key)}
+                  className="justify-start font-mono"
+                >
+                  {capturing ? "Press a key…" : keyLabel(value)}
+                </Button>
+                {collision ? (
+                  <p className="text-[10px] leading-tight text-amber-500">
+                    also {collision.action} — disabled for matches
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </>
   );

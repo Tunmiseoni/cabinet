@@ -12,6 +12,7 @@ import type {
   PeerHealth,
   PortProbe,
   ProviderInfo,
+  RetroArchInputMap,
   RomIndex,
   Tailnet,
 } from "./types";
@@ -42,6 +43,9 @@ export const launchDevPair = (rom: string) =>
 
 export const downloadRetroArchCore = () =>
   invoke<DownloadedCore>("download_retroarch_core");
+
+export const getRetroArchHotkeys = () =>
+  invoke<RetroArchInputMap>("retroarch_hotkey_map");
 
 export const stopMatch = () => invoke<MatchState>("stop_match");
 

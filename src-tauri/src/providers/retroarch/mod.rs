@@ -1,17 +1,26 @@
 mod core;
+mod hotkeys;
 mod parity;
 mod spec;
 #[cfg(test)]
 mod test_support;
 
 pub(crate) use core::{download_managed_core, frozen_core_sha256};
+pub use hotkeys::Binding;
 pub use parity::ParityStatus;
 
 use super::{Capabilities, MatchRequest, Provider, ProviderKind, Role};
-use crate::config::Config;
+use crate::config::{Config, RetroArchInput};
 use crate::constants;
 use crate::contracts::{InstallInfo, LaunchSpec, PeerOverride};
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputMap {
+    pub bindings: Vec<Binding>,
+    pub defaults: RetroArchInput,
+}
 
 pub struct RetroArchProvider {
     program: PathBuf,
@@ -27,6 +36,9 @@ pub struct RetroArchProvider {
     max_ping_ms: u32,
     isolated_config: bool,
     autoconfig_dir: Option<PathBuf>,
+    host_config: Option<PathBuf>,
+    input: RetroArchInput,
+    input_enabled: bool,
 }
 
 impl RetroArchProvider {
@@ -53,6 +65,7 @@ impl RetroArchProvider {
             .map(str::to_string);
         let tailscale_binary = crate::tailscale::resolve_binary(cfg).ok();
         let autoconfig_dir = core::resolve_autoconfig_dir(&program, home.as_deref());
+        let host_config = core::resolve_host_config(&program, home.as_deref());
         Self {
             program,
             core,
@@ -75,6 +88,9 @@ impl RetroArchProvider {
             max_ping_ms: cfg.retroarch_max_ping_ms,
             isolated_config: cfg.retroarch_isolated_config,
             autoconfig_dir,
+            host_config,
+            input: cfg.retroarch_input.clone(),
+            input_enabled: cfg.retroarch_input_enabled,
         }
     }
 
@@ -107,6 +123,23 @@ impl RetroArchProvider {
 
     fn write_overrides(&self, role: Role, nickname: &str) -> crate::error::Result<PathBuf> {
         spec::write_overrides(self, role, nickname)
+    }
+
+    pub(crate) fn hotkey_map(&self) -> InputMap {
+        let host_cfg = if self.isolated_config {
+            None
+        } else {
+            self.host_config.as_deref()
+        };
+        let bindings = if self.input_enabled {
+            hotkeys::effective_bindings_with_collisions(host_cfg, &self.input)
+        } else {
+            Vec::new()
+        };
+        InputMap {
+            bindings,
+            defaults: RetroArchInput::default(),
+        }
     }
 }
 
@@ -185,6 +218,10 @@ impl Provider for RetroArchProvider {
 
     fn parity(&self, rom_path: &Path) -> crate::error::Result<Option<ParityStatus>> {
         parity::status(self, rom_path)
+    }
+
+    fn input_map(&self) -> Option<InputMap> {
+        Some(self.hotkey_map())
     }
 }
 

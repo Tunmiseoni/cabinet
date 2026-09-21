@@ -5,6 +5,61 @@ use std::path::{Path, PathBuf};
 
 use crate::providers::ProviderKind;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RetroArchInput {
+    pub up: String,
+    pub down: String,
+    pub left: String,
+    pub right: String,
+    pub light_punch: String,
+    pub medium_punch: String,
+    pub heavy_punch: String,
+    pub light_kick: String,
+    pub medium_kick: String,
+    pub heavy_kick: String,
+    pub start: String,
+    pub coin: String,
+}
+
+impl Default for RetroArchInput {
+    fn default() -> Self {
+        Self {
+            up: "space".into(),
+            down: "s".into(),
+            left: "a".into(),
+            right: "d".into(),
+            light_punch: "u".into(),
+            medium_punch: "i".into(),
+            heavy_punch: "o".into(),
+            light_kick: "j".into(),
+            medium_kick: "k".into(),
+            heavy_kick: "l".into(),
+            start: "num1".into(),
+            coin: "num5".into(),
+        }
+    }
+}
+
+impl RetroArchInput {
+    pub fn key_values(&self) -> [&str; 12] {
+        [
+            &self.up,
+            &self.down,
+            &self.left,
+            &self.right,
+            &self.light_punch,
+            &self.medium_punch,
+            &self.heavy_punch,
+            &self.light_kick,
+            &self.medium_kick,
+            &self.heavy_kick,
+            &self.start,
+            &self.coin,
+        ]
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Config {
@@ -24,6 +79,8 @@ pub struct Config {
     pub retroarch_mute_spectators: bool,
     pub retroarch_max_ping_ms: u32,
     pub retroarch_isolated_config: bool,
+    pub retroarch_input: RetroArchInput,
+    pub retroarch_input_enabled: bool,
     pub verbose_logging: bool,
     pub developer_mode: bool,
 }
@@ -47,6 +104,8 @@ impl Default for Config {
             retroarch_mute_spectators: true,
             retroarch_max_ping_ms: 0,
             retroarch_isolated_config: false,
+            retroarch_input: RetroArchInput::default(),
+            retroarch_input_enabled: true,
             verbose_logging: false,
             developer_mode: false,
         }
@@ -102,6 +161,8 @@ mod tests {
         assert!(config.retroarch_mute_spectators);
         assert_eq!(config.retroarch_max_ping_ms, 0);
         assert!(!config.retroarch_isolated_config);
+        assert!(config.retroarch_input_enabled);
+        assert_eq!(config.retroarch_input, RetroArchInput::default());
     }
 
     #[test]
@@ -136,5 +197,49 @@ mod tests {
         assert!(!loaded.retroarch_mute_spectators);
         assert_eq!(loaded.retroarch_max_ping_ms, 150);
         assert!(loaded.retroarch_isolated_config);
+    }
+
+    #[test]
+    fn retroarch_input_defaults_to_the_sf3_preset() {
+        let input = RetroArchInput::default();
+        assert_eq!(input.up, "space");
+        assert_eq!(input.down, "s");
+        assert_eq!(input.left, "a");
+        assert_eq!(input.right, "d");
+        assert_eq!(input.light_punch, "u");
+        assert_eq!(input.medium_punch, "i");
+        assert_eq!(input.heavy_punch, "o");
+        assert_eq!(input.light_kick, "j");
+        assert_eq!(input.medium_kick, "k");
+        assert_eq!(input.heavy_kick, "l");
+        assert_eq!(input.start, "num1");
+        assert_eq!(input.coin, "num5");
+        assert_eq!(input.key_values().len(), 12);
+    }
+
+    #[test]
+    fn round_trips_the_retroarch_input_fields() {
+        let input = RetroArchInput {
+            up: "w".into(),
+            heavy_kick: "nul".into(),
+            ..RetroArchInput::default()
+        };
+        let config = Config {
+            retroarch_input: input.clone(),
+            retroarch_input_enabled: false,
+            ..Config::default()
+        };
+        let raw = serde_json::to_string(&config).unwrap();
+        let loaded: Config = serde_json::from_str(&raw).unwrap();
+        assert_eq!(loaded.retroarch_input, input);
+        assert!(!loaded.retroarch_input_enabled);
+    }
+
+    #[test]
+    fn partial_retroarch_input_fills_missing_fields_with_the_preset() {
+        let loaded: Config = serde_json::from_str(r#"{"retroarchInput":{"up":"w"}}"#).unwrap();
+        assert_eq!(loaded.retroarch_input.up, "w");
+        assert_eq!(loaded.retroarch_input.coin, "num5");
+        assert!(loaded.retroarch_input_enabled);
     }
 }

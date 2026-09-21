@@ -20,7 +20,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Config, ProviderKind } from "@/lib/types";
+import type { Config, ProviderKind, RetroArchInput } from "@/lib/types";
+
+const DEFAULT_RETROARCH_INPUT: RetroArchInput = {
+  up: "space",
+  down: "s",
+  left: "a",
+  right: "d",
+  lightPunch: "u",
+  mediumPunch: "i",
+  heavyPunch: "o",
+  lightKick: "j",
+  mediumKick: "k",
+  heavyKick: "l",
+  start: "num1",
+  coin: "num5",
+};
 
 interface SettingsDialogProps {
   open: boolean;
@@ -46,6 +61,8 @@ interface FormState {
   retroarchMuteSpectators: boolean;
   retroarchMaxPingMs: string;
   retroarchIsolatedConfig: boolean;
+  retroarchInput: RetroArchInput;
+  retroarchInputEnabled: boolean;
   verboseLogging: boolean;
   developerMode: boolean;
 }
@@ -68,6 +85,8 @@ function toForm(config: Config | null): FormState {
     retroarchMuteSpectators: config?.retroarchMuteSpectators ?? true,
     retroarchMaxPingMs: String(config?.retroarchMaxPingMs ?? 0),
     retroarchIsolatedConfig: config?.retroarchIsolatedConfig ?? false,
+    retroarchInput: config?.retroarchInput ?? DEFAULT_RETROARCH_INPUT,
+    retroarchInputEnabled: config?.retroarchInputEnabled ?? true,
     verboseLogging: config?.verboseLogging ?? false,
     developerMode: config?.developerMode ?? false,
   };
@@ -93,6 +112,8 @@ function buildConfig(form: FormState): Config {
     retroarchMuteSpectators: form.retroarchMuteSpectators,
     retroarchMaxPingMs: Math.max(0, Number(form.retroarchMaxPingMs) || 0),
     retroarchIsolatedConfig: form.retroarchIsolatedConfig,
+    retroarchInput: form.retroarchInput,
+    retroarchInputEnabled: form.retroarchInputEnabled,
     verboseLogging: form.verboseLogging,
     developerMode: form.developerMode,
   };
@@ -119,6 +140,12 @@ export function SettingsDialog({
 
   const setToggle = (key: keyof FormState, value: boolean) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  const setInput = (key: keyof RetroArchInput, value: string) =>
+    setForm((prev) => ({
+      ...prev,
+      retroarchInput: { ...prev.retroarchInput, [key]: value },
+    }));
 
   async function handleSave() {
     setSaving(true);
@@ -221,8 +248,14 @@ export function SettingsDialog({
               maxPingMs={form.retroarchMaxPingMs}
               muteSpectators={form.retroarchMuteSpectators}
               isolatedConfig={form.retroarchIsolatedConfig}
+              input={form.retroarchInput}
+              inputEnabled={form.retroarchInputEnabled}
               onChange={setField}
               onToggle={setToggle}
+              onInputChange={setInput}
+              onInputReplace={(input) =>
+                setForm((prev) => ({ ...prev, retroarchInput: input }))
+              }
               onCoreDownloaded={handleCoreDownloaded}
             />
           )}

@@ -256,6 +256,15 @@ re-run the script), so a core bump never happens silently.
   it can be turned off in Settings. **Live verified 2026-09-21 (F17):** a single instance with
   `audio_mute_enable = "true"` is silent and with `"false"` has sound, so the spectator override
   mutes it.
+- **Keyboard hotkey collisions with the SF3 preset.** RetroArch accepts only one keyboard key
+  per action, and several of its default hotkeys share keys with a 6-button layout (Space
+  fast-forward toggle, U cheats, I spectate/play, K frame-advance, L hold fast-forward; F21).
+  **Resolved (2026-09-21):** the app writes the preset into the per-role `--appendconfig`
+  (`input_player1_*` for the host, `input_player2_*` for the client) and sets only the
+  **colliding** hotkeys to `nul` for the session, resolved from the host `retroarch.cfg` (or
+  upstream defaults under config isolation), so save-state/screenshot/exit keep working.
+  **Relocating** the colliding hotkeys to a curated safe lane, and surfacing that lane in the
+  UI, is **deferred** — revisit if a specific hotkey is missed in practice.
 - **Core updates.** The buildbot `latest` channel is rolling; the frozen sha256s must be
   re-frozen deliberately, never silently. The macOS core is now a local rebuild (§2), so a core
   bump must be rebuilt the same way on macOS, not re-downloaded. A re-freeze also means bumping
@@ -421,6 +430,7 @@ min — but the logs surfaced the items below.
 | F18 | Host-as-spectator (non-playing server) was not exercised; the app exposes only P1/P2/Spectator. | Decide whether to support and test it. | Low — **Decided 2026-09-21: non-goal, recorded in §9; the host also plays (P1) and the GUI exposes only P1/P2/Spectator** |
 | F19 | A client issued `NETPLAY_CMD_LOAD_SAVESTATE`, followed by `Failed to load state` against the empty per-role savestate dirs. | Confirm netplay state sync cannot pull a stale/wrong state. | Low — **Done 2026-09-21: `write_overrides` pins `savestate_auto_load = "false"`, so netplay's state sync always starts from a fresh state instead of auto-loading a stale per-role savestate** |
 | F20 | Per-machine `retroarchPort` isn't validated against peers; preflight only proves TCP reachability. | Validate the expected netplay port or document "host's port must match on all peers". | Low — **Done 2026-09-21: §5 documents that the netplay port must match on every machine, and the preflight/force error text now says "use the same netplay port on both peers"** |
+| F21 | RetroArch's own keyboard hotkeys share keys with a 6-button fighting-game layout (defaults: **Space** fast-forward toggle, **U** cheats, **I** spectate/play, **K** frame-advance, **L** hold fast-forward), so a preset would trigger them mid-match. RetroArch also accepts only **one keyboard key per action** (`input_config_translate_str_to_rk`), so two keys cannot drive one RetroPad button without a core remap. | Give the app an editable per-machine keyboard preset, applied in the appendconfig, and neutralize only the hotkeys that actually collide. | Med — **Done 2026-09-21:** `retroarchInput`/`retroarchInputEnabled` (default on) emit `input_player1_*`/`input_player2_*` per role and set each colliding `input_*` hotkey to `nul` for the session; the collision set is resolved from the host `retroarch.cfg` (or upstream defaults under isolation). One key per action is a known limitation; relocating the colliding hotkeys is **deferred** (see §9) |
 
 F8 (netplay max-ping cap), F10 (opt-in config isolation), and F17 (spectator mute) are implemented
 and live-checked as of 2026-09-21 (loopback); the password half of F8 was dropped. F10's default

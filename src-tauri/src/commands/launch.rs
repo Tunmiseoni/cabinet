@@ -228,6 +228,12 @@ pub struct DownloadedCore {
 }
 
 #[tauri::command(async)]
+pub fn retroarch_hotkey_map(app: AppHandle) -> crate::error::CommandResult<providers::InputMap> {
+    let provider = provider_for(&app, false)?;
+    Ok(provider.input_map().unwrap_or_default())
+}
+
+#[tauri::command(async)]
 pub fn download_retroarch_core(app: AppHandle) -> crate::error::CommandResult<DownloadedCore> {
     use tauri::Manager;
     let data_dir = app

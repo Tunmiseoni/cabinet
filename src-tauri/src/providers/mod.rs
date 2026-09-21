@@ -1,6 +1,7 @@
 mod fightcade;
 mod retroarch;
 
+pub(crate) use retroarch::InputMap;
 pub use retroarch::ParityStatus;
 pub(crate) use retroarch::RetroArchProvider;
 pub(crate) use retroarch::{download_managed_core, frozen_core_sha256};
@@ -81,6 +82,10 @@ pub trait Provider: Send + Sync {
 
     fn parity(&self, _rom_path: &Path) -> crate::error::Result<Option<ParityStatus>> {
         Ok(None)
+    }
+
+    fn input_map(&self) -> Option<InputMap> {
+        None
     }
 }
 

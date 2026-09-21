@@ -19,8 +19,37 @@ export interface Config {
   retroarchMuteSpectators: boolean;
   retroarchMaxPingMs: number;
   retroarchIsolatedConfig: boolean;
+  retroarchInput: RetroArchInput;
+  retroarchInputEnabled: boolean;
   verboseLogging: boolean;
   developerMode: boolean;
+}
+
+export interface RetroArchInput {
+  up: string;
+  down: string;
+  left: string;
+  right: string;
+  lightPunch: string;
+  mediumPunch: string;
+  heavyPunch: string;
+  lightKick: string;
+  mediumKick: string;
+  heavyKick: string;
+  start: string;
+  coin: string;
+}
+
+export interface HotkeyBinding {
+  action: string;
+  configKey: string;
+  key: string;
+  collides: boolean;
+}
+
+export interface RetroArchInputMap {
+  bindings: HotkeyBinding[];
+  defaults: RetroArchInput;
 }
 
 export interface Peer {

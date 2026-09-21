@@ -177,6 +177,20 @@ pub(super) fn resolve_autoconfig_dir(program: &Path, home: Option<&Path>) -> Opt
         .find(|dir| dir.is_dir())
 }
 
+/// Locate the host's real `retroarch.cfg` (read-only) from the same roots as the
+/// autoconfig search. Recent RetroArch stores it under `<root>/config/`; older installs
+/// keep it at `<root>/`.
+pub(super) fn resolve_host_config(program: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    for dir in autoconfig_dirs(program, home) {
+        if let Some(root) = dir.parent() {
+            candidates.push(root.join("retroarch.cfg"));
+            candidates.push(root.join("config").join("retroarch.cfg"));
+        }
+    }
+    candidates.into_iter().find(|path| path.is_file())
+}
+
 pub(super) fn core_candidates(program: &Path, home: Option<&Path>) -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(parent) = program
@@ -373,6 +387,43 @@ mod tests {
         let home = scratch.dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
         assert!(resolve_autoconfig_dir(&program, Some(&home)).is_none());
+    }
+
+    #[test]
+    fn resolve_host_config_finds_the_config_under_the_config_dir() {
+        let scratch = Scratch::new("host-config");
+        let program = scratch.dir.join("bin/retroarch");
+        let bin = program.parent().unwrap();
+        std::fs::create_dir_all(bin.join("autoconfig")).unwrap();
+        std::fs::create_dir_all(bin.join("config")).unwrap();
+        let cfg = bin.join("config/retroarch.cfg");
+        std::fs::write(&cfg, "input_cheat_toggle = \"u\"\n").unwrap();
+        let home = scratch.dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        assert_eq!(resolve_host_config(&program, Some(&home)), Some(cfg));
+    }
+
+    #[test]
+    fn resolve_host_config_prefers_a_root_level_config() {
+        let scratch = Scratch::new("host-config-root");
+        let program = scratch.dir.join("bin/retroarch");
+        let bin = program.parent().unwrap();
+        std::fs::create_dir_all(bin.join("config")).unwrap();
+        let root_cfg = bin.join("retroarch.cfg");
+        std::fs::write(&root_cfg, "").unwrap();
+        std::fs::write(bin.join("config/retroarch.cfg"), "").unwrap();
+        let home = scratch.dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        assert_eq!(resolve_host_config(&program, Some(&home)), Some(root_cfg));
+    }
+
+    #[test]
+    fn resolve_host_config_is_none_when_absent() {
+        let scratch = Scratch::new("host-config-missing");
+        let program = scratch.dir.join("bin/retroarch");
+        let home = scratch.dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        assert!(resolve_host_config(&program, Some(&home)).is_none());
     }
 
     #[test]
