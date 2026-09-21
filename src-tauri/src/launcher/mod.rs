@@ -60,15 +60,6 @@ impl MatchConfig {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn side_label(&self) -> &'static str {
-        if self.side == 0 {
-            "P1"
-        } else {
-            "P2"
-        }
-    }
-
     pub fn quark_arg(&self) -> String {
         format!(
             "quark:direct,{},{},{},{},{},0",
@@ -106,7 +97,6 @@ mod tests {
         let config = MatchConfig::new("sfiii3nr1".into(), "100.64.0.2".into(), 0).unwrap();
         assert_eq!(config.local_port(), 7001);
         assert_eq!(config.peer_port(), 7000);
-        assert_eq!(config.side_label(), "P1");
         assert_eq!(
             config.quark_arg(),
             "quark:direct,sfiii3nr1,7001,100.64.0.2,7000,0,0"
@@ -118,7 +108,6 @@ mod tests {
         let config = MatchConfig::new("sfiii3nr1".into(), "100.64.0.2".into(), 1).unwrap();
         assert_eq!(config.local_port(), 7000);
         assert_eq!(config.peer_port(), 7001);
-        assert_eq!(config.side_label(), "P2");
         assert_eq!(
             config.quark_arg(),
             "quark:direct,sfiii3nr1,7000,100.64.0.2,7001,1,0"

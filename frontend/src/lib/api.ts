@@ -24,9 +24,6 @@ export const setConfig = (config: Config) =>
 
 export const listPeers = () => invoke<Tailnet>("list_peers");
 
-export const peerHealth = (ip: string) =>
-  invoke<PeerHealth>("peer_health", { ip });
-
 export const peersHealth = (ips: string[]) =>
   invoke<PeerHealth[]>("peers_health", { ips });
 
@@ -60,8 +57,6 @@ export const cabinetRequestPermission = () =>
 
 export const probePort = (ip: string, port: number, timeoutMs?: number) =>
   invoke<PortProbe>("probe_port", { ip, port, timeoutMs });
-
-export const logDir = () => invoke<string>("log_dir");
 
 export const openLogsDir = () => invoke<string>("open_logs_dir");
 
