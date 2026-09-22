@@ -195,12 +195,20 @@ mod tests {
         seats.set(2, Some("player-one".into()));
         seats.enqueue("player-three".into());
         room.set_seats(&seats);
+        room.set_rotation(Rotation {
+            id: 9,
+            loser_slot: 1,
+            incoming: Some("player-three".into()),
+        });
         let json = serde_json::to_string(&room).unwrap();
         assert!(json.contains("\"phase\":\"playing\""));
         assert!(json.contains("\"firstTo\":3"));
         assert!(json.contains("\"hostSeat\":2"));
         assert!(json.contains("\"seats\":[\"player-two\",\"player-one\"]"));
         assert!(json.contains("\"queue\":[\"player-three\"]"));
+        assert!(
+            json.contains("\"rotation\":{\"id\":9,\"loserSlot\":1,\"incoming\":\"player-three\"}")
+        );
         let loaded: Room = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded, room);
     }

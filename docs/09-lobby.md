@@ -11,6 +11,10 @@ command ports, `network_cmd_enable`), per-ROM RAM result detection (`lobby/resul
 `lobby/beacon.rs`), hosting, the seat/role split, the client join flow (`lobby_*` commands),
 `LobbyCard.tsx`, and the **sets + rotation** layer (`lobby/sets.rs` first-to-N machine and FIFO
 queue, the host set runner, the joiner seat follower, `RoomView.tsx`, and the single **Join**).
+**Live-validated 2026-09-22 (one machine, loopback):** a full set-end rotation — queue build from
+the host's netplay log, rotation advertisement, the host stepping itself out, and the queue head
+being auto-granted the freed slot — plus a queue-wipe bug found in that run and fixed
+([`10-lobby-spike.md`](10-lobby-spike.md) §6 L11).
 **Not implemented:** history/scores (local ledger), game-boundary `RESET` (spike S9).
 
 **The lobby is the preferred home-screen path.** `LobbyCard.tsx` hosts/joins rooms and is rendered
@@ -258,6 +262,14 @@ or join a room, and the room assigns you a seat." Three seat types remain:
   `LOAD_STATE` (`RARCH_NETPLAY_CTL_LOAD_SAVESTATE`) to a per-ROM "fresh match" savestate. The
   native winner-lock behaviour is otherwise left as-is; see [`10-lobby-spike.md`](10-lobby-spike.md)
   §3 S9 (the `RESET`/`LOAD_STATE` boundary spike).
+- **Known defect — the coin/match boundary is not modelled (live-observed 2026-09-22; see
+  [`10-lobby-spike.md`](10-lobby-spike.md) §6 L12).** A **coin must be inserted for every match**,
+  and coining in is what opens character select and starts it. The lobby does not know this: after a
+  game the winner is auto-locked (winner-lock) and cannot re-select, and a player promoted into the
+  vacated slot holds the **seat** but cannot coin in to start the next match. Between matches the
+  watcher also cannot tell a live round from a continue/select/attract screen, so rounds can be
+  missed (L13) or misattributed. Fix path: the S9 forced boundary plus an explicit **"waiting for
+  coin"** state that tells the next player to coin+start.
 
 ### 7.4 Live role switching (the rotation mechanism)
 
@@ -270,12 +282,18 @@ cross-machine control protocol" (§1):
    rolls rounds into games and games into a first-to-N set, and publishes `set` on the beacon.
 2. On set end the host computes `rotation { id, loserSlot, incoming }` — the losing slot and the
    queue head — and advertises it on the beacon (`announce_rotation`). Seats and the queue
-   themselves are always derived from the host's **netplay observation**, never asserted.
+   themselves are always derived from the host's **netplay observation**, never asserted, and the
+   queue is ordered by when each nick **started waiting**: a player who steps out of a seat
+   re-enters at the back, so the loser cannot jump ahead of the spectators who were already
+   waiting.
 3. Each machine (host included) runs a **reconciler**: on a new rotation `id`, the machine whose
    nick is `incoming` toggles **spectator → player**, and the machine sitting in `loserSlot`
    toggles **player → spectator**, over its own command socket (`NETPLAY_GAME_WATCH`). The first
    room a freshly-joined client sees only primes its rotation id, so an in-flight rotation is never
-   replayed.
+   replayed. The incoming's toggle waits until the room reports the losing seat **free**: a seat
+   request that reaches the host while the loser still holds it is granted the next free *input
+   device* (device 2, announced as "player 3") instead of the seat, leaving the game with no human
+   P2 ([`10-lobby-spike.md`](10-lobby-spike.md) §6 L19).
 4. The host auto-grants the freed slot to the incoming claim; the winner does nothing.
 
 A would-be challenger must **already be connected as a spectator** — no fresh join during the
@@ -283,9 +301,17 @@ transition (avoid the flaky mid-join window). This is the FIFO contract. With no
 host advertises no rotation and the same two players start the next set.
 
 **Implemented 2026-09-21** (`lobby/sets.rs`, `Lobby::announce_rotation`, `spawn_set_runner`,
-`spawn_seat_follower`, `reconcile_rotation`). **Needs live validation (see §9):** that the host
-actually observes spectator nicks in its netplay log (so the queue head is known) and that a host
-that steps out updates its own `self_player`.
+`spawn_seat_follower`, `reconcile_rotation`). **Validated live 2026-09-22 (one machine, loopback):**
+the host does observe a joining spectator's nick in its netplay log (the queue fills from
+`Got connection from: "nick"`), a real set end advertised the rotation, the host stepped itself out
+and cleared its own `self_player`, and the freed slot was auto-granted to the queue head. The same
+run exposed a queue-wipe bug on the host's own step-out, fixed in `netplay.rs` (see
+[`10-lobby-spike.md`](10-lobby-spike.md) §6 L11).
+
+**Re-validated with a real three-player rotation 2026-09-22 (R6):** the queue head took the vacated
+seat and its own coin-in started the next versus match. That run also surfaced the toggle race and
+the queue order above, both fixed (`reconcile_rotation` sequencing; the tracker's `waiting` order) —
+see [`10-lobby-spike.md`](10-lobby-spike.md) §6 L19–L20.
 
 ### 7.5 Control plane
 
@@ -303,21 +329,25 @@ that steps out updates its own `self_player`.
 - **Signal:** poll RAM with `READ_CORE_RAM <addr> <len>` and read the per-round state. This is **the**
   automatic signal; there is no generic one.
 - **Located on `sfiii3nr1` (spike 2026-09-21, core `GIT6bb3167`):** there is **no per-fighter win
-  counter** in the exposed 512 KB. The decisive result is read from health, with a round counter as
+  counter** in the exposed 512 KB. The decisive result is read from health, with the round phase as
   the transition trigger:
 
   | Signal | `READ_CORE_RAM` offset | Behavior |
   |---|---|---|
   | P1 current health | `0x068D08` (mirror `0x068D0E`) | `0xA0` at round start; falls on damage; **saturates to `0xFF` on KO** |
   | P2 current health | `0x0691A0` (mirror `0x0691A6`) | same |
-  | Rounds completed this match | `0x010D28` | `0,1,2…`, increments once per round **regardless of who won**; resets at match start |
+  | Rounds completed this match | `0x010D28` | `0,1,2…` in **arcade** matches only — it does **not** move during versus matches (both sampled versus round ends read `0`), so it is diagnostic, not a trigger (spike §6 L18) |
+  | Round phase (`game_phase`) | `0x0154A4` | `0x01` character select / round intro, `0x02` round live, `0x06`–`0x09` round-end/continue; the live-match gate |
+  | P2 control type | `0x069104` (P2 struct `+0x03`) | `0x01` while P2 is human-controlled, `0x00` when the game drives it (arcade/CPU, attract demo); the player-vs-CPU gate |
+  | Continue countdown | `0x0154FC` | `0x32` (50) counting down to `0` on the post-match continue screen |
 
-  A round is decisive when one health byte reaches `0xFF` (that side was KO'd and lost); on a timer
-  expiry with neither at `0xFF`, the higher health wins; both at `0xFF` is a draw. Round outcomes
-  accumulate into the game score (first to 2 round wins; §7.3), and the game's round counter reset
-  marks the next game — the lobby does **not** read a counter as a win count. (An earlier read
-  mistook `0x010D28` for a win counter; it increments once per round for either winner and resets
-  each game.)
+  A round is decisive when one health byte reaches `0xFF` (that side was KO'd and lost); a live round
+  that enters the round-end sequence with neither at `0xFF` timed out, and the higher health wins;
+  both at `0xFF` is a draw. Round outcomes accumulate into the game score (first to 2 round wins;
+  §7.3), and the next game is marked by the phase returning to select/intro — the lobby does **not**
+  read a counter as a win count. (An earlier read mistook `0x010D28` for a win counter; it moves only
+  in arcade matches, and an earlier timeout implementation hung off it and never fired in versus
+  play — spike §6 L18.)
 - **Cost accepted:** it is **per-ROM reverse engineering**, version-sensitive to core/ROM updates.
   Start with **`sfiii3nr1`** (the ROM the group plays now).
 - **Both players observe independently.** Because the game is deterministic and synced, both
@@ -329,6 +359,24 @@ that steps out updates its own `self_player`.
   history (§7.10).
 - **Read cost:** the command socket services ~1 command/frame (~60/s), so read only these windows; a
   full 512 KB sweep takes ~34 s.
+- **Live-match gate (live 2026-09-22; landed).** The watcher latches on the round phase (`0x0154A4`)
+  **and** the P2 control byte (`0x069104`): a KO edge only counts inside a round the game reported
+  live and says P2 is human-controlled, and the latch survives the round-end sequence (`0x06`–`0x09`)
+  where every sampled KO edge was actually seen — testing `phase == 0x02` at the edge would miss
+  every KO. Select/continue/idle screens, arcade/CPU rounds, and the attract demo can no longer
+  decide a round; the seat-count guard was removed.
+- **Timeout rounds (live 2026-09-22; landed).** A timeout is a live round entering the round-end
+  sequence **without** a KO byte; the health at the transition decides it (higher wins, equal is a
+  draw). A per-round `decided` flag stops a lagging KO byte — or a KO seen while the phase was still
+  live — from deciding the same round twice. The old counter-based timeout never fired in versus
+  play (the counter does not move there) and is gone.
+- **Boundary (live 2026-09-22; solved by the game).** No forced reset is needed: the incoming
+  player's **coin-in is the boundary**. Mid-arcade, their start press flips P2 to human (`0x069104`
+  → `0x01`), the in-progress CPU round plays out, and the game opens character select and starts the
+  versus match (R5: coin 19:34:51 → select 19:35:40 → versus live 19:35:45). `RESET` is a no-op on
+  this build and `LOAD_STATE_SLOT` drops netplay clients, so nothing else is required. What remains
+  is app-side: surface the "waiting for coin" state and prompt the **queue head** to coin in. See
+  [`10-lobby-spike.md`](10-lobby-spike.md) §6 L16–L17.
 
 ### 7.7 Discovery beacon
 
@@ -432,13 +480,14 @@ frontend/src/components/
   and the host auto-grants the next claim, so the release-then-claim order in §7.4 works.
 - **Two spectators wanting the same slot:** strictly FIFO, or a "next up" prompt? (FIFO recommended.)
 - **Spectator leaving mid-set:** does the queue shift, and does the loser still rotate out?
-- **Rotation observability (needs a live run):** the queue head comes from the host's netplay log
-  (`connections` — the `Got connection from: "nick"` lines, minus seated players). If RetroArch does
-  not log a joining *spectator's* nick, the host's queue is empty and rotation never fires. Likewise,
-  a host that toggles to spectator must have its own `self_player` clear for the host reconciler to
-  step out correctly. Both are unverified and are the first thing the next tailnet run should check;
-  if spectator nicks are not visible, the fallback is to have joiners include their nick in the
-  beacon query and have the host register it.
+- **Rotation observability:** ~~the queue head comes from the host's netplay log ... both are
+  unverified and are the first thing the next tailnet run should check.~~ **Resolved 2026-09-22
+  (loopback):** the host's log *does* carry a joining spectator's nick (`Got connection from:
+  "nick"`), so the queue fills and rotation fires; a host that toggles to spectator clears its own
+  `self_player` and steps itself out. The fallback (joiners pass their nick in the beacon query) is
+  not needed. A related bug found in the same run — the host's step-out wiping the whole
+  `connections` list, and with it the waiting queue — was fixed (see
+  [`10-lobby-spike.md`](10-lobby-spike.md) §6 L11).
 - **Group's ROM set:** v1's watcher targets `sfiii3nr1`; the design is per-ROM, so what is the real
   target list, and is per-ROM RE acceptable for each?
 - **Always-on "table" machine:** do we designate one, or accept host-laptop dependency?
@@ -496,9 +545,11 @@ fallback. Steps 2–4 build order:
 3. **Sets + rotation** — first-to-N, FIFO, automatic winner-stays using the RAM watcher.
    **Built 2026-09-21:** `lobby/sets.rs` (first-to-N game/set machine + FIFO seats/queue), the host
    set runner and joiner seat follower (`commands/lobby.rs`), the advertised rotation instruction
-   (§7.4), the single **Join** (`assign_join`), and `RoomView.tsx`. Still pending:
+   (§7.4), the single **Join** (`assign_join`), and `RoomView.tsx`. **Live-validated 2026-09-22 on
+   one machine (loopback)** — queue build, set-end advertisement, host step-out, incoming promote —
+   with a queue-wipe bug found there and fixed (`netplay.rs`; [`10-lobby-spike.md`](10-lobby-spike.md)
+   §6 L11). Still pending:
    - **Game-boundary `RESET`** for character select (§7.3) and its spike item (S9).
-   - **Live validation** of the rotation observability caveats in §7.4/§9.
 4. **History + scores** — local, per-machine, from own observation.
 5. **Replays** — only after the `.replay`-during-netplay spike (S8) passes.
 

@@ -34,9 +34,13 @@ pub struct NetplayInfo {
     pub self_player: Option<u8>,
     pub host: Option<String>,
     pub players: Vec<NetplayPlayer>,
-    /// Nicknames seen connecting to this instance, in the order they connected. On the host this
-    /// includes spectators, which is what the lobby's waiting queue is derived from.
+    /// Nicknames seen connecting to this instance, in the order they connected. This is the
+    /// connected set, players included.
     pub connections: Vec<String>,
+    /// Nicknames connected but not seated, in the order they started waiting: a joiner enters at
+    /// the back, and a player who steps out of its slot re-enters at the back, so a rotated-out
+    /// loser waits behind everyone already waiting. The lobby's rotation queue is this list.
+    pub waiting: Vec<String>,
     pub ping_ms: Option<u64>,
     pub core_warning: bool,
     pub last_event: Option<String>,
@@ -127,16 +131,23 @@ impl NetplayTracker {
             .strip_prefix("Player ")
             .and_then(|rest| rest.strip_suffix(" has left the game"))
         {
+            // The peer left its player slot but is still connected (it toggled play -> spectate),
+            // so it stays in `connections` and re-enters the waiting list **at the back**: the
+            // rotated-out loser waits behind everyone who was already waiting. A real disconnect
+            // logs `"<nick>" has disconnected`, which removes it from both lists.
             self.remove_player(nick);
-            self.remove_connection(nick);
+            self.enqueue_waiting(nick);
             self.push_event(at_ms, "left", message);
             return;
         }
 
         if message == "You have left the game" {
-            self.set_connection(NetplayConnection::Disconnected);
+            // The instance left its player slot but is still in the netplay session (it just
+            // toggled play -> spectate, e.g. the loser stepping out in a rotation), so the other
+            // connections must survive: clearing them wipes the host's waiting queue and marks a
+            // still-connected spectator as disconnected. A real session end logs
+            // `Netplay disconnected`, which does the full clear.
             self.set_self_player(None);
-            self.info.connections.clear();
             self.push_event(at_ms, "left", message);
             return;
         }
@@ -154,6 +165,7 @@ impl NetplayTracker {
             self.set_connection(NetplayConnection::Disconnected);
             self.set_self_player(None);
             self.info.connections.clear();
+            self.info.waiting.clear();
             self.push_event(at_ms, "disconnected", message);
             return;
         }
@@ -214,6 +226,8 @@ impl NetplayTracker {
     }
 
     fn upsert_player(&mut self, nick: &str, player: u8, ping_ms: Option<u64>) {
+        // Seated now, so no longer waiting for a seat.
+        self.dequeue_waiting(nick);
         let mut changed = false;
         if let Some(entry) = self
             .info
@@ -255,12 +269,35 @@ impl NetplayTracker {
             self.info.connections.push(nick.to_string());
             self.dirty = true;
         }
+        // A connection is a spectator until it announces a player slot, and the waiting order is
+        // the order they started waiting.
+        self.enqueue_waiting(nick);
     }
 
     fn remove_connection(&mut self, nick: &str) {
         let before = self.info.connections.len();
         self.info.connections.retain(|entry| entry != nick);
         if self.info.connections.len() != before {
+            self.dirty = true;
+        }
+        self.dequeue_waiting(nick);
+    }
+
+    /// Add `nick` to the back of the waiting list unless it is already seated or already waiting.
+    fn enqueue_waiting(&mut self, nick: &str) {
+        if self.info.players.iter().any(|entry| entry.nick == nick) {
+            return;
+        }
+        if !self.info.waiting.iter().any(|entry| entry == nick) {
+            self.info.waiting.push(nick.to_string());
+            self.dirty = true;
+        }
+    }
+
+    fn dequeue_waiting(&mut self, nick: &str) {
+        let before = self.info.waiting.len();
+        self.info.waiting.retain(|entry| entry != nick);
+        if self.info.waiting.len() != before {
             self.dirty = true;
         }
     }
@@ -431,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn connections_are_tracked_in_order_and_removed_on_leave() {
+    fn connections_are_tracked_in_order_and_deduplicated() {
         let mut tracker = new_tracker();
         tracker.feed(
             Role::P1,
@@ -446,13 +483,36 @@ mod tests {
             "[INFO] [Netplay] Got connection from: \"player-two\"",
         );
         assert_eq!(tracker.info().connections, vec!["player-two", "watcher-a"]);
+        // Neither has announced a player slot, so both are waiting.
+        assert_eq!(tracker.info().waiting, vec!["player-two", "watcher-a"]);
+    }
 
+    #[test]
+    fn a_player_leaving_its_slot_stays_a_waiting_connection() {
+        let mut tracker = new_tracker();
         tracker.feed(
             Role::P1,
-            "[INFO] [Netplay] Player player-two has left the game",
+            "[INFO] [Netplay] Got connection from: \"player-two\"",
         );
-        assert_eq!(tracker.info().connections, vec!["watcher-a"]);
+        tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] Got connection from: \"watcher-a\"",
+        );
+        tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] player-two has joined as player 2 (ping: 50 ms)",
+        );
+        assert_eq!(tracker.info().waiting, vec!["watcher-a"]);
+        assert!(tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] Player player-two has left the game"
+        ));
         assert!(tracker.info().players.is_empty());
+        // It left the player slot but is still connected as a spectator, and it re-enters the
+        // waiting list at the back: the rotated-out loser waits behind everyone already waiting,
+        // so the next rotation cannot hand the seat straight back to it.
+        assert_eq!(tracker.info().connections, vec!["player-two", "watcher-a"]);
+        assert_eq!(tracker.info().waiting, vec!["watcher-a", "player-two"]);
     }
 
     #[test]
@@ -464,6 +524,26 @@ mod tests {
         );
         tracker.feed(Role::P1, "[INFO] [Netplay] Netplay disconnected");
         assert!(tracker.info().connections.is_empty());
+        assert!(tracker.info().waiting.is_empty());
+    }
+
+    #[test]
+    fn leaving_the_game_keeps_the_waiting_spectators() {
+        let mut tracker = new_tracker();
+        tracker.feed(Role::P1, "[INFO] [Netplay] You have joined as player 1");
+        tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] Got connection from: \"watcher-a\"",
+        );
+        tracker.feed(
+            Role::P1,
+            "[INFO] [Netplay] Got connection from: \"watcher-b\"",
+        );
+        assert!(tracker.feed(Role::P1, "[INFO] [Netplay] You have left the game"));
+        assert_eq!(tracker.info().self_player, None);
+        assert_eq!(tracker.info().connection, NetplayConnection::Connected);
+        assert_eq!(tracker.info().connections, vec!["watcher-a", "watcher-b"]);
+        assert_eq!(tracker.info().waiting, vec!["watcher-a", "watcher-b"]);
     }
 
     #[test]
@@ -471,10 +551,16 @@ mod tests {
         let mut tracker = new_tracker();
         tracker.feed(
             Role::P1,
+            "[INFO] [Netplay] Got connection from: \"player-two\"",
+        );
+        tracker.feed(
+            Role::P1,
             "[INFO] [Netplay] player-two has joined as player 2 (ping: 50 ms)",
         );
         assert!(tracker.feed(Role::P1, "[INFO] [Netplay] \"player-two\" has disconnected"));
         assert!(tracker.info().players.is_empty());
+        assert!(tracker.info().connections.is_empty());
+        assert!(tracker.info().waiting.is_empty());
         assert_eq!(tracker.info().ping_ms, None);
     }
 

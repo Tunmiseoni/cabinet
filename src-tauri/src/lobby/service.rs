@@ -64,6 +64,14 @@ impl Lobby {
         inner.as_ref().map(|live| live.own_nick.clone())
     }
 
+    /// The bound port of the live room's beacon. Same as the configured port, except when started
+    /// on port 0 (tests), where it is the OS-assigned one.
+    #[cfg(test)]
+    pub(crate) fn beacon_port(&self) -> Option<u16> {
+        let inner = self.inner.lock_or_recover();
+        inner.as_ref().and_then(|live| live.beacon.local_port())
+    }
+
     /// Mutate the live room under the lock, returning the updated clone. `Room`'s setters only
     /// bump the revision when something actually changed, so repeated no-op updates are cheap.
     pub(crate) fn update(&self, change: impl FnOnce(&mut Room)) -> Option<Room> {
@@ -79,8 +87,8 @@ impl Lobby {
     }
 
     /// Rebuild the seat map from the host's netplay observation: seated players (plus the host's
-    /// own slot) fill the two seats, and any other connection is a spectator waiting for one, in
-    /// the order the host saw it connect.
+    /// own slot) fill the two seats, and everyone else connected is a spectator waiting for one,
+    /// in the order they started waiting — a player who steps out re-enters at the back.
     pub(crate) fn observe_netplay(&self, info: &NetplayInfo) -> Option<Room> {
         let own_nick = self.own_nick()?;
         self.update(|room| {
@@ -91,7 +99,7 @@ impl Lobby {
             for player in &info.players {
                 seats.set(player.player, Some(player.nick.clone()));
             }
-            for nick in &info.connections {
+            for nick in &info.waiting {
                 if nick != &own_nick && seats.slot_of(nick).is_none() {
                     seats.enqueue(nick.clone());
                 }
@@ -117,7 +125,10 @@ mod tests {
     use super::*;
     use crate::netplay::{NetplayInfo, NetplayPlayer};
 
-    fn info(self_player: Option<u8>, players: &[(&str, u8)], connections: &[&str]) -> NetplayInfo {
+    /// `waiting` is the connected spectators in the order they started waiting; `connections` is
+    /// the same set in connection order unless a test overrides it.
+    fn info(self_player: Option<u8>, players: &[(&str, u8)], waiting: &[&str]) -> NetplayInfo {
+        let waiting: Vec<String> = waiting.iter().map(|nick| (*nick).to_string()).collect();
         NetplayInfo {
             self_player,
             players: players
@@ -128,7 +139,8 @@ mod tests {
                     ping_ms: None,
                 })
                 .collect(),
-            connections: connections.iter().map(|nick| (*nick).to_string()).collect(),
+            connections: waiting.clone(),
+            waiting,
             ..NetplayInfo::default()
         }
     }
@@ -144,7 +156,7 @@ mod tests {
     fn netplay_observation_seats_the_host_and_players() {
         let lobby = lobby_with_room();
         let room = lobby
-            .observe_netplay(&info(Some(1), &[("player-two", 2)], &["player-two"]))
+            .observe_netplay(&info(Some(1), &[("player-two", 2)], &[]))
             .unwrap();
         assert_eq!(room.seats[0].as_deref(), Some("player-one"));
         assert_eq!(room.seats[1].as_deref(), Some("player-two"));
@@ -153,13 +165,13 @@ mod tests {
     }
 
     #[test]
-    fn extra_connections_wait_in_connection_order() {
+    fn extra_connections_wait_in_the_order_they_started_waiting() {
         let lobby = lobby_with_room();
         let room = lobby
             .observe_netplay(&info(
                 Some(1),
                 &[("player-two", 2)],
-                &["player-two", "watcher-a", "watcher-b"],
+                &["watcher-a", "watcher-b"],
             ))
             .unwrap();
         assert_eq!(room.queue, vec!["watcher-a", "watcher-b"]);
@@ -167,14 +179,22 @@ mod tests {
     }
 
     #[test]
+    fn a_rotated_out_loser_queues_behind_the_spectators_already_waiting() {
+        // `player-two` connected first and lost the set, so it stepped out of seat 2 after
+        // `watcher-a` had already been waiting: the queue head must stay `watcher-a`, otherwise
+        // the next rotation would hand the seat straight back to the loser.
+        let lobby = lobby_with_room();
+        let mut info = info(Some(1), &[], &["watcher-a", "player-two"]);
+        info.connections = vec!["player-two".into(), "watcher-a".into()];
+        let room = lobby.observe_netplay(&info).unwrap();
+        assert_eq!(room.queue, vec!["watcher-a", "player-two"]);
+    }
+
+    #[test]
     fn announcing_a_rotation_names_the_loser_slot_and_queue_head() {
         let lobby = lobby_with_room();
         lobby
-            .observe_netplay(&info(
-                Some(1),
-                &[("player-two", 2)],
-                &["player-two", "watcher-a"],
-            ))
+            .observe_netplay(&info(Some(1), &[("player-two", 2)], &["watcher-a"]))
             .unwrap();
         let rotation = lobby.announce_rotation(1).unwrap();
         assert_eq!(rotation.loser_slot, 2);
@@ -186,7 +206,7 @@ mod tests {
     fn announcing_a_rotation_without_a_queue_does_nothing() {
         let lobby = lobby_with_room();
         lobby
-            .observe_netplay(&info(Some(1), &[("player-two", 2)], &["player-two"]))
+            .observe_netplay(&info(Some(1), &[("player-two", 2)], &[]))
             .unwrap();
         assert!(lobby.announce_rotation(2).is_none());
         assert!(lobby.room().unwrap().rotation.is_none());

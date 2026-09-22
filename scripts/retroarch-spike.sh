@@ -10,6 +10,7 @@
 #   scripts/retroarch-spike.sh smoke [frames]
 #   scripts/retroarch-spike.sh host [port]
 #   scripts/retroarch-spike.sh hostspec [port]
+#   scripts/retroarch-spike.sh solo
 #   scripts/retroarch-spike.sh client <host-ip> [port]
 #   scripts/retroarch-spike.sh client2 <host-ip> [port]
 #   scripts/retroarch-spike.sh spectator <host-ip> [port]
@@ -102,6 +103,7 @@ cmd_port_for() {
     spectator)     echo 55357 ;;
     spectator2)    echo 55358 ;;
     client2)       echo 55359 ;;
+    solo)          echo 55360 ;;
     *)             echo 55355 ;;
   esac
 }
@@ -114,6 +116,10 @@ write_role() {
   local video_driver=""
   [ "$(uname -s)" = "Darwin" ] && video_driver='video_driver = "vulkan"'
   mkdir -p "$WORK/$role/saves" "$WORK/$role/states"
+  # Bind both keyboard prefixes. Netplay samples a participant's local input from the *first*
+  # local device (`input_player1_*`) regardless of the player slot it is assigned
+  # (docs/10-lobby-spike.md L8), so a spectator later promoted into a vacated slot needs the
+  # player-1 binds too; the player-2 copy is the pre-existing per-slot bind.
   cat > "$WORK/$role/overrides.cfg" <<EOF
 config_save_on_exit = "false"
 video_fullscreen = "false"
@@ -129,6 +135,18 @@ netplay_max_connections = "8"
 network_cmd_enable = "true"
 network_cmd_port   = "$(cmd_port_for "$role")"
 savestate_file_compression = "false"
+input_player1_up = "up"
+input_player1_down = "down"
+input_player1_left = "left"
+input_player1_right = "right"
+input_player1_a = "x"
+input_player1_b = "z"
+input_player1_x = "s"
+input_player1_y = "a"
+input_player1_l = "q"
+input_player1_r = "w"
+input_player1_start = "enter"
+input_player1_select = "rshift"
 input_player2_up = "up"
 input_player2_down = "down"
 input_player2_left = "left"
@@ -210,6 +228,8 @@ cmd_smoke() {
 }
 
 cmd_host()     { local port="${1:-$PORT_DEFAULT}"; require_bin; launch_bg host "netplay_ip_port = \"$port\"" "-H" "--port" "$port" "--nick" "spike-host"; }
+# solo — one instance with the command socket and no netplay at all (L17 experiments).
+cmd_solo()     { require_bin; launch_bg solo ""; }
 cmd_hostspec() {
   local port="${1:-$PORT_DEFAULT}"; require_bin
   local extra="netplay_ip_port = \"$port\""
@@ -373,6 +393,7 @@ case "${1:-}" in
   smoke)     shift; cmd_smoke "$@" ;;
   host)      shift; cmd_host "$@" ;;
   hostspec)  shift; cmd_hostspec "$@" ;;
+  solo)      shift; cmd_solo "$@" ;;
   client)    shift; cmd_client "$@" ;;
   client2)   shift; cmd_client2 "$@" ;;
   spectator) shift; cmd_spectator "$@" ;;

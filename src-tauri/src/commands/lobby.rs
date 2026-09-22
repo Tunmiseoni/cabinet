@@ -97,36 +97,80 @@ fn session_running(app: &AppHandle) -> bool {
     crate::session::status(app).status == "running"
 }
 
+/// Per-machine rotation bookkeeping: the last rotation acted on (or primed past), whether the
+/// first room snapshot has been seen, and whether the wait for the losing seat to free has been
+/// logged for the current rotation.
+#[derive(Debug, Default)]
+struct RotationState {
+    last: Option<u64>,
+    primed: bool,
+    waiting_logged: bool,
+}
+
 /// Toggle this machine's own instance once per advertised rotation: the loser steps out, the
-/// queue head steps in. The first room seen only primes `last_rotation`, so an in-flight rotation
-/// at join time is never acted on twice.
+/// queue head steps in. The first room seen only primes the state, so an in-flight rotation at
+/// join time is never acted on twice.
+///
+/// The incoming side waits until the room reports the losing seat actually free. A request sent
+/// while the loser still holds the seat is granted the next free *input device* (device 2,
+/// announced as "player 3"), not the losing seat, and that instance is then invisible to both the
+/// game and the seat map (docs/10-lobby-spike.md §6 L19).
 fn reconcile_rotation(
-    last_rotation: &mut Option<u64>,
-    primed: &mut bool,
+    state: &mut RotationState,
     room: &Room,
     own_nick: &str,
     current_slot: &mut Option<u8>,
     command_port: u16,
 ) {
     let Some(rotation) = &room.rotation else {
-        *primed = true;
+        state.primed = true;
         return;
     };
-    if !*primed {
-        *last_rotation = Some(rotation.id);
-        *primed = true;
+    if !state.primed {
+        state.last = Some(rotation.id);
+        state.primed = true;
         return;
     }
-    if *last_rotation == Some(rotation.id) {
+    if state.last == Some(rotation.id) {
         return;
     }
 
     let is_incoming = rotation.incoming.as_deref() == Some(own_nick);
     let is_loser = *current_slot == Some(rotation.loser_slot);
     if !is_incoming && !is_loser {
-        *last_rotation = Some(rotation.id);
+        state.last = Some(rotation.id);
         return;
     }
+
+    if is_incoming {
+        let seats = room.seats();
+        let occupant = rotation
+            .loser_slot
+            .checked_sub(1)
+            .and_then(|index| seats.slots.get(index as usize))
+            .and_then(|entry| entry.clone());
+        match occupant.as_deref() {
+            Some(nick) if nick == own_nick => {
+                // Already in the seat (a previous poll acted, or the observation lagged): done.
+                state.last = Some(rotation.id);
+                return;
+            }
+            Some(_) => {
+                // Retry on the next poll: `state.last` stays unmarked until we actually act.
+                if !state.waiting_logged {
+                    log::info!(
+                        "rotation {}: waiting for seat {} to free before stepping in",
+                        rotation.id,
+                        rotation.loser_slot
+                    );
+                    state.waiting_logged = true;
+                }
+                return;
+            }
+            None => {}
+        }
+    }
+
     match crate::providers::command::toggle_game_watch(command_port) {
         Ok(()) => {
             log::info!(
@@ -139,7 +183,8 @@ fn reconcile_rotation(
             } else {
                 Some(rotation.loser_slot)
             };
-            *last_rotation = Some(rotation.id);
+            state.last = Some(rotation.id);
+            state.waiting_logged = false;
         }
         Err(err) => log::warn!("cannot act on rotation {}: {err}", rotation.id),
     }
@@ -164,8 +209,8 @@ fn spawn_set_runner(
         let mut watcher = RoundWatcher::new();
         let mut machine = SetMachine::new(first_to);
         let mut current_slot = initial_slot;
-        let mut last_rotation: Option<u64> = None;
-        let mut primed = false;
+        let mut rotation_state = RotationState::default();
+        let mut ticks: u64 = 0;
         loop {
             std::thread::sleep(constants::LOBBY_SET_POLL);
             if !session_running(&app) {
@@ -183,9 +228,20 @@ fn spawn_set_runner(
             let Some(port) = own_command_port(&app, true) else {
                 continue;
             };
+            if ticks == 0 {
+                log::info!("set runner: watching {rom} on command port {port} ({addresses:?})");
+            }
+            // The watcher only emits inside a round the game reported live and says P2 is
+            // human-controlled, so select/continue/idle screens, a lone host's arcade play, the
+            // arcade drift after a 2P match, and the attract demo can no longer decide a round
+            // (docs/10-lobby-spike.md §6 L12/L15).
             match results::read_snapshot(port, addresses) {
                 Ok(snapshot) => {
+                    if ticks.is_multiple_of(20) {
+                        log::info!("set runner snapshot #{ticks}: {snapshot:?}");
+                    }
                     if let Some(outcome) = watcher.observe(snapshot) {
+                        log::info!("set runner outcome: {outcome:?}");
                         let event = machine.observe(outcome);
                         lobby.set_score(machine.score());
                         if let SetEvent::SetWon(winner) = event {
@@ -205,14 +261,14 @@ fn spawn_set_runner(
             }
             if let Some(room) = lobby.room() {
                 reconcile_rotation(
-                    &mut last_rotation,
-                    &mut primed,
+                    &mut rotation_state,
                     &room,
                     &own_nick,
                     &mut current_slot,
                     port,
                 );
             }
+            ticks += 1;
         }
     });
 }
@@ -223,8 +279,7 @@ fn spawn_set_runner(
 fn spawn_seat_follower(app: AppHandle, host: String, own_nick: String, initial_slot: Option<u8>) {
     std::thread::spawn(move || {
         let mut current_slot = initial_slot;
-        let mut last_rotation: Option<u64> = None;
-        let mut primed = false;
+        let mut rotation_state = RotationState::default();
         loop {
             std::thread::sleep(constants::LOBBY_SEAT_POLL);
             if !session_running(&app) {
@@ -244,8 +299,7 @@ fn spawn_seat_follower(app: AppHandle, host: String, own_nick: String, initial_s
                 continue;
             };
             reconcile_rotation(
-                &mut last_rotation,
-                &mut primed,
+                &mut rotation_state,
                 &room,
                 &own_nick,
                 &mut current_slot,
@@ -522,6 +576,32 @@ mod tests {
         room
     }
 
+    /// A real `Lobby` hosting on an OS-assigned beacon port, with the given seats/queue.
+    fn lobby_with_seats(seats: Seats) -> Lobby {
+        let lobby = Lobby::default();
+        let room = Room::new("r", "node", "player-one", "sfiii3nr1", 1, None);
+        lobby.start(room, 0, "player-one".into()).unwrap();
+        lobby.update(|room| room.set_seats(&seats));
+        lobby
+    }
+
+    fn full_room_with_waiting_watcher() -> Lobby {
+        let mut seats = Seats::default();
+        seats.set(1, Some("player-one".into()));
+        seats.set(2, Some("player-two".into()));
+        seats.enqueue("watcher".into());
+        lobby_with_seats(seats)
+    }
+
+    fn query_live_beacon(lobby: &Lobby) -> Room {
+        beacon::query(
+            "127.0.0.1",
+            lobby.beacon_port().unwrap(),
+            constants::LOBBY_BEACON_QUERY_TIMEOUT,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn the_first_player_joins_on_seat_one() {
         let room = room_with(&[]);
@@ -595,12 +675,40 @@ mod tests {
         room
     }
 
+    /// The room once the loser has stepped out: the losing seat is free and the rotation is still
+    /// advertised, which is what the incoming acts on.
+    fn freed_rotation(incoming: &str) -> Room {
+        let mut room = room_with(&[(1, "player-one")]);
+        room.set_rotation(Rotation {
+            id: 3,
+            loser_slot: 2,
+            incoming: Some(incoming.to_string()),
+        });
+        room
+    }
+
+    fn state_primed(last: Option<u64>) -> RotationState {
+        RotationState {
+            last,
+            primed: true,
+            waiting_logged: false,
+        }
+    }
+
+    /// Clear a seat in a live lobby, as the loser's step-out does through the beacon.
+    fn free_seat(lobby: &Lobby, slot: u8) {
+        lobby.update(|room| {
+            let mut seats = room.seats();
+            seats.set(slot, None);
+            room.set_seats(&seats);
+        });
+    }
+
     #[test]
     fn the_loser_steps_out_and_clears_its_slot() {
         let room = rotation(2, "watcher");
         let mut current = Some(2);
-        let mut last = Some(2); // already primed; rotation 3 is new
-        let mut primed = true;
+        let mut state = state_primed(Some(2)); // already primed; rotation 3 is new
         let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         let port = server.local_addr().unwrap().port();
         let handle = std::thread::spawn(move || {
@@ -608,77 +716,211 @@ mod tests {
             let (len, _) = server.recv_from(&mut buffer).unwrap();
             assert_eq!(&buffer[..len], b"NETPLAY_GAME_WATCH\n");
         });
+        reconcile_rotation(&mut state, &room, "player-two", &mut current, port);
+        handle.join().unwrap();
+        assert_eq!(current, None);
+        assert_eq!(state.last, Some(3));
+    }
+
+    #[test]
+    fn the_queue_head_steps_in_once_the_losing_seat_is_free() {
+        let room = freed_rotation("watcher");
+        let mut current = None;
+        let mut state = state_primed(Some(2)); // already primed; rotation 3 is new
+        let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let port = server.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let mut buffer = [0u8; 64];
+            let (len, _) = server.recv_from(&mut buffer).unwrap();
+            assert_eq!(&buffer[..len], b"NETPLAY_GAME_WATCH\n");
+        });
+        reconcile_rotation(&mut state, &room, "watcher", &mut current, port);
+        handle.join().unwrap();
+        assert_eq!(current, Some(2));
+        assert_eq!(state.last, Some(3));
+    }
+
+    #[test]
+    fn the_queue_head_waits_while_the_losing_seat_is_occupied() {
+        // The rotation is announced before the loser steps out. Requesting the seat now would be
+        // granted the next free input device (device 2, announced as "player 3"), not seat 2, and
+        // the instance would be invisible to both the game and the seat map — so the incoming
+        // waits, and the rotation stays unmarked so the next poll retries.
+        let room = rotation(2, "watcher");
+        let mut current = None;
+        let mut state = state_primed(Some(2));
+        let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        server
+            .set_read_timeout(Some(std::time::Duration::from_millis(100)))
+            .unwrap();
+        let port = server.local_addr().unwrap().port();
+        reconcile_rotation(&mut state, &room, "watcher", &mut current, port);
+        let mut buffer = [0u8; 8];
+        assert!(server.recv_from(&mut buffer).is_err());
+        assert_eq!(current, None);
+        assert_eq!(state.last, Some(2));
+        assert!(state.waiting_logged);
+    }
+
+    #[test]
+    fn the_queue_head_steps_in_after_the_loser_steps_out() {
+        let mut current = None;
+        let mut state = state_primed(Some(2));
+        let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let port = server.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let mut buffer = [0u8; 64];
+            let (len, _) = server.recv_from(&mut buffer).unwrap();
+            assert_eq!(&buffer[..len], b"NETPLAY_GAME_WATCH\n");
+        });
+        // The first poll sees the loser still seated: it waits.
         reconcile_rotation(
-            &mut last,
-            &mut primed,
-            &room,
-            "player-two",
+            &mut state,
+            &rotation(2, "watcher"),
+            "watcher",
+            &mut current,
+            port,
+        );
+        assert_eq!(current, None);
+        // The loser steps out and the room catches up: the retry takes the seat.
+        reconcile_rotation(
+            &mut state,
+            &freed_rotation("watcher"),
+            "watcher",
             &mut current,
             port,
         );
         handle.join().unwrap();
-        assert_eq!(current, None);
-    }
-
-    #[test]
-    fn the_queue_head_steps_in() {
-        let room = rotation(2, "watcher");
-        let mut current = None;
-        let mut last = Some(2); // already primed; rotation 3 is new
-        let mut primed = true;
-        let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
-        let port = server.local_addr().unwrap().port();
-        let handle = std::thread::spawn(move || {
-            let mut buffer = [0u8; 64];
-            let (len, _) = server.recv_from(&mut buffer).unwrap();
-            assert_eq!(&buffer[..len], b"NETPLAY_GAME_WATCH\n");
-        });
-        reconcile_rotation(&mut last, &mut primed, &room, "watcher", &mut current, port);
-        handle.join().unwrap();
         assert_eq!(current, Some(2));
+        assert_eq!(state.last, Some(3));
+        assert!(!state.waiting_logged);
     }
 
     #[test]
     fn an_uninvolved_player_does_not_toggle() {
         let room = rotation(2, "watcher");
         let mut current = Some(1);
-        let mut last = Some(2); // already primed; rotation 3 is new
-        let mut primed = true;
-        // A port with no listener: sending must not happen, or the test's socket stays silent.
+        let mut state = state_primed(Some(2)); // already primed; rotation 3 is new
+                                               // A port with no listener: sending must not happen, or the test's socket stays silent.
         let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         let port = server.local_addr().unwrap().port();
         server
             .set_read_timeout(Some(std::time::Duration::from_millis(50)))
             .unwrap();
-        reconcile_rotation(
-            &mut last,
-            &mut primed,
-            &room,
-            "player-one",
-            &mut current,
-            port,
-        );
+        reconcile_rotation(&mut state, &room, "player-one", &mut current, port);
         let mut buffer = [0u8; 8];
         assert!(server.recv_from(&mut buffer).is_err());
+        assert_eq!(state.last, Some(3));
     }
 
     #[test]
     fn the_first_room_only_primes_the_rotation() {
         let room = rotation(2, "watcher");
         let mut current = Some(2);
-        let mut last = None;
-        let mut primed = false;
+        let mut state = RotationState::default();
         let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         let port = server.local_addr().unwrap().port();
-        reconcile_rotation(
-            &mut last,
-            &mut primed,
-            &room,
-            "player-two",
-            &mut current,
-            port,
-        );
-        assert_eq!(last, Some(3));
+        reconcile_rotation(&mut state, &room, "player-two", &mut current, port);
+        assert_eq!(state.last, Some(3));
+        assert!(state.primed);
         assert_eq!(current, Some(2));
+    }
+
+    #[test]
+    fn a_rotation_survives_the_beacon_round_trip() {
+        let lobby = full_room_with_waiting_watcher();
+        let announced = lobby.announce_rotation(1).unwrap();
+        let fetched = query_live_beacon(&lobby);
+        assert_eq!(fetched.rotation, Some(announced));
+        assert_eq!(fetched.queue, vec!["watcher"]);
+        assert_eq!(
+            fetched.seats,
+            [
+                Some("player-one".to_string()),
+                Some("player-two".to_string())
+            ]
+        );
+        lobby.stop();
+    }
+
+    #[test]
+    fn the_queue_head_steps_in_through_the_beacon() {
+        let lobby = full_room_with_waiting_watcher();
+        lobby.announce_rotation(1).unwrap();
+        // The loser's step-out reaches the beacon before the incoming's next poll.
+        free_seat(&lobby, 2);
+        let fetched = query_live_beacon(&lobby);
+
+        let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let port = server.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let mut buffer = [0u8; 64];
+            let (len, _) = server.recv_from(&mut buffer).unwrap();
+            assert_eq!(&buffer[..len], b"NETPLAY_GAME_WATCH\n");
+        });
+
+        let mut current = None;
+        let mut state = state_primed(None);
+        reconcile_rotation(&mut state, &fetched, "watcher", &mut current, port);
+        handle.join().unwrap();
+        assert_eq!(current, Some(2));
+        assert_eq!(state.last, fetched.rotation.map(|rotation| rotation.id));
+        lobby.stop();
+    }
+
+    #[test]
+    fn a_repeated_rotation_id_is_acted_on_once() {
+        let lobby = full_room_with_waiting_watcher();
+        lobby.announce_rotation(1).unwrap();
+        free_seat(&lobby, 2);
+        let fetched = query_live_beacon(&lobby);
+
+        let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        server
+            .set_read_timeout(Some(std::time::Duration::from_millis(100)))
+            .unwrap();
+        let port = server.local_addr().unwrap().port();
+
+        let mut current = None;
+        let mut state = state_primed(None);
+        reconcile_rotation(&mut state, &fetched, "watcher", &mut current, port);
+        reconcile_rotation(&mut state, &fetched, "watcher", &mut current, port);
+
+        let mut buffer = [0u8; 64];
+        let (len, _) = server.recv_from(&mut buffer).unwrap();
+        assert_eq!(&buffer[..len], b"NETPLAY_GAME_WATCH\n");
+        assert!(server.recv_from(&mut buffer).is_err());
+        lobby.stop();
+    }
+
+    #[test]
+    fn a_room_without_a_rotation_primes_before_acting() {
+        let lobby = full_room_with_waiting_watcher();
+        let no_rotation = lobby.room().unwrap();
+        assert!(no_rotation.rotation.is_none());
+
+        let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        server
+            .set_read_timeout(Some(std::time::Duration::from_millis(100)))
+            .unwrap();
+        let port = server.local_addr().unwrap().port();
+
+        let mut current = None;
+        let mut state = RotationState::default();
+        reconcile_rotation(&mut state, &no_rotation, "watcher", &mut current, port);
+        assert!(state.primed);
+        assert_eq!(state.last, None);
+        let mut buffer = [0u8; 8];
+        assert!(server.recv_from(&mut buffer).is_err());
+
+        lobby.announce_rotation(1).unwrap();
+        free_seat(&lobby, 2);
+        let fetched = query_live_beacon(&lobby);
+        reconcile_rotation(&mut state, &fetched, "watcher", &mut current, port);
+        let mut datagram = [0u8; 64];
+        let (len, _) = server.recv_from(&mut datagram).unwrap();
+        assert_eq!(&datagram[..len], b"NETPLAY_GAME_WATCH\n");
+        assert_eq!(current, Some(2));
+        lobby.stop();
     }
 }
