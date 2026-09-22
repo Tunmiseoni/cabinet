@@ -58,6 +58,7 @@ pub(super) fn provider(scratch: &Scratch) -> RetroArchProvider {
         core_dir: None,
         input: crate::config::RetroArchInput::default(),
         input_enabled: true,
+        socd: "neutral".to_string(),
     }
 }
 

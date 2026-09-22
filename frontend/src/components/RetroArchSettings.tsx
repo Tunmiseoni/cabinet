@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getRetroArchHotkeys, downloadRetroArchCore } from "@/lib/api";
 import { useTauriEvent } from "@/lib/hooks";
 import {
@@ -19,7 +26,8 @@ export type RetroArchField =
   | "retroarchPort"
   | "retroarchCommandPort"
   | "retroarchNickname"
-  | "retroarchMaxPingMs";
+  | "retroarchMaxPingMs"
+  | "retroarchSocd";
 
 export type RetroArchToggle =
   | "retroarchMuteSpectators"
@@ -136,6 +144,7 @@ interface RetroArchSettingsProps {
   isolatedConfig: boolean;
   input: RetroArchInput;
   inputEnabled: boolean;
+  socd: string;
   onChange: (key: RetroArchField, value: string) => void;
   onToggle: (key: RetroArchToggle, value: boolean) => void;
   onInputChange: (key: keyof RetroArchInput, value: string) => void;
@@ -155,6 +164,7 @@ export function RetroArchSettings({
   isolatedConfig,
   input,
   inputEnabled,
+  socd,
   onChange,
   onToggle,
   onInputChange,
@@ -444,6 +454,37 @@ export function RetroArchSettings({
             );
           })}
         </div>
+      </div>
+      <div className="grid gap-3 rounded-lg border p-3">
+        <div className="grid gap-1">
+          <Label htmlFor="retroarchSocd">SOCD preset (FBNeo)</Label>
+          <p className="text-xs text-muted-foreground">
+            How the core resolves opposing directions, like holding left and
+            right. Simultaneous Neutral cancels both. Written for every Cabinet
+            launch, so a match stays in sync only when everyone picks the same.
+          </p>
+        </div>
+        <Select
+          value={socd}
+          onValueChange={(value) => onChange("retroarchSocd", value)}
+        >
+          <SelectTrigger id="retroarchSocd">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="neutral">Simultaneous Neutral</SelectItem>
+            <SelectItem value="last8">
+              Last Input Priority (8 Way)
+            </SelectItem>
+            <SelectItem value="last4">
+              Last Input Priority (4 Way)
+            </SelectItem>
+            <SelectItem value="first">First Input Priority</SelectItem>
+            <SelectItem value="up">Up Priority</SelectItem>
+            <SelectItem value="down">Down Priority</SelectItem>
+            <SelectItem value="disabled">Disabled</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </>
   );

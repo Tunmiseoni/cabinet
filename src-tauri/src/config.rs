@@ -82,6 +82,9 @@ pub struct Config {
     pub retroarch_isolated_config: bool,
     pub retroarch_input: RetroArchInput,
     pub retroarch_input_enabled: bool,
+    /// FBNeo's `SOCD Setting` for Cabinet launches. Ids match `spec::SOCD_PRESETS`; anything
+    /// unknown falls back to Simultaneous Neutral there.
+    pub retroarch_socd: String,
     pub lobby_beacon_port: u16,
     pub verbose_logging: bool,
     pub developer_mode: bool,
@@ -109,6 +112,7 @@ impl Default for Config {
             retroarch_isolated_config: false,
             retroarch_input: RetroArchInput::default(),
             retroarch_input_enabled: true,
+            retroarch_socd: "neutral".into(),
             lobby_beacon_port: crate::constants::LOBBY_BEACON_PORT,
             verbose_logging: false,
             developer_mode: false,
@@ -210,6 +214,7 @@ mod tests {
         assert_eq!(config.retroarch_max_ping_ms, 0);
         assert!(!config.retroarch_isolated_config);
         assert!(config.retroarch_input_enabled);
+        assert_eq!(config.retroarch_socd, "neutral");
         assert_eq!(config.retroarch_input, RetroArchInput::default());
         assert_eq!(
             config.retroarch_command_port,
@@ -287,6 +292,23 @@ mod tests {
         let loaded: Config = serde_json::from_str(&raw).unwrap();
         assert_eq!(loaded.retroarch_input, input);
         assert!(!loaded.retroarch_input_enabled);
+    }
+
+    #[test]
+    fn round_trips_the_socd_preset() {
+        let config = Config {
+            retroarch_socd: "down".into(),
+            ..Config::default()
+        };
+        let raw = serde_json::to_string(&config).unwrap();
+        let loaded: Config = serde_json::from_str(&raw).unwrap();
+        assert_eq!(loaded.retroarch_socd, "down");
+    }
+
+    #[test]
+    fn defaults_socd_to_simultaneous_neutral() {
+        let config = Config::default();
+        assert_eq!(config.retroarch_socd, "neutral");
     }
 
     #[test]

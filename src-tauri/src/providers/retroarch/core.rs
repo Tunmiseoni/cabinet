@@ -250,6 +250,142 @@ fn expand_tilde(value: &str, home: Option<&Path>) -> Option<PathBuf> {
     Some(PathBuf::from(value))
 }
 
+/// The directories whose per-core subdirectories hold RetroArch's option files
+/// (`<base>/<core>/<core>.opt`), most authoritative first.
+fn core_options_bases(program: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+    let mut bases: Vec<PathBuf> = Vec::new();
+    for dir in autoconfig_dirs(program, home) {
+        if let Some(root) = dir.parent() {
+            let base = root.join("config");
+            if !bases.contains(&base) {
+                bases.push(base);
+            }
+        }
+    }
+    bases
+}
+
+/// Whether a file looks like a core-options file for the FBNeo core, so a sibling core's `.opt`
+/// is never mistaken for it.
+fn has_fbneo_options(path: &Path) -> bool {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    raw.lines().any(|line| {
+        let line = line.trim();
+        !line.is_empty()
+            && !line.starts_with('#')
+            && line
+                .split_once('=')
+                .is_some_and(|(name, _)| name.trim().starts_with("fbneo-"))
+    })
+}
+
+/// Pick the option file RetroArch would load from a per-core options directory: the game-specific
+/// one (when the host has game-specific options on), else the per-core file, else the most
+/// recently written `.opt` (a folder-specific file).
+fn pick_core_options_file(
+    core_dir: &Path,
+    rom_path: &Path,
+    game_specific: bool,
+) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = std::fs::read_dir(core_dir)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case("opt"))
+        })
+        .filter(|path| has_fbneo_options(path))
+        .collect();
+    if candidates.is_empty() {
+        return None;
+    }
+
+    let matches_stem = |path: &PathBuf, stem: &str| {
+        path.file_stem()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value == stem)
+    };
+    if game_specific {
+        if let Some(stem) = rom_path.file_stem().and_then(|value| value.to_str()) {
+            if let Some(found) = candidates.iter().find(|path| matches_stem(path, stem)) {
+                return Some(found.clone());
+            }
+        }
+    }
+    if let Some(name) = core_dir.file_name().and_then(|value| value.to_str()) {
+        if let Some(found) = candidates.iter().find(|path| matches_stem(path, name)) {
+            return Some(found.clone());
+        }
+    }
+
+    candidates.sort_by_key(|path| {
+        std::fs::metadata(path)
+            .and_then(|meta| meta.modified())
+            .ok()
+    });
+    candidates.pop()
+}
+
+/// The host's global core-options file: the configured `core_options_path`, else
+/// `retroarch-core-options.cfg` beside the config file (RetroArch's own fallback).
+fn global_core_options_path(
+    host_config: Option<&Path>,
+    configured: Option<&str>,
+    home: Option<&Path>,
+) -> Option<PathBuf> {
+    let path = configured
+        .and_then(|value| expand_tilde(value, home))
+        .or_else(|| {
+            host_config
+                .and_then(Path::parent)
+                .map(|dir| dir.join("retroarch-core-options.cfg"))
+        })?;
+    path.is_file().then_some(path)
+}
+
+/// Locate the core-options file a launch would otherwise read, so a Cabinet session can carry the
+/// player's own FBNeo options with our preset on top. Mirrors RetroArch's resolution
+/// (`runloop_init_core_options_path`): a game-specific `.opt` when `game_specific_options` is on,
+/// else the per-core `.opt`, else the global `core_options_path`.
+pub(super) fn resolve_core_options_source(
+    program: &Path,
+    host_config: Option<&Path>,
+    rom_path: &Path,
+    home: Option<&Path>,
+) -> Option<PathBuf> {
+    let host = host_config.and_then(|path| std::fs::read_to_string(path).ok());
+    let value = |key: &str| host.as_deref().and_then(|raw| config_value(raw, key));
+
+    let configured = value("core_options_path");
+    if value("global_core_options").as_deref() == Some("true") {
+        return global_core_options_path(host_config, configured.as_deref(), home);
+    }
+
+    let game_specific = value("game_specific_options").as_deref() == Some("true");
+    for base in core_options_bases(program, home) {
+        let Ok(entries) = std::fs::read_dir(&base) else {
+            continue;
+        };
+        let mut core_dirs: Vec<PathBuf> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+        core_dirs.sort();
+        for core_dir in core_dirs {
+            if let Some(found) = pick_core_options_file(&core_dir, rom_path, game_specific) {
+                return Some(found);
+            }
+        }
+    }
+
+    global_core_options_path(host_config, configured.as_deref(), home)
+}
+
 /// The directories RetroArch may scan for cores, most authoritative first: the host config's
 /// `libretro_directory`, then the program-relative `cores/`, then the per-OS standard paths.
 pub(super) fn retroarch_core_dirs(
@@ -929,5 +1065,151 @@ mod tests {
         let core = download_managed_core(&scratch.dir, |_, _| {}).expect("download core");
         assert!(core.is_file());
         assert_eq!(sha256_file(&core).unwrap(), frozen_core_sha256());
+    }
+
+    #[test]
+    fn has_fbneo_options_recognizes_only_fbneo_files() {
+        let scratch = Scratch::new("fbneo-options-detect");
+        let fbneo = scratch.dir.join("FBNeo.opt");
+        std::fs::write(&fbneo, "fbneo-socd = \"3\"\n").unwrap();
+        let snes = scratch.dir.join("snes9x.opt");
+        std::fs::write(&snes, "snes9x_region = \"auto\"\n").unwrap();
+        assert!(has_fbneo_options(&fbneo));
+        assert!(!has_fbneo_options(&snes));
+        assert!(!has_fbneo_options(&scratch.dir.join("missing.opt")));
+    }
+
+    #[test]
+    fn core_options_bases_use_the_program_config_directory() {
+        let program = Path::new("/opt/RetroArch/retroarch");
+        let bases = core_options_bases(program, None);
+        assert_eq!(bases, vec![PathBuf::from("/opt/RetroArch/config")]);
+    }
+
+    #[test]
+    fn pick_core_options_file_prefers_the_per_core_file() {
+        let scratch = Scratch::new("pick-per-core");
+        let core_dir = scratch.dir.join("FinalBurn Neo");
+        std::fs::create_dir_all(&core_dir).unwrap();
+        std::fs::write(core_dir.join("FinalBurn Neo.opt"), "fbneo-socd = \"3\"\n").unwrap();
+        std::fs::write(core_dir.join("roms.opt"), "fbneo-hiscores = \"enabled\"\n").unwrap();
+        std::fs::write(core_dir.join("snes9x.opt"), "snes9x_region = \"auto\"\n").unwrap();
+        let picked = pick_core_options_file(&core_dir, &scratch.dir.join("sfiii3nr1.zip"), true);
+        assert_eq!(picked, Some(core_dir.join("FinalBurn Neo.opt")));
+    }
+
+    #[test]
+    fn pick_core_options_file_prefers_the_game_specific_file_when_enabled() {
+        let scratch = Scratch::new("pick-game");
+        let core_dir = scratch.dir.join("FinalBurn Neo");
+        std::fs::create_dir_all(&core_dir).unwrap();
+        let per_core = core_dir.join("FinalBurn Neo.opt");
+        std::fs::write(&per_core, "fbneo-socd = \"3\"\n").unwrap();
+        let game = core_dir.join("sfiii3nr1.opt");
+        std::fs::write(&game, "fbneo-socd = \"0\"\n").unwrap();
+        let rom = scratch.dir.join("sfiii3nr1.zip");
+        assert_eq!(pick_core_options_file(&core_dir, &rom, true), Some(game));
+        assert_eq!(
+            pick_core_options_file(&core_dir, &rom, false),
+            Some(per_core)
+        );
+    }
+
+    #[test]
+    fn pick_core_options_file_is_none_without_fbneo_options() {
+        let scratch = Scratch::new("pick-empty");
+        let core_dir = scratch.dir.join("Some Core");
+        std::fs::create_dir_all(&core_dir).unwrap();
+        std::fs::write(core_dir.join("Some Core.opt"), "other = \"1\"\n").unwrap();
+        assert!(pick_core_options_file(&core_dir, &scratch.dir.join("rom.zip"), true).is_none());
+    }
+
+    #[test]
+    fn global_core_options_path_prefers_the_configured_file() {
+        let scratch = Scratch::new("global-options");
+        let config_dir = scratch.dir.join("RetroArch/config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let host_config = config_dir.join("retroarch.cfg");
+        std::fs::write(&host_config, "").unwrap();
+        let default_path = config_dir.join("retroarch-core-options.cfg");
+        std::fs::write(&default_path, "fbneo-socd = \"3\"\n").unwrap();
+        assert_eq!(
+            global_core_options_path(Some(&host_config), None, None),
+            Some(default_path)
+        );
+
+        let configured = scratch.dir.join("custom-options.cfg");
+        std::fs::write(&configured, "fbneo-socd = \"3\"\n").unwrap();
+        assert_eq!(
+            global_core_options_path(Some(&host_config), configured.to_str(), None),
+            Some(configured)
+        );
+    }
+
+    #[test]
+    fn resolve_core_options_source_honors_a_global_config() {
+        let scratch = Scratch::new("source-global");
+        let global = scratch.dir.join("global.cfg");
+        std::fs::write(&global, "fbneo-socd = \"3\"\n").unwrap();
+        let host_config = scratch.dir.join("retroarch.cfg");
+        std::fs::write(
+            &host_config,
+            format!(
+                "global_core_options = \"true\"\ncore_options_path = \"{}\"\n",
+                global.display()
+            ),
+        )
+        .unwrap();
+        let resolved = resolve_core_options_source(
+            Path::new("/opt/RetroArch/retroarch"),
+            Some(&host_config),
+            &scratch.dir.join("sfiii3nr1.zip"),
+            None,
+        );
+        assert_eq!(resolved, Some(global));
+    }
+
+    #[test]
+    fn resolve_core_options_source_finds_the_per_core_options() {
+        let scratch = Scratch::new("source-per-core");
+        let root = scratch.dir.join("RetroArch");
+        let program = root.join("retroarch");
+        let config_dir = root.join("config");
+        std::fs::create_dir_all(config_dir.join("FinalBurn Neo")).unwrap();
+        let per_core = config_dir.join("FinalBurn Neo/FinalBurn Neo.opt");
+        std::fs::write(&per_core, "fbneo-socd = \"3\"\n").unwrap();
+        let host_config = config_dir.join("retroarch.cfg");
+        std::fs::write(&host_config, "game_specific_options = \"true\"\n").unwrap();
+
+        let resolved = resolve_core_options_source(
+            &program,
+            Some(&host_config),
+            &scratch.dir.join("sfiii3nr1.zip"),
+            None,
+        );
+        assert_eq!(resolved, Some(per_core));
+    }
+
+    #[test]
+    fn resolve_core_options_source_prefers_a_game_specific_file() {
+        let scratch = Scratch::new("source-game");
+        let root = scratch.dir.join("RetroArch");
+        let program = root.join("retroarch");
+        let config_dir = root.join("config");
+        std::fs::create_dir_all(config_dir.join("FinalBurn Neo")).unwrap();
+        let core_dir = config_dir.join("FinalBurn Neo");
+        std::fs::write(core_dir.join("FinalBurn Neo.opt"), "fbneo-socd = \"3\"\n").unwrap();
+        let game = core_dir.join("sfiii3nr1.opt");
+        std::fs::write(&game, "fbneo-socd = \"0\"\n").unwrap();
+        let host_config = config_dir.join("retroarch.cfg");
+        std::fs::write(&host_config, "game_specific_options = \"true\"\n").unwrap();
+
+        let resolved = resolve_core_options_source(
+            &program,
+            Some(&host_config),
+            &scratch.dir.join("sfiii3nr1.zip"),
+            None,
+        );
+        assert_eq!(resolved, Some(game));
     }
 }

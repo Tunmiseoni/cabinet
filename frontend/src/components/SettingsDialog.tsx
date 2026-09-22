@@ -37,6 +37,8 @@ const DEFAULT_RETROARCH_INPUT: RetroArchInput = {
   coin: "num5",
 };
 
+const DEFAULT_RETROARCH_SOCD = "neutral";
+
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -64,6 +66,7 @@ interface FormState {
   retroarchIsolatedConfig: boolean;
   retroarchInput: RetroArchInput;
   retroarchInputEnabled: boolean;
+  retroarchSocd: string;
   lobbyBeaconPort: string;
   verboseLogging: boolean;
   developerMode: boolean;
@@ -90,6 +93,7 @@ function toForm(config: Config | null): FormState {
     retroarchIsolatedConfig: config?.retroarchIsolatedConfig ?? false,
     retroarchInput: config?.retroarchInput ?? DEFAULT_RETROARCH_INPUT,
     retroarchInputEnabled: config?.retroarchInputEnabled ?? true,
+    retroarchSocd: config?.retroarchSocd ?? DEFAULT_RETROARCH_SOCD,
     lobbyBeaconPort: String(config?.lobbyBeaconPort ?? 47812),
     verboseLogging: config?.verboseLogging ?? false,
     developerMode: config?.developerMode ?? false,
@@ -119,6 +123,7 @@ function buildConfig(form: FormState): Config {
     retroarchIsolatedConfig: form.retroarchIsolatedConfig,
     retroarchInput: form.retroarchInput,
     retroarchInputEnabled: form.retroarchInputEnabled,
+    retroarchSocd: form.retroarchSocd,
     lobbyBeaconPort: Number(form.lobbyBeaconPort) || 47812,
     verboseLogging: form.verboseLogging,
     developerMode: form.developerMode,
@@ -258,6 +263,7 @@ export function SettingsDialog({
               isolatedConfig={form.retroarchIsolatedConfig}
               input={form.retroarchInput}
               inputEnabled={form.retroarchInputEnabled}
+              socd={form.retroarchSocd}
               onChange={setField}
               onToggle={setToggle}
               onInputChange={setInput}

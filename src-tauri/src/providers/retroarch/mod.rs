@@ -42,6 +42,7 @@ pub struct RetroArchProvider {
     core_dir: Option<PathBuf>,
     input: RetroArchInput,
     input_enabled: bool,
+    socd: String,
 }
 
 impl RetroArchProvider {
@@ -102,6 +103,7 @@ impl RetroArchProvider {
             core_dir,
             input: cfg.retroarch_input.clone(),
             input_enabled: cfg.retroarch_input_enabled,
+            socd: cfg.retroarch_socd.clone(),
         }
     }
 
@@ -147,8 +149,9 @@ impl RetroArchProvider {
         seat: Option<u8>,
         nickname: &str,
         start_as_spectator: bool,
+        rom_path: &Path,
     ) -> crate::error::Result<PathBuf> {
-        spec::write_overrides(self, role, seat, nickname, start_as_spectator)
+        spec::write_overrides(self, role, seat, nickname, start_as_spectator, rom_path)
     }
 
     /// Make the core basename visible to RetroArch's own core scan, so its netplay capability
@@ -233,8 +236,13 @@ impl Provider for RetroArchProvider {
         }
         let nickname = self.resolve_nickname();
         let seat = request.seat()?;
-        let overrides =
-            self.write_overrides(request.role, seat, &nickname, request.start_as_spectator)?;
+        let overrides = self.write_overrides(
+            request.role,
+            seat,
+            &nickname,
+            request.start_as_spectator,
+            request.rom_path,
+        )?;
         let base_config = spec::write_base_config(self)?;
         let peer = self.peer(request.peer_ip);
         let args = spec::launch_args(&spec::Args {

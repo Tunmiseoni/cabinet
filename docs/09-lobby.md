@@ -191,6 +191,14 @@ picks one explicitly.
 **v1's second protocol is dropped.** There is no custom TCP control channel. Discovery is one
 beacon; control is RetroArch's own command socket (§7.5).
 
+**SOCD is per machine (added 2026-09-22).** Every launch pins FBNeo's `SOCD Setting` from the local
+**SOCD preset** (Settings → RetroArch, default *Simultaneous Neutral*) by pointing `core_options_path`
+at a per-role session file that carries the player's own FBNeo options with the pin on top. Each
+peer's core applies SOCD **after** netplay input sync, so two peers with different presets can
+diverge — the room does not pin it yet, and players should leave it at the shared default. A
+room-wide pin (the host advertises its preset on the beacon and joiners adopt it) is a follow-up.
+See [`04-design.md`](04-design.md) §3.
+
 ## 6. Identity
 
 - **Key:** the Tailscale **node id** (the `Peer` map key in `tailscale status --json` / `Self.ID`) —

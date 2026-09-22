@@ -1,3 +1,4 @@
+use super::core;
 use super::hotkeys;
 use super::RetroArchProvider;
 use crate::config::RetroArchInput;
@@ -47,6 +48,85 @@ pub(super) fn launch_args(args: &Args) -> Vec<String> {
 
 pub(super) fn overrides_path(overrides_dir: &Path, role: Role) -> PathBuf {
     overrides_dir.join(format!("netplay-{}.cfg", role.key()))
+}
+
+pub(super) fn core_options_path(overrides_dir: &Path, role: Role) -> PathBuf {
+    overrides_dir.join(role.key()).join("core-options.cfg")
+}
+
+/// FBNeo's `fbneo-socd` value for each Cabinet SOCD preset, in the core's own order. The core
+/// defaults to `last8`; Cabinet defaults to Simultaneous Neutral.
+pub(super) const SOCD_PRESETS: [(&str, &str); 7] = [
+    ("disabled", "0"),
+    ("neutral", "1"),
+    ("last4", "2"),
+    ("last8", "3"),
+    ("first", "4"),
+    ("up", "5"),
+    ("down", "6"),
+];
+
+/// Unknown ids fall back to Simultaneous Neutral rather than failing the launch.
+fn socd_value(preset: &str) -> &'static str {
+    SOCD_PRESETS
+        .iter()
+        .find(|(id, _)| *id == preset)
+        .map(|(_, value)| *value)
+        .unwrap_or("1")
+}
+
+/// The `key = "value"` name of a config line, ignoring comments and blanks.
+fn line_key(line: &str) -> Option<&str> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+        return None;
+    }
+    line.split_once('=').map(|(name, _)| name.trim())
+}
+
+/// Write the session core-options file: the FBNeo SOCD setting pinned to the Cabinet preset, plus
+/// the player's own options so a Cabinet launch does not silently reset their DIPs and the like.
+/// The pin goes first and any `fbneo-socd` in the source is dropped, so it always wins.
+fn write_core_options(
+    provider: &RetroArchProvider,
+    role: Role,
+    rom_path: &Path,
+) -> crate::error::Result<PathBuf> {
+    let source = core::resolve_core_options_source(
+        &provider.program,
+        provider.host_config.as_deref(),
+        rom_path,
+        crate::env::home_dir().as_deref(),
+    );
+    let raw = source
+        .as_deref()
+        .and_then(|path| std::fs::read_to_string(path).ok());
+    if let (Some(path), Some(_)) = (source.as_deref(), raw.as_deref()) {
+        log::debug!(target: "retroarch", "core options merged from {}", path.display());
+    }
+    let content = merge_core_options(raw.as_deref(), socd_value(&provider.socd));
+
+    let path = core_options_path(&provider.overrides_dir, role);
+    std::fs::write(&path, &content)
+        .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
+    log::debug!(target: "retroarch", "core options {}:\n{}", path.display(), content);
+    Ok(path)
+}
+
+/// Put the SOCD pin ahead of the player's own options, dropping their `fbneo-socd` so the pin is
+/// the first (and only) match RetroArch's config reader finds.
+fn merge_core_options(source: Option<&str>, value: &str) -> String {
+    let mut content = format!("fbneo-socd = \"{value}\"\n");
+    if let Some(raw) = source {
+        for line in raw.lines() {
+            if line_key(line) == Some("fbneo-socd") {
+                continue;
+            }
+            content.push_str(line);
+            content.push('\n');
+        }
+    }
+    content
 }
 
 /// The 12 preset keys mapped to their FBNeo Classic RetroPad bind suffix.
@@ -106,6 +186,7 @@ pub(super) fn write_overrides(
     seat: Option<u8>,
     nickname: &str,
     start_as_spectator: bool,
+    rom_path: &Path,
 ) -> crate::error::Result<PathBuf> {
     let dir = provider.overrides_dir.join(role.key());
     let saves = dir.join("saves");
@@ -171,6 +252,16 @@ pub(super) fn write_overrides(
             content.push_str(&format!("{config_key} = \"nul\"\n"));
         }
     }
+    // Point RetroArch at our session core-options file. Without `global_core_options` a per-core
+    // `.opt` wins over `core_options_path`, and a per-game `.opt` wins over that, so both have to
+    // be turned off for the SOCD pin to apply.
+    let core_options = write_core_options(provider, role, rom_path)?;
+    content.push_str("global_core_options = \"true\"\n");
+    content.push_str("game_specific_options = \"false\"\n");
+    content.push_str(&format!(
+        "core_options_path = \"{}\"\n",
+        core_options.display()
+    ));
     content.push_str(&format!("netplay_ip_port = \"{}\"\n", provider.port));
     content.push_str(&format!("netplay_nickname = \"{}\"\n", nickname));
     if provider.max_ping_ms > 0 {
@@ -724,5 +815,97 @@ mod tests {
         assert!(provider
             .spec(&request(Role::P1, &rom, "100.64.0.2"))
             .is_err());
+    }
+
+    fn core_options(provider: &RetroArchProvider, role: Role) -> String {
+        std::fs::read_to_string(core_options_path(&provider.overrides_dir, role)).unwrap()
+    }
+
+    #[test]
+    fn socd_presets_map_to_the_core_values() {
+        for (preset, value) in SOCD_PRESETS {
+            assert_eq!(socd_value(preset), value, "preset {preset}");
+        }
+        assert_eq!(socd_value("neutral"), "1");
+        assert_eq!(socd_value("bogus"), "1");
+    }
+
+    #[test]
+    fn a_session_points_retroarch_at_our_core_options_and_pins_simultaneous_neutral() {
+        let scratch = Scratch::new("socd-default");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+
+        let path = core_options_path(&provider.overrides_dir, Role::P1);
+        let content = overrides(&provider, Role::P1);
+        assert!(content.contains("global_core_options = \"true\""));
+        assert!(content.contains("game_specific_options = \"false\""));
+        assert!(content.contains(&format!("core_options_path = \"{}\"", path.display())));
+        assert!(core_options(&provider, Role::P1).starts_with("fbneo-socd = \"1\"\n"));
+    }
+
+    #[test]
+    fn the_socd_preset_reaches_every_role_and_follows_the_config() {
+        let scratch = Scratch::new("socd-roles");
+        let rom = scratch.rom();
+        let mut provider = provider(&scratch);
+        provider.socd = "up".to_string();
+        for role in [Role::P1, Role::P2, Role::Spectator] {
+            provider.spec(&request(role, &rom, "100.64.0.2")).unwrap();
+            let content = core_options(&provider, role);
+            assert!(
+                content.starts_with("fbneo-socd = \"5\"\n"),
+                "wrong socd for {role:?}: {content}"
+            );
+        }
+    }
+
+    #[test]
+    fn merging_keeps_the_players_options_and_replaces_their_socd() {
+        let merged = merge_core_options(
+            Some(
+                "fbneo-samplerate = \"48000\"\nfbneo-socd = \"3\"\nfbneo-hiscores = \"enabled\"\n",
+            ),
+            "1",
+        );
+        assert_eq!(
+            merged,
+            "fbneo-socd = \"1\"\nfbneo-samplerate = \"48000\"\nfbneo-hiscores = \"enabled\"\n"
+        );
+        assert_eq!(merge_core_options(None, "4"), "fbneo-socd = \"4\"\n");
+    }
+
+    #[test]
+    fn a_configured_global_core_options_file_is_preserved() {
+        let scratch = Scratch::new("socd-global");
+        let rom = scratch.rom();
+        let global = scratch.dir.join("global-core-options.cfg");
+        std::fs::write(
+            &global,
+            "fbneo-dipswitch-sfiii3nr1-Region = \"Japan\"\nfbneo-socd = \"3\"\n",
+        )
+        .unwrap();
+        let host_cfg = scratch.dir.join("retroarch.cfg");
+        std::fs::write(
+            &host_cfg,
+            format!(
+                "global_core_options = \"true\"\ncore_options_path = \"{}\"\n",
+                global.display()
+            ),
+        )
+        .unwrap();
+        let mut provider = provider(&scratch);
+        provider.host_config = Some(host_cfg);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+
+        let content = core_options(&provider, Role::P1);
+        assert!(content.starts_with("fbneo-socd = \"1\"\n"));
+        assert!(content.contains("fbneo-dipswitch-sfiii3nr1-Region = \"Japan\""));
+        assert!(!content.contains("fbneo-socd = \"3\""));
     }
 }

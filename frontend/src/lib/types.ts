@@ -22,6 +22,7 @@ export interface Config {
   retroarchIsolatedConfig: boolean;
   retroarchInput: RetroArchInput;
   retroarchInputEnabled: boolean;
+  retroarchSocd: string;
   lobbyBeaconPort: number;
   verboseLogging: boolean;
   developerMode: boolean;
