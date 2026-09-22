@@ -49,7 +49,7 @@ State what you intend to do, why, and how to undo it, then wait for confirmation
 
 ## Repository layout
 
-- `docs/` — investigation and design. `01`–`03` are the historical troubleshooting record; `04-design.md` is the current spec; `08-cleanup.md` is the cleanup backlog (applied pass + deferred refactors); `11-training-mode.md` is research-only (Fightcade/peon2 training and `3rd_training_lua`, gated on licensing + a `/grill-me` session).
+- `docs/` — investigation and design. `01`–`03` are the historical troubleshooting record; `04-design.md` is the current spec; `08-cleanup.md` is the cleanup backlog (applied pass + deferred refactors); `11-training-mode.md` is research-only (two training paths: Fightcade/peon2 + `3rd_training_lua` via Lua, licensing-gated; and a Cabinet-driven RetroArch FBNeo practice mode over the command socket, added 2026-09-22 — both gated on spikes + a `/grill-me` session).
 - `frontend/` — Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias `@/*` -> `frontend/src/*`).
 - `src-tauri/` — Rust backend (`config`, `tailscale`, `roms`, `launcher`, `contracts`, `providers/{fightcade,retroarch/{core,hotkeys,parity,spec,command}}`, `lobby`, `session`, `windowing`, `commands`).
 - `scripts/` — helper scripts (`dev.sh`, `build.sh`, `test.sh`, `clean.sh`, `setup-linux.sh`, `uninstall-linux.sh`, `diagnose-linux.sh`, `tauri-build.sh`, `patch-appimage.sh`, `retroarch-spike.sh`, `ram-probe.py`, `ram-window.py`, `publish-cores.sh`) plus the reference per-OS launchers (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`, `fcade-lan-windows-firewall.bat`). `publish-cores.sh` uploads the frozen cores as assets of a published `retroarch-cores-v1` release on the public repo (never the repo tree); run it only on the user's say-so.
@@ -100,7 +100,7 @@ Project layout: `frontend/` (Vite + React + TS + Tailwind v4 + shadcn/ui; alias 
 
 - There is no automated test suite yet. The platform launchers remain the reference implementation; the Tauri app (v1) is built to reproduce them.
 - Frontend typecheck/build: `npm run build` (root, delegates to `frontend/`). Rust checks in `src-tauri/`: `cargo fmt --check`, `cargo test`, and `cargo clippy --all-targets`. The same gate runs on all three OSes in `.github/workflows/ci.yml`.
-- Rust unit tests cover the Tailscale parsers, ROM scan, and launcher spec/ports. Opt-in live tests require local hardware: `cargo test -- --ignored --nocapture` (Tailscale status/ping, ROM dir, real emulator launch and loopback pair — the latter opens Wine windows).
+- Rust unit tests cover the Tailscale parsers, ROM scan, and launcher spec/ports. Opt-in live tests require local hardware: `cargo test -- --ignored --nocapture` (Tailscale status/ping, ROM dir, the host RetroArch core-options lookup, real emulator launch and loopback pair — the latter opens Wine windows).
 - Direct-connect can be tested on a single machine over loopback: the app's **Dev pair** button (or `launch_dev_pair`), or two player instances. No `WINEPREFIX` isolation is needed — two Wine instances in the shared FightCade prefix coexist.
 - For manual end-to-end tests, at least two peers must be online on the tailnet.
 - Helper scripts: `scripts/test.sh` runs the full local gate (frontend build + `cargo fmt --check` + `cargo test` + clippy); `scripts/dev.sh` runs the app; `scripts/clean.sh` removes regenerables (`--deps`, `--wine`).

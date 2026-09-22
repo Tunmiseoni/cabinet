@@ -250,16 +250,40 @@ fn expand_tilde(value: &str, home: Option<&Path>) -> Option<PathBuf> {
     Some(PathBuf::from(value))
 }
 
+/// The host's "Config" directory setting (`rgui_config_directory`), where RetroArch keeps per-core
+/// option files as `<dir>/<core_name>/<core_name>.opt`. Empty until the host sets it.
+fn configured_config_dir(host_config: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
+    let contents = std::fs::read_to_string(host_config?).ok()?;
+    expand_tilde(&config_value(&contents, "rgui_config_directory")?, home)
+}
+
 /// The directories whose per-core subdirectories hold RetroArch's option files
 /// (`<base>/<core>/<core>.opt`), most authoritative first.
-fn core_options_bases(program: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+///
+/// RetroArch resolves the base as `rgui_config_directory`, else the directory of the config it
+/// loaded, else the platform default (`<retroarch root>/config`: `application_data/config` on
+/// macOS, `base_path/config` on Linux, `:\config` — the executable's directory — on Windows).
+fn core_options_bases(
+    program: &Path,
+    host_config: Option<&Path>,
+    home: Option<&Path>,
+) -> Vec<PathBuf> {
     let mut bases: Vec<PathBuf> = Vec::new();
+    let mut push = |base: PathBuf| {
+        if !bases.contains(&base) {
+            bases.push(base);
+        }
+    };
+
+    if let Some(dir) = configured_config_dir(host_config, home) {
+        push(dir);
+    }
+    if let Some(dir) = host_config.and_then(Path::parent) {
+        push(dir.to_path_buf());
+    }
     for dir in autoconfig_dirs(program, home) {
         if let Some(root) = dir.parent() {
-            let base = root.join("config");
-            if !bases.contains(&base) {
-                bases.push(base);
-            }
+            push(root.join("config"));
         }
     }
     bases
@@ -358,7 +382,7 @@ pub(super) fn resolve_core_options_source(
     home: Option<&Path>,
 ) -> Option<PathBuf> {
     resolve_core_options_source_in(
-        &core_options_bases(program, home),
+        &core_options_bases(program, host_config, home),
         host_config,
         rom_path,
         home,
@@ -1099,8 +1123,102 @@ mod tests {
     #[test]
     fn core_options_bases_end_with_the_program_config_directory() {
         let program = Path::new("/opt/RetroArch/retroarch");
-        let bases = core_options_bases(program, None);
+        let bases = core_options_bases(program, None, None);
         assert_eq!(bases.last(), Some(&PathBuf::from("/opt/RetroArch/config")));
+    }
+
+    #[test]
+    fn core_options_bases_prefer_the_configured_config_directory() {
+        let scratch = Scratch::new("bases-configured");
+        let custom = scratch.dir.join("my-config");
+        let host_config = scratch.dir.join("retroarch.cfg");
+        std::fs::write(
+            &host_config,
+            format!("rgui_config_directory = \"{}\"\n", custom.display()),
+        )
+        .unwrap();
+        let bases = core_options_bases(
+            Path::new("/opt/RetroArch/retroarch"),
+            Some(&host_config),
+            None,
+        );
+        assert_eq!(bases.first(), Some(&custom));
+    }
+
+    #[test]
+    fn configured_config_dir_expands_a_home_relative_value() {
+        let scratch = Scratch::new("config-dir-tilde");
+        let host_config = scratch.dir.join("retroarch.cfg");
+        std::fs::write(&host_config, "rgui_config_directory = \"~/retro-cfg\"\n").unwrap();
+        assert_eq!(
+            configured_config_dir(Some(&host_config), Some(Path::new("/home/player"))),
+            Some(PathBuf::from("/home/player/retro-cfg"))
+        );
+        assert_eq!(configured_config_dir(Some(&host_config), None), None);
+    }
+
+    #[test]
+    fn configured_config_dir_is_none_without_the_setting() {
+        let scratch = Scratch::new("config-dir-unset");
+        let host_config = scratch.dir.join("retroarch.cfg");
+        std::fs::write(&host_config, "video_driver = \"vulkan\"\n").unwrap();
+        assert_eq!(configured_config_dir(Some(&host_config), None), None);
+    }
+
+    #[test]
+    #[ignore = "reads the live RetroArch config to check the core-options lookup"]
+    fn live_resolves_the_host_core_options() {
+        let program = Path::new(DEFAULT_PROGRAM);
+        let home = crate::env::home_dir();
+        let Some(host_config) = resolve_host_config(program, home.as_deref()) else {
+            eprintln!("skipping: no RetroArch config found");
+            return;
+        };
+        let resolved = resolve_core_options_source(
+            program,
+            Some(&host_config),
+            Path::new("/tmp/sfiii3nr1.zip"),
+            home.as_deref(),
+        );
+        println!("host config: {}", host_config.display());
+        match resolved {
+            Some(path) => {
+                assert!(path.is_file(), "{} is missing", path.display());
+                assert!(
+                    has_fbneo_options(&path),
+                    "{} carries no fbneo- options",
+                    path.display()
+                );
+                println!("core options: {}", path.display());
+            }
+            None => eprintln!("no FBNeo core options file found (nothing to preserve)"),
+        }
+    }
+
+    #[test]
+    fn resolve_core_options_source_finds_options_in_the_configured_config_dir() {
+        let scratch = Scratch::new("source-configured");
+        let custom = scratch.dir.join("my-config");
+        std::fs::create_dir_all(custom.join("FinalBurn Neo")).unwrap();
+        let per_core = custom.join("FinalBurn Neo/FinalBurn Neo.opt");
+        std::fs::write(&per_core, "fbneo-socd = \"3\"\n").unwrap();
+        let host_config = scratch.dir.join("retroarch.cfg");
+        std::fs::write(
+            &host_config,
+            format!(
+                "rgui_config_directory = \"{}\"\ngame_specific_options = \"true\"\n",
+                custom.display()
+            ),
+        )
+        .unwrap();
+
+        let resolved = resolve_core_options_source(
+            Path::new("/opt/RetroArch/retroarch"),
+            Some(&host_config),
+            &scratch.dir.join("sfiii3nr1.zip"),
+            None,
+        );
+        assert_eq!(resolved, Some(per_core));
     }
 
     #[test]
