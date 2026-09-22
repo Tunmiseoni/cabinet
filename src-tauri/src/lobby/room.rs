@@ -37,6 +37,12 @@ pub(crate) struct Room {
     /// The set-end rotation each machine should act on once, if a spectator is waiting.
     #[serde(default)]
     pub rotation: Option<Rotation>,
+    /// The incoming player whose coin the game is still waiting for: the rotation has seated them
+    /// but the game reads their seat as game-driven, so the next match cannot start until they
+    /// coin in. Published so every machine's UI can prompt that player (docs/10-lobby-spike.md §6
+    /// L16).
+    #[serde(default)]
+    pub awaiting_coin: Option<String>,
     pub revision: u64,
 }
 
@@ -63,6 +69,7 @@ impl Room {
             queue: Vec::new(),
             set: SetScore::default(),
             rotation: None,
+            awaiting_coin: None,
             revision: 0,
         }
     }
@@ -92,6 +99,15 @@ impl Room {
 
     pub(crate) fn set_rotation(&mut self, rotation: Rotation) {
         self.rotation = Some(rotation);
+        self.bump();
+    }
+
+    /// Name the player whose coin the game is waiting for, or clear it once the coin lands.
+    pub(crate) fn set_awaiting_coin(&mut self, nick: Option<String>) {
+        if self.awaiting_coin == nick {
+            return;
+        }
+        self.awaiting_coin = nick;
         self.bump();
     }
 
@@ -200,6 +216,7 @@ mod tests {
             loser_slot: 1,
             incoming: Some("player-three".into()),
         });
+        room.set_awaiting_coin(Some("player-three".into()));
         let json = serde_json::to_string(&room).unwrap();
         assert!(json.contains("\"phase\":\"playing\""));
         assert!(json.contains("\"firstTo\":3"));
@@ -209,6 +226,7 @@ mod tests {
         assert!(
             json.contains("\"rotation\":{\"id\":9,\"loserSlot\":1,\"incoming\":\"player-three\"}")
         );
+        assert!(json.contains("\"awaitingCoin\":\"player-three\""));
         let loaded: Room = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded, room);
     }

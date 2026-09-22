@@ -3,7 +3,7 @@ use crate::commands::launch::{launch_match_inner, LaunchRequest};
 use crate::config::Config;
 use crate::constants;
 use crate::lobby::beacon;
-use crate::lobby::results::{self, RoundWatcher};
+use crate::lobby::results::{self, HealthSnapshot, RoundWatcher};
 use crate::lobby::room::{new_room_id, Room};
 use crate::lobby::sets::{winner_slot, SetEvent, SetMachine};
 use crate::lobby::Lobby;
@@ -95,6 +95,26 @@ fn own_command_port(app: &AppHandle, host: bool) -> Option<u16> {
 
 fn session_running(app: &AppHandle) -> bool {
     crate::session::status(app).status == "running"
+}
+
+/// The incoming player's seat control byte says whether the game has seen their coin yet:
+/// `Some(nick)` while the rotation's incoming holds the losing seat but the game still reads that
+/// seat as game-driven (they have not coined in), and `None` once the coin flips it human — or
+/// while the handover is still pending, when the seat is not yet theirs. The host publishes it on
+/// the beacon so every machine's UI can prompt the right player (docs/10-lobby-spike.md §6 L16).
+fn awaiting_coin(room: &Room, snapshot: &HealthSnapshot) -> Option<String> {
+    let rotation = room.rotation.as_ref()?;
+    let incoming = rotation.incoming.as_deref()?;
+    let seat = rotation.loser_slot.checked_sub(1)? as usize;
+    if room.seats.get(seat)?.as_deref() != Some(incoming) {
+        return None;
+    }
+    let control = if rotation.loser_slot == 2 {
+        snapshot.p2_control
+    } else {
+        snapshot.p1_control
+    };
+    (control != results::CONTROL_HUMAN).then(|| incoming.to_string())
 }
 
 /// Per-machine rotation bookkeeping: the last rotation acted on (or primed past), whether the
@@ -255,6 +275,15 @@ fn spawn_set_runner(
                                 }
                             }
                         }
+                    }
+                    // Publish whether the rotation's incoming still owes the game a coin, so the
+                    // UI can prompt them (L16). Clears as soon as the game reads the seat human.
+                    if let Some(room) = lobby.room() {
+                        let awaiting = awaiting_coin(&room, &snapshot);
+                        if awaiting != room.awaiting_coin {
+                            log::info!("awaiting coin: {awaiting:?}");
+                        }
+                        lobby.set_awaiting_coin(awaiting);
                     }
                 }
                 Err(err) => log::debug!("set watcher read failed: {err}"),
@@ -695,6 +724,28 @@ mod tests {
         }
     }
 
+    /// The room once the incoming has taken the losing seat (the handover completed).
+    fn seated_rotation(incoming: &str) -> Room {
+        let mut room = room_with(&[(1, "player-one"), (2, incoming)]);
+        room.set_rotation(Rotation {
+            id: 3,
+            loser_slot: 2,
+            incoming: Some(incoming.to_string()),
+        });
+        room
+    }
+
+    fn snapshot(p1_control: u8, p2_control: u8) -> HealthSnapshot {
+        HealthSnapshot {
+            p1_health: 0xA0,
+            p2_health: 0xA0,
+            rounds: 0,
+            phase: results::PHASE_LIVE,
+            p1_control,
+            p2_control,
+        }
+    }
+
     /// Clear a seat in a live lobby, as the loser's step-out does through the beacon.
     fn free_seat(lobby: &Lobby, slot: u8) {
         lobby.update(|room| {
@@ -794,6 +845,41 @@ mod tests {
         assert_eq!(current, Some(2));
         assert_eq!(state.last, Some(3));
         assert!(!state.waiting_logged);
+    }
+
+    #[test]
+    fn the_awaiting_coin_names_the_seated_incoming_until_their_coin_lands() {
+        let room = seated_rotation("watcher");
+        // The game has not seen a coin for seat 2 yet.
+        assert_eq!(
+            awaiting_coin(&room, &snapshot(0x01, 0x00)),
+            Some("watcher".to_string())
+        );
+        // The coin flipped the seat human: the prompt clears.
+        assert_eq!(awaiting_coin(&room, &snapshot(0x01, 0x01)), None);
+    }
+
+    #[test]
+    fn the_awaiting_coin_is_quiet_until_the_incoming_holds_the_seat() {
+        // The handover is still pending (the loser holds the seat), so the UI shows the rotation
+        // rather than a coin prompt.
+        let room = rotation(2, "watcher");
+        assert_eq!(awaiting_coin(&room, &snapshot(0x01, 0x00)), None);
+    }
+
+    #[test]
+    fn the_awaiting_coin_reads_p1s_byte_when_the_incoming_takes_seat_one() {
+        let mut room = room_with(&[(1, "watcher"), (2, "player-one")]);
+        room.set_rotation(Rotation {
+            id: 3,
+            loser_slot: 1,
+            incoming: Some("watcher".into()),
+        });
+        assert_eq!(
+            awaiting_coin(&room, &snapshot(0x00, 0x01)),
+            Some("watcher".to_string())
+        );
+        assert_eq!(awaiting_coin(&room, &snapshot(0x01, 0x01)), None);
     }
 
     #[test]

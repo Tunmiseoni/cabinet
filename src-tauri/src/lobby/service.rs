@@ -86,6 +86,12 @@ impl Lobby {
         self.update(|room| room.set_score(score))
     }
 
+    /// Publish the coin the game is waiting for (or clear it), so every machine's UI can prompt
+    /// the incoming player.
+    pub(crate) fn set_awaiting_coin(&self, nick: Option<String>) -> Option<Room> {
+        self.update(|room| room.set_awaiting_coin(nick))
+    }
+
     /// Rebuild the seat map from the host's netplay observation: seated players (plus the host's
     /// own slot) fill the two seats, and everyone else connected is a spectator waiting for one,
     /// in the order they started waiting — a player who steps out re-enters at the back.

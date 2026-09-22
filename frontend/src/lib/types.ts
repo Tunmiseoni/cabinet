@@ -226,6 +226,7 @@ export interface Room {
   queue: string[];
   set: SetScore;
   rotation: Rotation | null;
+  awaitingCoin: string | null;
   revision: number;
 }
 

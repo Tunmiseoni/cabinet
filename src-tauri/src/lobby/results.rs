@@ -9,10 +9,11 @@ const KO_HEALTH: u8 = 0xFF;
 pub(crate) const PHASE_INTRO: u8 = 0x01;
 pub(crate) const PHASE_LIVE: u8 = 0x02;
 
-/// Player-struct control type (struct offset `+0x03`; P2 lives at `0x069104`): the game's own
-/// "this fighter is human-controlled" flag. Live 2026-09-22: `0x01` for P1 all session and for P2
-/// through the 2P match, `0x00` for P2 in the arcade/CPU rounds and for both players in the
-/// attract demo — see docs/10-lobby-spike.md §6 L15.
+/// Player-struct control type: the game's own "this fighter is human-controlled" flag, at the same
+/// struct offset for both fighters — `health - 0x9C` (P1 `0x068C6C`, P2 `0x069104`). Live
+/// 2026-09-22: `0x01` while a human plays that seat and `0x00` when the game drives it (arcade/CPU
+/// rounds, the attract demo); P2's byte is what the round gate reads (docs/10-lobby-spike.md §6
+/// L15), and a challenger's coin flips it back to `0x01` (L16).
 pub(crate) const CONTROL_HUMAN: u8 = 0x01;
 
 pub(crate) fn phase_is_round_end(phase: u8) -> bool {
@@ -25,6 +26,7 @@ pub(crate) struct RomAddresses {
     pub p2_health: u32,
     pub rounds: u32,
     pub phase: u32,
+    pub p1_control: u32,
     pub p2_control: u32,
 }
 
@@ -33,6 +35,7 @@ pub(crate) const SFIII3NR1: RomAddresses = RomAddresses {
     p2_health: 0x0691A0,
     rounds: 0x010D28,
     phase: 0x0154A4,
+    p1_control: 0x068C6C,
     p2_control: 0x069104,
 };
 
@@ -61,6 +64,7 @@ pub(crate) struct HealthSnapshot {
     pub p2_health: u8,
     pub rounds: u8,
     pub phase: u8,
+    pub p1_control: u8,
     pub p2_control: u8,
 }
 
@@ -83,6 +87,7 @@ pub(crate) fn read_snapshot(
         p2_health: read_byte(port, addresses.p2_health)?,
         rounds: read_byte(port, addresses.rounds)?,
         phase: read_byte(port, addresses.phase)?,
+        p1_control: read_byte(port, addresses.p1_control)?,
         p2_control: read_byte(port, addresses.p2_control)?,
     })
 }
@@ -98,11 +103,13 @@ fn read_byte(port: u16, address: u32) -> crate::error::Result<u8> {
 #[derive(Debug, Default)]
 pub(crate) struct RoundWatcher {
     last: Option<HealthSnapshot>,
-    /// Set once the game reports a live round (`phase == 0x02`) **and** P2 is human-controlled.
-    /// Every KO edge we sampled landed after the game had already moved into its round-end sequence
-    /// (`0x06`), so the latch must survive `0x06`–`0x09` and is only cleared by the next
-    /// select/intro — an edge that was never live is not a match result, and neither is a round the
-    /// game hands to the CPU (arcade drift, attract demo). See docs/10-lobby-spike.md §6 L12/L15.
+    /// Set once the game reports a live round (`phase == 0x02`) **and** both fighters are
+    /// human-controlled. Every KO edge we sampled landed after the game had already moved into its
+    /// round-end sequence (`0x06`), so the latch must survive `0x06`–`0x09` and is only cleared by
+    /// the next select/intro — an edge that was never live is not a match result, and neither is a
+    /// round the game hands to the CPU. The arcade drift after a set (the winner playing the CPU)
+    /// always leaves one seat game-driven, whichever netplay nick sits in it, so requiring *both*
+    /// control bytes keeps it out of the set. See docs/10-lobby-spike.md §6 L12/L15.
     armed: bool,
     /// Set once the round has been decided, cleared when a fresh (healthy) live round starts.
     /// Guards against deciding the same round twice: a KO byte that only shows up a poll after the
@@ -118,7 +125,8 @@ impl RoundWatcher {
 
     pub(crate) fn observe(&mut self, snapshot: HealthSnapshot) -> Option<RoundOutcome> {
         if snapshot.phase == PHASE_LIVE {
-            self.armed = snapshot.p2_control == CONTROL_HUMAN;
+            self.armed =
+                snapshot.p1_control == CONTROL_HUMAN && snapshot.p2_control == CONTROL_HUMAN;
             if !snapshot.p1_ko() && !snapshot.p2_ko() {
                 self.decided = false;
             }
@@ -186,6 +194,7 @@ mod tests {
             p2_health: p2,
             rounds,
             phase,
+            p1_control: CONTROL_HUMAN,
             p2_control: CONTROL_HUMAN,
         }
     }
@@ -194,6 +203,15 @@ mod tests {
     fn snap_cpu(phase: u8, p1: u8, p2: u8, rounds: u8) -> HealthSnapshot {
         HealthSnapshot {
             p2_control: 0x00,
+            ..snap_at(phase, p1, p2, rounds)
+        }
+    }
+
+    /// The same snapshot with P1 driven by the CPU: the arcade drift when the winner's nick sits
+    /// in the P2 seat, so the game drives the seat it is not running an arcade round on.
+    fn snap_p1_cpu(phase: u8, p1: u8, p2: u8, rounds: u8) -> HealthSnapshot {
+        HealthSnapshot {
+            p1_control: 0x00,
             ..snap_at(phase, p1, p2, rounds)
         }
     }
@@ -291,7 +309,7 @@ mod tests {
         let port = server.local_addr().unwrap().port();
         let responder = std::thread::spawn(move || {
             let mut buffer = [0u8; 128];
-            for _ in 0..5 {
+            for _ in 0..6 {
                 let (len, from) = server.recv_from(&mut buffer).unwrap();
                 let request = String::from_utf8_lossy(&buffer[..len]).into_owned();
                 let address = request
@@ -304,6 +322,7 @@ mod tests {
                     0x0691A0 => 0xFF,
                     0x010D28 => 0x02,
                     0x0154A4 => 0x02,
+                    0x068C6C => 0x01,
                     0x069104 => 0x01,
                     other => panic!("unexpected address {other:#x}"),
                 };
@@ -326,6 +345,18 @@ mod tests {
         let mut watcher = RoundWatcher::new();
         watcher.observe(snap_at(PHASE_INTRO, 0xA0, 0xA0, 0));
         assert_eq!(watcher.observe(snap_at(PHASE_INTRO, 0xFF, 0xA0, 0)), None);
+    }
+
+    #[test]
+    fn a_round_where_p1_is_game_driven_is_not_counted() {
+        // The arcade drift can leave either netplay seat game-driven, so a KO there must not
+        // decide a set round whichever seat it lands in.
+        let mut watcher = RoundWatcher::new();
+        watcher.observe(snap_p1_cpu(PHASE_LIVE, 0xA0, 0xA0, 0));
+        assert_eq!(
+            watcher.observe(snap_p1_cpu(PHASE_LIVE, 0xFF, 0x30, 0)),
+            None
+        );
     }
 
     #[test]

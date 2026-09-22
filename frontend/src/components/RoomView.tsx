@@ -24,6 +24,15 @@ export function RoomView({ room, match }: RoomViewProps) {
 
   const running = match?.status === "running";
 
+  // The live netplay seat is the truth after a rotation (a promoted spectator changes slot
+  // without a relaunch), so read the local nick from it rather than from the launch request.
+  const mySlot =
+    match?.instances.find((instance) => instance.netplay?.selfPlayer != null)?.netplay
+      ?.selfPlayer ?? null;
+  const myNick = mySlot != null ? (room.seats[mySlot - 1] ?? null) : null;
+  const awaiting = room.awaitingCoin;
+  const iAmUp = awaiting != null && awaiting === myNick;
+
   return (
     <Card>
       <CardHeader>
@@ -83,7 +92,7 @@ export function RoomView({ room, match }: RoomViewProps) {
           </span>
         </div>
 
-        {room.rotation && (
+        {room.rotation && !awaiting && (
           <div className="rounded-md border border-dashed p-3 text-sm">
             Rotating:{" "}
             <span className="font-medium">
@@ -94,6 +103,28 @@ export function RoomView({ room, match }: RoomViewProps) {
               {room.rotation.incoming ?? "next"}
             </span>{" "}
             steps in.
+          </div>
+        )}
+
+        {awaiting && (
+          <div
+            className={
+              iAmUp
+                ? "rounded-md border border-primary bg-primary/5 p-3 text-sm"
+                : "rounded-md border border-dashed p-3 text-sm text-muted-foreground"
+            }
+          >
+            {iAmUp ? (
+              <>
+                <span className="font-medium">You&apos;re up</span> — press start
+                (num1) to challenge.
+              </>
+            ) : (
+              <>
+                Waiting for <span className="font-medium">{awaiting}</span> to coin
+                in.
+              </>
+            )}
           </div>
         )}
 

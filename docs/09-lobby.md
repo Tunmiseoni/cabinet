@@ -295,6 +295,10 @@ cross-machine control protocol" (§1):
    device* (device 2, announced as "player 3") instead of the seat, leaving the game with no human
    P2 ([`10-lobby-spike.md`](10-lobby-spike.md) §6 L19).
 4. The host auto-grants the freed slot to the incoming claim; the winner does nothing.
+5. Once the incoming holds the seat, the host publishes the coin they still owe the game
+   (`awaitingCoin`): while that seat's control byte reads game-driven the room shows "waiting for
+   <nick> to coin in" — and tells the nick itself "You're up — press start" — and the state clears
+   the moment the coin flips the byte human (§7.6).
 
 A would-be challenger must **already be connected as a spectator** — no fresh join during the
 transition (avoid the flaky mid-join window). This is the FIFO contract. With nobody waiting the
@@ -374,8 +378,9 @@ see [`10-lobby-spike.md`](10-lobby-spike.md) §6 L19–L20.
   player's **coin-in is the boundary**. Mid-arcade, their start press flips P2 to human (`0x069104`
   → `0x01`), the in-progress CPU round plays out, and the game opens character select and starts the
   versus match (R5: coin 19:34:51 → select 19:35:40 → versus live 19:35:45). `RESET` is a no-op on
-  this build and `LOAD_STATE_SLOT` drops netplay clients, so nothing else is required. What remains
-  is app-side: surface the "waiting for coin" state and prompt the **queue head** to coin in. See
+  this build and `LOAD_STATE_SLOT` drops netplay clients, so nothing else is required. The app half
+  landed 2026-09-22: the host publishes `awaitingCoin` while the incoming still owes a coin and
+  `RoomView` prompts them ("You're up — press start"). See
   [`10-lobby-spike.md`](10-lobby-spike.md) §6 L16–L17.
 
 ### 7.7 Discovery beacon
