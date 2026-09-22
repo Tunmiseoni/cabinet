@@ -1,6 +1,6 @@
 [package]
 name = "the-cabinet"
-version = "0.1.12"
+version = "0.1.13"
 description = "Tailnet FightCade launcher and connection health"
 authors = ["The Cabinet contributors"]
 edition = "2021"
