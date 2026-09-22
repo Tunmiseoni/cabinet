@@ -357,6 +357,23 @@ pub(super) fn resolve_core_options_source(
     rom_path: &Path,
     home: Option<&Path>,
 ) -> Option<PathBuf> {
+    resolve_core_options_source_in(
+        &core_options_bases(program, home),
+        host_config,
+        rom_path,
+        home,
+    )
+}
+
+/// The resolution itself, against an explicit list of option directories, so tests do not depend on
+/// the standard paths of the machine running them (`autoconfig_dirs` reads `XDG_CONFIG_HOME`,
+/// `%APPDATA%`, and the like).
+fn resolve_core_options_source_in(
+    bases: &[PathBuf],
+    host_config: Option<&Path>,
+    rom_path: &Path,
+    home: Option<&Path>,
+) -> Option<PathBuf> {
     let host = host_config.and_then(|path| std::fs::read_to_string(path).ok());
     let value = |key: &str| host.as_deref().and_then(|raw| config_value(raw, key));
 
@@ -366,8 +383,8 @@ pub(super) fn resolve_core_options_source(
     }
 
     let game_specific = value("game_specific_options").as_deref() == Some("true");
-    for base in core_options_bases(program, home) {
-        let Ok(entries) = std::fs::read_dir(&base) else {
+    for base in bases {
+        let Ok(entries) = std::fs::read_dir(base) else {
             continue;
         };
         let mut core_dirs: Vec<PathBuf> = entries
@@ -1080,10 +1097,10 @@ mod tests {
     }
 
     #[test]
-    fn core_options_bases_use_the_program_config_directory() {
+    fn core_options_bases_end_with_the_program_config_directory() {
         let program = Path::new("/opt/RetroArch/retroarch");
         let bases = core_options_bases(program, None);
-        assert_eq!(bases, vec![PathBuf::from("/opt/RetroArch/config")]);
+        assert_eq!(bases.last(), Some(&PathBuf::from("/opt/RetroArch/config")));
     }
 
     #[test]
@@ -1172,17 +1189,15 @@ mod tests {
     #[test]
     fn resolve_core_options_source_finds_the_per_core_options() {
         let scratch = Scratch::new("source-per-core");
-        let root = scratch.dir.join("RetroArch");
-        let program = root.join("retroarch");
-        let config_dir = root.join("config");
+        let config_dir = scratch.dir.join("config");
         std::fs::create_dir_all(config_dir.join("FinalBurn Neo")).unwrap();
         let per_core = config_dir.join("FinalBurn Neo/FinalBurn Neo.opt");
         std::fs::write(&per_core, "fbneo-socd = \"3\"\n").unwrap();
         let host_config = config_dir.join("retroarch.cfg");
         std::fs::write(&host_config, "game_specific_options = \"true\"\n").unwrap();
 
-        let resolved = resolve_core_options_source(
-            &program,
+        let resolved = resolve_core_options_source_in(
+            std::slice::from_ref(&config_dir),
             Some(&host_config),
             &scratch.dir.join("sfiii3nr1.zip"),
             None,
@@ -1193,19 +1208,17 @@ mod tests {
     #[test]
     fn resolve_core_options_source_prefers_a_game_specific_file() {
         let scratch = Scratch::new("source-game");
-        let root = scratch.dir.join("RetroArch");
-        let program = root.join("retroarch");
-        let config_dir = root.join("config");
-        std::fs::create_dir_all(config_dir.join("FinalBurn Neo")).unwrap();
+        let config_dir = scratch.dir.join("config");
         let core_dir = config_dir.join("FinalBurn Neo");
+        std::fs::create_dir_all(&core_dir).unwrap();
         std::fs::write(core_dir.join("FinalBurn Neo.opt"), "fbneo-socd = \"3\"\n").unwrap();
         let game = core_dir.join("sfiii3nr1.opt");
         std::fs::write(&game, "fbneo-socd = \"0\"\n").unwrap();
         let host_config = config_dir.join("retroarch.cfg");
         std::fs::write(&host_config, "game_specific_options = \"true\"\n").unwrap();
 
-        let resolved = resolve_core_options_source(
-            &program,
+        let resolved = resolve_core_options_source_in(
+            std::slice::from_ref(&config_dir),
             Some(&host_config),
             &scratch.dir.join("sfiii3nr1.zip"),
             None,
