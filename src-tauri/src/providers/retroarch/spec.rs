@@ -9,7 +9,6 @@ pub(super) struct Args<'a> {
     pub rom_path: &'a Path,
     pub overrides: &'a Path,
     pub base_config: Option<&'a Path>,
-    pub verbose: bool,
     pub role: Role,
     pub peer: &'a str,
     pub port: u16,
@@ -28,9 +27,10 @@ pub(super) fn launch_args(args: &Args) -> Vec<String> {
     }
     argv.push("--appendconfig".to_string());
     argv.push(args.overrides.to_string_lossy().to_string());
-    if args.verbose {
-        argv.push("--verbose".to_string());
-    }
+    // RetroArch emits the `[Netplay]` lines the observer parses (`Got connection from`,
+    // `joined as player N`, `disconnected`) only at verbose verbosity, so this is not optional:
+    // without it the lobby's seats and queue never populate. See `netplay.rs`.
+    argv.push("--verbose".to_string());
     match args.role {
         Role::P1 => argv.push("-H".to_string()),
         Role::P2 | Role::Spectator => {
@@ -389,15 +389,14 @@ mod tests {
     }
 
     #[test]
-    fn verbose_flag_is_gated_on_the_setting() {
-        let scratch = Scratch::new("verbose-off");
+    fn always_launches_verbose_so_netplay_is_observable() {
+        let scratch = Scratch::new("verbose-on");
         let rom = scratch.rom();
-        let mut provider = provider(&scratch);
-        provider.verbose = false;
+        let provider = provider(&scratch);
         let spec = provider
             .spec(&request(Role::P1, &rom, "100.64.0.2"))
             .unwrap();
-        assert!(!spec.args.iter().any(|arg| arg == "--verbose"));
+        assert!(spec.args.iter().any(|arg| arg == "--verbose"));
     }
 
     #[test]

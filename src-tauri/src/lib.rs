@@ -108,6 +108,17 @@ pub fn run() {
                 }
             }
 
+            // Identify the instance in the title bar. Several instances can run on one machine
+            // (lobby host + joiners, or the dev pair) and are otherwise indistinguishable, so the
+            // netplay nickname is the one stable label a window can carry regardless of the role
+            // it later takes. Role/host is still chosen at runtime.
+            if let Some(window) = app.get_webview_window("main") {
+                let nickname = config::netplay_nickname(&cfg, None);
+                if let Err(err) = window.set_title(&format!("The Cabinet — {nickname}")) {
+                    log::warn!("cannot set the window title: {err}");
+                }
+            }
+
             let verbose = verbose_logging_requested(app.handle());
             log::set_max_level(if verbose {
                 log::LevelFilter::Debug

@@ -34,7 +34,6 @@ pub struct RetroArchProvider {
     tailscale_binary: Option<PathBuf>,
     overrides_dir: PathBuf,
     peer_override: PeerOverride,
-    verbose: bool,
     mute_spectators: bool,
     max_ping_ms: u32,
     isolated_config: bool,
@@ -95,7 +94,6 @@ impl RetroArchProvider {
             } else {
                 PeerOverride::default()
             },
-            verbose: cfg.verbose_logging,
             mute_spectators: cfg.retroarch_mute_spectators,
             max_ping_ms: cfg.retroarch_max_ping_ms,
             isolated_config: cfg.retroarch_isolated_config,
@@ -244,7 +242,6 @@ impl Provider for RetroArchProvider {
             rom_path: request.rom_path,
             overrides: &overrides,
             base_config: base_config.as_deref(),
-            verbose: self.verbose,
             role: request.role,
             peer: &peer,
             port: self.port,
