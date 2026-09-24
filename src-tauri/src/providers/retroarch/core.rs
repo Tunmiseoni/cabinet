@@ -250,6 +250,15 @@ fn expand_tilde(value: &str, home: Option<&Path>) -> Option<PathBuf> {
     Some(PathBuf::from(value))
 }
 
+/// The host's `system_directory` setting (tilde-expanded), so a session can seed its own
+/// system dir from the player's existing BIOS/samples before repointing it.
+pub(super) fn resolve_host_system_dir(
+    host_config: Option<&Path>,
+    home: Option<&Path>,
+) -> Option<PathBuf> {
+    let contents = std::fs::read_to_string(host_config?).ok()?;
+    expand_tilde(&config_value(&contents, "system_directory")?, home)
+}
 /// The host's "Config" directory setting (`rgui_config_directory`), where RetroArch keeps per-core
 /// option files as `<dir>/<core_name>/<core_name>.opt`. Empty until the host sets it.
 fn configured_config_dir(host_config: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
@@ -934,6 +943,22 @@ mod tests {
     #[test]
     fn core_info_file_name_replaces_the_extension_with_info() {
         assert_eq!(core_info_file_name(), "fbneo_libretro.info");
+    }
+
+    #[test]
+    fn resolve_host_system_dir_expands_the_configured_value() {
+        let scratch = Scratch::new("host-system-dir");
+        let host_config = scratch.dir.join("retroarch.cfg");
+        std::fs::write(&host_config, "system_directory = \"~/retro-system\"\n").unwrap();
+        assert_eq!(
+            resolve_host_system_dir(Some(&host_config), Some(Path::new("/home/player"))),
+            Some(PathBuf::from("/home/player/retro-system"))
+        );
+        assert_eq!(resolve_host_system_dir(Some(&host_config), None), None);
+        let unset = scratch.dir.join("no-system.cfg");
+        std::fs::write(&unset, "video_driver = \"vulkan\"\n").unwrap();
+        assert_eq!(resolve_host_system_dir(Some(&unset), None), None);
+        assert_eq!(resolve_host_system_dir(None, None), None);
     }
 
     #[test]

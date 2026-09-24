@@ -180,6 +180,43 @@ fn write_preset_binds(
     Ok(())
 }
 
+/// Copy the host's system files (BIOS, samples, cheats) into the session system dir once, so
+/// repointing `system_directory` away from the host location does not lose them. Best-effort:
+/// a failure is logged and the launch continues with an empty dir.
+fn seed_system_dir(host_config: Option<&Path>, home: Option<&Path>, dest: &Path) {
+    let already_seeded = std::fs::read_dir(dest).is_ok_and(|mut entries| entries.next().is_some());
+    if already_seeded {
+        return;
+    }
+    let Some(source) = core::resolve_host_system_dir(host_config, home) else {
+        return;
+    };
+    if source == dest || !source.is_dir() {
+        return;
+    }
+    match copy_dir_all(&source, dest) {
+        Ok(()) => log::info!("seeded the session system dir from {}", source.display()),
+        Err(err) => log::warn!(
+            "cannot seed the session system dir from {}: {err}",
+            source.display()
+        ),
+    }
+}
+
+fn copy_dir_all(source: &Path, dest: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dest)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let dest_path = dest.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&entry.path(), &dest_path)?;
+        } else {
+            std::fs::copy(entry.path(), &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn write_overrides(
     provider: &RetroArchProvider,
     role: Role,
@@ -191,10 +228,31 @@ pub(super) fn write_overrides(
     let dir = provider.overrides_dir.join(role.key());
     let saves = dir.join("saves");
     let states = dir.join("states");
-    std::fs::create_dir_all(&saves)
-        .map_err(|err| format!("cannot create {}: {err}", saves.display()))?;
-    std::fs::create_dir_all(&states)
-        .map_err(|err| format!("cannot create {}: {err}", states.display()))?;
+    let logs = dir.join("logs");
+    let playlists = dir.join("playlists");
+    let screenshots = dir.join("screenshots");
+    let cache = dir.join("cache");
+    let records = dir.join("records");
+    // The BIOS/samples dir is shared across roles so every seat resolves the same system files.
+    let system = provider.overrides_dir.join("system");
+    for writable in [
+        &saves,
+        &states,
+        &logs,
+        &playlists,
+        &screenshots,
+        &cache,
+        &records,
+        &system,
+    ] {
+        std::fs::create_dir_all(writable)
+            .map_err(|err| format!("cannot create {}: {err}", writable.display()))?;
+    }
+    seed_system_dir(
+        provider.host_config.as_deref(),
+        crate::env::home_dir().as_deref(),
+        &system,
+    );
 
     let mut content = String::new();
     content.push_str("config_save_on_exit = \"false\"\n");
@@ -273,6 +331,52 @@ pub(super) fn write_overrides(
     content.push_str("savestate_auto_load = \"false\"\n");
     content.push_str(&format!("savefile_directory = \"{}\"\n", saves.display()));
     content.push_str(&format!("savestate_directory = \"{}\"\n", states.display()));
+    // Keep every other writable path under the app-managed dir too. Unhandled, RetroArch falls
+    // back to the host config or its own defaults — on macOS several of those are
+    // `~/Documents/RetroArch/...`, which a Cabinet session should never touch.
+    content.push_str(&format!("system_directory = \"{}\"\n", system.display()));
+    content.push_str(&format!("cache_directory = \"{}\"\n", cache.display()));
+    content.push_str(&format!("log_dir = \"{}\"\n", logs.display()));
+    content.push_str(&format!(
+        "playlist_directory = \"{}\"\n",
+        playlists.display()
+    ));
+    content.push_str(&format!(
+        "content_history_path = \"{}\"\n",
+        playlists.join("content_history.lpl").display()
+    ));
+    content.push_str(&format!("runtime_log_directory = \"{}\"\n", logs.display()));
+    content.push_str(&format!(
+        "screenshot_directory = \"{}\"\n",
+        screenshots.display()
+    ));
+    // Recording and the auxiliary history/favorites files are never used in a Cabinet session,
+    // but their host-configured paths can still point at `~/Documents/RetroArch`, so pin them
+    // too — otherwise RetroArch recreates the folder the first time one is written.
+    content.push_str(&format!(
+        "recording_output_directory = \"{}\"\n",
+        records.display()
+    ));
+    content.push_str(&format!(
+        "recording_config_directory = \"{}\"\n",
+        records.display()
+    ));
+    content.push_str(&format!(
+        "content_favorites_path = \"{}\"\n",
+        playlists.join("content_favorites.lpl").display()
+    ));
+    content.push_str(&format!(
+        "content_image_history_path = \"{}\"\n",
+        playlists.join("content_image_history.lpl").display()
+    ));
+    content.push_str(&format!(
+        "content_music_history_path = \"{}\"\n",
+        playlists.join("content_music_history.lpl").display()
+    ));
+    content.push_str(&format!(
+        "content_video_history_path = \"{}\"\n",
+        playlists.join("content_video_history.lpl").display()
+    ));
     if role == Role::Spectator {
         content.push_str("netplay_start_as_spectator = \"true\"\n");
         if provider.mute_spectators {
@@ -305,6 +409,23 @@ pub(super) fn write_base_config(
     let mut content = String::new();
     content.push_str("config_save_on_exit = \"false\"\n");
     content.push_str("savestate_auto_load = \"false\"\n");
+    // The base config loads before the per-role appendconfig, so pin the shared dirs here too:
+    // an isolated session must never fall back to RetroArch's own defaults, several of which
+    // live under `~/Documents/RetroArch` on macOS. The appendconfig repoints the per-role
+    // paths on top of these.
+    let system = provider.overrides_dir.join("system");
+    let cache = provider.overrides_dir.join("cache-shared");
+    for writable in [&system, &cache] {
+        std::fs::create_dir_all(writable)
+            .map_err(|err| format!("cannot create {}: {err}", writable.display()))?;
+    }
+    seed_system_dir(
+        provider.host_config.as_deref(),
+        crate::env::home_dir().as_deref(),
+        &system,
+    );
+    content.push_str(&format!("system_directory = \"{}\"\n", system.display()));
+    content.push_str(&format!("cache_directory = \"{}\"\n", cache.display()));
     if let Some(dir) = &provider.autoconfig_dir {
         content.push_str(&format!("input_autoconfig_dir = \"{}\"\n", dir.display()));
     }
@@ -622,6 +743,111 @@ mod tests {
 
     fn overrides(provider: &RetroArchProvider, role: Role) -> String {
         std::fs::read_to_string(overrides_path(&provider.overrides_dir, role)).unwrap()
+    }
+
+    #[test]
+    fn sessions_redirect_every_writable_dir_under_the_overrides_dir() {
+        let scratch = Scratch::new("writable-dirs");
+        let rom = scratch.rom();
+        let provider = provider(&scratch);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+        let content = overrides(&provider, Role::P1);
+        let root = scratch.dir.join("cfg");
+        for (key, expected) in [
+            ("savefile_directory", root.join("p1/saves")),
+            ("savestate_directory", root.join("p1/states")),
+            ("system_directory", root.join("system")),
+            ("cache_directory", root.join("p1/cache")),
+            ("log_dir", root.join("p1/logs")),
+            ("playlist_directory", root.join("p1/playlists")),
+            (
+                "content_history_path",
+                root.join("p1/playlists/content_history.lpl"),
+            ),
+            ("runtime_log_directory", root.join("p1/logs")),
+            ("screenshot_directory", root.join("p1/screenshots")),
+            ("recording_output_directory", root.join("p1/records")),
+            ("recording_config_directory", root.join("p1/records")),
+            (
+                "content_favorites_path",
+                root.join("p1/playlists/content_favorites.lpl"),
+            ),
+            (
+                "content_image_history_path",
+                root.join("p1/playlists/content_image_history.lpl"),
+            ),
+            (
+                "content_music_history_path",
+                root.join("p1/playlists/content_music_history.lpl"),
+            ),
+            (
+                "content_video_history_path",
+                root.join("p1/playlists/content_video_history.lpl"),
+            ),
+        ] {
+            assert!(
+                content.contains(&format!("{key} = \"{}\"", expected.display())),
+                "missing or mispointed {key}:\n{content}"
+            );
+        }
+        assert!(
+            !content.contains("Documents"),
+            "a session still references Documents:\n{content}"
+        );
+    }
+
+    #[test]
+    fn the_host_system_dir_seeds_the_session_system_dir() {
+        let scratch = Scratch::new("seed-system");
+        let rom = scratch.rom();
+        let host_system = scratch.dir.join("host-system/fbneo");
+        std::fs::create_dir_all(&host_system).unwrap();
+        std::fs::write(host_system.join("neogeo.zip"), b"bios").unwrap();
+        let host_cfg = scratch.dir.join("retroarch.cfg");
+        std::fs::write(
+            &host_cfg,
+            format!(
+                "system_directory = \"{}\"\n",
+                scratch.dir.join("host-system").display()
+            ),
+        )
+        .unwrap();
+        let mut provider = provider(&scratch);
+        provider.host_config = Some(host_cfg);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+
+        let seeded = scratch.dir.join("cfg/system/fbneo/neogeo.zip");
+        assert_eq!(std::fs::read(&seeded).unwrap(), b"bios");
+    }
+
+    #[test]
+    fn an_existing_session_system_dir_is_left_alone() {
+        let scratch = Scratch::new("seed-system-keep");
+        let rom = scratch.rom();
+        let existing = scratch.dir.join("cfg/system/fbneo");
+        std::fs::create_dir_all(&existing).unwrap();
+        std::fs::write(existing.join("keep.zip"), b"ours").unwrap();
+        let host_system = scratch.dir.join("host-system");
+        std::fs::create_dir_all(&host_system).unwrap();
+        std::fs::write(host_system.join("theirs.zip"), b"theirs").unwrap();
+        let host_cfg = scratch.dir.join("retroarch.cfg");
+        std::fs::write(
+            &host_cfg,
+            format!("system_directory = \"{}\"\n", host_system.display()),
+        )
+        .unwrap();
+        let mut provider = provider(&scratch);
+        provider.host_config = Some(host_cfg);
+        provider
+            .spec(&request(Role::P1, &rom, "100.64.0.2"))
+            .unwrap();
+
+        assert_eq!(std::fs::read(existing.join("keep.zip")).unwrap(), b"ours");
+        assert!(!scratch.dir.join("cfg/system/theirs.zip").exists());
     }
 
     #[test]
