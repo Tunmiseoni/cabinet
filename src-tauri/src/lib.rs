@@ -91,6 +91,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(log_plugin)
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(session::Session::default())
         .manage(windowing::Host::new())
         .manage(lobby::Lobby::default())

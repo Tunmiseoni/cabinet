@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { DiagnosticsSection } from "@/components/DiagnosticsSection";
 import { RetroArchSettings } from "@/components/RetroArchSettings";
+import { UpdateSection } from "@/components/UpdateSection";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Config, ProviderKind, RetroArchInput } from "@/lib/types";
+import type { Updater } from "@/lib/updater";
 
 const DEFAULT_RETROARCH_INPUT: RetroArchInput = {
   up: "space",
@@ -44,6 +46,7 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
   config: Config | null;
   onSave: (config: Config) => Promise<void>;
+  updater: Updater;
 }
 
 interface FormState {
@@ -135,6 +138,7 @@ export function SettingsDialog({
   onOpenChange,
   config,
   onSave,
+  updater,
 }: SettingsDialogProps) {
   const [form, setForm] = useState<FormState>(() => toForm(config));
   const [saving, setSaving] = useState(false);
@@ -353,6 +357,10 @@ export function SettingsDialog({
               }
             />
           </div>
+
+          <Separator />
+
+          <UpdateSection updater={updater} />
 
           <Separator />
 

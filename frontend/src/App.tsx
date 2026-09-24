@@ -9,6 +9,7 @@ import { PeersCard } from "@/components/PeersCard";
 import { RomsCard } from "@/components/RomsCard";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { Toaster } from "@/components/ui/sonner";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import {
   getConfig,
   launcherInfo,
@@ -24,6 +25,7 @@ import {
 import { healthWarning } from "@/lib/health";
 import { useAsyncTask, useTauriEvent } from "@/lib/hooks";
 import { useInvoke } from "@/lib/query";
+import { useUpdater } from "@/lib/updater";
 import {
   MATCH_EVENT,
   type Config,
@@ -40,6 +42,8 @@ function App() {
 
   const launchAction = useAsyncTask(setAppError);
   const settingsAction = useAsyncTask(setAppError);
+
+  const updater = useUpdater();
 
   const configQuery = useInvoke("config", getConfig);
   const config = configQuery.data;
@@ -186,6 +190,8 @@ function App() {
           </div>
         </header>
 
+        {!running && <UpdateBanner updater={updater} />}
+
         {errorMessage && (
           <Alert variant="destructive">
             <AlertTriangle className="size-4" />
@@ -255,6 +261,7 @@ function App() {
           onOpenChange={setSettingsOpen}
           config={config}
           onSave={handleSaveConfig}
+          updater={updater}
         />
 
         <Toaster position="bottom-right" />

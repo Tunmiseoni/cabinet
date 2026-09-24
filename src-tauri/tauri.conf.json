@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "The Cabinet",
   "mainBinaryName": "the-cabinet",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "identifier": "com.the-cabinet.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -22,9 +22,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENEQjA2QTc0RTNBMTcxNkEKUldScWNhSGpkR3F3eldaZU52UVJCYmV0QWdvekoxU2RYNlpRRWZ1b3Y0RmFxamVIOW5UNzY5cmoK",
+      "endpoints": [
+        "https://github.com/Tunmiseoni/the-cabinet/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
