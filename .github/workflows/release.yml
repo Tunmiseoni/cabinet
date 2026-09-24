@@ -105,6 +105,7 @@ jobs:
             prompt.
           releaseDraft: true
           prerelease: false
+          uploadUpdaterSignatures: false
           args: ${{ matrix.args }}
           tauriScript: ${{ matrix.tauriScript }}
 
