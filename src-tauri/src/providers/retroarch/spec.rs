@@ -756,35 +756,51 @@ mod tests {
         let content = overrides(&provider, Role::P1);
         let root = scratch.dir.join("cfg");
         for (key, expected) in [
-            ("savefile_directory", root.join("p1/saves")),
-            ("savestate_directory", root.join("p1/states")),
+            ("savefile_directory", root.join("p1").join("saves")),
+            ("savestate_directory", root.join("p1").join("states")),
             ("system_directory", root.join("system")),
-            ("cache_directory", root.join("p1/cache")),
-            ("log_dir", root.join("p1/logs")),
-            ("playlist_directory", root.join("p1/playlists")),
+            ("cache_directory", root.join("p1").join("cache")),
+            ("log_dir", root.join("p1").join("logs")),
+            ("playlist_directory", root.join("p1").join("playlists")),
             (
                 "content_history_path",
-                root.join("p1/playlists/content_history.lpl"),
+                root.join("p1")
+                    .join("playlists")
+                    .join("content_history.lpl"),
             ),
-            ("runtime_log_directory", root.join("p1/logs")),
-            ("screenshot_directory", root.join("p1/screenshots")),
-            ("recording_output_directory", root.join("p1/records")),
-            ("recording_config_directory", root.join("p1/records")),
+            ("runtime_log_directory", root.join("p1").join("logs")),
+            ("screenshot_directory", root.join("p1").join("screenshots")),
+            (
+                "recording_output_directory",
+                root.join("p1").join("records"),
+            ),
+            (
+                "recording_config_directory",
+                root.join("p1").join("records"),
+            ),
             (
                 "content_favorites_path",
-                root.join("p1/playlists/content_favorites.lpl"),
+                root.join("p1")
+                    .join("playlists")
+                    .join("content_favorites.lpl"),
             ),
             (
                 "content_image_history_path",
-                root.join("p1/playlists/content_image_history.lpl"),
+                root.join("p1")
+                    .join("playlists")
+                    .join("content_image_history.lpl"),
             ),
             (
                 "content_music_history_path",
-                root.join("p1/playlists/content_music_history.lpl"),
+                root.join("p1")
+                    .join("playlists")
+                    .join("content_music_history.lpl"),
             ),
             (
                 "content_video_history_path",
-                root.join("p1/playlists/content_video_history.lpl"),
+                root.join("p1")
+                    .join("playlists")
+                    .join("content_video_history.lpl"),
             ),
         ] {
             assert!(
