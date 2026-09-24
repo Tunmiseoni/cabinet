@@ -44,6 +44,10 @@
 #   * Otherwise it removes them from the built AppDir and repacks it with
 #     appimagetool (a pure packer — it does not re-resolve/re-add libraries the
 #     way re-running linuxdeploy would).
+#   * Because repacking changes the AppImage's bytes, the updater signature Tauri
+#     wrote beforehand no longer matches. When a signing key is present (CI) the
+#     repacked AppImage is re-signed so the in-app updater accepts it; otherwise
+#     the stale `.sig` is removed rather than shipped wrong.
 #
 # ENV OVERRIDES (testing / unusual layouts)
 #   THE_CABINET_BUNDLE_DIR  bundle/appimage directory to patch
@@ -155,4 +159,24 @@ fi
 
 [ -f "$OUTPUT" ] || { log "error: expected output $OUTPUT was not produced"; exit 1; }
 chmod +x "$OUTPUT"
+
+# Tauri signed the AppImage before the repack, so its .sig is now stale.
+if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]; then
+  TAURI_BIN="$ROOT/node_modules/.bin/tauri"
+  if [ ! -x "$TAURI_BIN" ]; then
+    log "error: Tauri CLI not found at $TAURI_BIN; cannot re-sign the repacked AppImage"
+    exit 1
+  fi
+  log "re-signing $(basename "$OUTPUT")"
+  rm -f "$OUTPUT.sig"
+  if ! TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD-}" "$TAURI_BIN" signer sign "$OUTPUT"; then
+    log "error: re-signing the repacked AppImage failed"
+    exit 1
+  fi
+  [ -f "$OUTPUT.sig" ] || { log "error: expected signature $OUTPUT.sig was not produced"; exit 1; }
+else
+  log "warning: no signing key set; dropping the stale .sig for the repacked AppImage"
+  rm -f "$OUTPUT.sig"
+fi
+
 log "wrote $OUTPUT"
