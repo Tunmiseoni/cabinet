@@ -95,6 +95,7 @@ The Linux AppImage is post-processed by `scripts/patch-appimage.sh`, called by `
 - **Removal (the whole point of the workaround):** when upstream PR #15662 (`bundle.linux.appimage.excludeLibraries`) lands, bump `@tauri-apps/cli` (`package.json`) and the `tauri` crate (`Cargo.toml`), add to `src-tauri/tauri.conf.json`:
   `"bundle": { "linux": { "appimage": { "excludeLibraries": ["libwayland-*.so*", "libxkbcommon*.so*", "libxcb-*.so*", "libXau.so*", "libXdmcp.so*"] } } }`,
   then delete `scripts/patch-appimage.sh`. The guarded call sites in `scripts/tauri-build.sh` and `scripts/build.sh` become no-ops, and the `tauriScript` line in `release.yml` can stay. Nothing else needs reverting.
+- **Updater interaction (2026-09-24):** repacking changes the AppImage's bytes, so the `.sig` Tauri wrote during the build no longer matches and the in-app updater would reject the Linux update. The script therefore **re-signs** the repacked AppImage with `tauri signer sign` when `TAURI_SIGNING_PRIVATE_KEY` is present (CI), and drops the stale `.sig` rather than shipping a wrong one when it is not.
 
 ## 4. Architecture
 
