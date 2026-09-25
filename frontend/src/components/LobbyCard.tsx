@@ -33,7 +33,6 @@ import { useInvoke } from "@/lib/query";
 import type {
   Config,
   MatchState,
-  ProviderInfo,
   Room,
   RomIndex,
 } from "@/lib/types";
@@ -54,7 +53,6 @@ function roomSummary(room: Room): string {
 interface LobbyCardProps {
   config: Config | null;
   romIndex: RomIndex | null;
-  provider: ProviderInfo | null;
   match: MatchState | null;
   onMatch: (state: MatchState) => void;
   onError: (message: string | null) => void;
@@ -63,7 +61,6 @@ interface LobbyCardProps {
 export function LobbyCard({
   config,
   romIndex,
-  provider,
   match,
   onMatch,
   onError,
@@ -90,7 +87,6 @@ export function LobbyCard({
   const roms = romIndex?.roms ?? [];
   const rooms = roomsQuery.data ?? [];
   const running = match?.status === "running";
-  const retroarch = provider?.kind === "retroarch";
 
   useEffect(() => {
     if (!rom && roms.length > 0) setRom(roms[0].shortName);
@@ -144,9 +140,7 @@ export function LobbyCard({
           Lobby
         </CardTitle>
         <CardDescription>
-          {retroarch
-            ? "Host a RetroArch room, or join one on the tailnet."
-            : "The lobby needs the RetroArch provider."}
+          Host a RetroArch room, or join one on the tailnet.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6">
@@ -252,7 +246,7 @@ export function LobbyCard({
               </div>
               <div className="flex items-end">
                 <Button
-                  disabled={!retroarch || rom === "" || running || busy}
+                  disabled={rom === "" || running || busy}
                   onClick={() => void action.run(host)}
                 >
                   <Server className="size-4" />
@@ -332,7 +326,7 @@ export function LobbyCard({
               </div>
               <div className="flex items-end">
                 <Button
-                  disabled={!retroarch || !manualReady || running || busy}
+                  disabled={!manualReady || running || busy}
                   onClick={() =>
                     void action.run(() => join(manualHost.trim(), manualRom))
                   }

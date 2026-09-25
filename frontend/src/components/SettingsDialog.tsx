@@ -14,14 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import type { Config, ProviderKind, RetroArchInput } from "@/lib/types";
+import type { Config, RetroArchInput } from "@/lib/types";
 import type { Updater } from "@/lib/updater";
 
 const DEFAULT_RETROARCH_INPUT: RetroArchInput = {
@@ -51,14 +44,12 @@ interface SettingsDialogProps {
 
 interface FormState {
   handle: string;
-  fightcadeDir: string;
   romDir: string;
   tailscalePath: string;
   defaultPeerIp: string;
   rttWarnMs: string;
   pollIntervalSecs: string;
   cabinetMode: boolean;
-  provider: ProviderKind;
   retroarchPath: string;
   retroarchCore: string;
   retroarchPort: string;
@@ -78,14 +69,12 @@ interface FormState {
 function toForm(config: Config | null): FormState {
   return {
     handle: config?.handle ?? "",
-    fightcadeDir: config?.fightcadeDir ?? "",
     romDir: config?.romDir ?? "",
     tailscalePath: config?.tailscalePath ?? "",
     defaultPeerIp: config?.defaultPeerIp ?? "",
     rttWarnMs: String(config?.rttWarnMs ?? 150),
     pollIntervalSecs: String(config?.pollIntervalSecs ?? 10),
     cabinetMode: config?.cabinetMode ?? false,
-    provider: config?.provider ?? "fightcade",
     retroarchPath: config?.retroarchPath ?? "",
     retroarchCore: config?.retroarchCore ?? "",
     retroarchPort: String(config?.retroarchPort ?? 55435),
@@ -108,14 +97,12 @@ const emptyToNull = (value: string) => (value.trim() === "" ? null : value.trim(
 function buildConfig(form: FormState): Config {
   return {
     handle: emptyToNull(form.handle),
-    fightcadeDir: emptyToNull(form.fightcadeDir),
     romDir: emptyToNull(form.romDir),
     tailscalePath: emptyToNull(form.tailscalePath),
     defaultPeerIp: emptyToNull(form.defaultPeerIp),
     rttWarnMs: Number(form.rttWarnMs) || 150,
     pollIntervalSecs: Math.max(2, Number(form.pollIntervalSecs) || 10),
     cabinetMode: form.cabinetMode,
-    provider: form.provider,
     retroarchPath: emptyToNull(form.retroarchPath),
     retroarchCore: emptyToNull(form.retroarchCore),
     retroarchPort: Number(form.retroarchPort) || 55435,
@@ -189,23 +176,6 @@ export function SettingsDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="-mr-4 grid min-h-0 flex-1 gap-4 overflow-y-auto pr-4">
-          <div className="grid gap-2">
-            <Label htmlFor="provider">Match provider</Label>
-            <Select
-              value={form.provider}
-              onValueChange={(value) =>
-                setForm((prev) => ({ ...prev, provider: value as ProviderKind }))
-              }
-            >
-              <SelectTrigger id="provider">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fightcade">FightCade (Wine, quark:direct)</SelectItem>
-                <SelectItem value="retroarch">RetroArch (native netplay)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <div className="flex items-center justify-between gap-4">
             <div className="grid gap-1">
               <Label htmlFor="developerMode">Developer mode</Label>
@@ -241,42 +211,31 @@ export function SettingsDialog({
             <Input
               id="romDir"
               value={form.romDir}
-              placeholder="/Applications/FightCade2.app/.../fbneo/ROMs"
+              placeholder="~/ROMs"
               onChange={(event) => update("romDir")(event.target.value)}
             />
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="fightcadeDir">FightCade install directory</Label>
-            <Input
-              id="fightcadeDir"
-              value={form.fightcadeDir}
-              placeholder="/Applications/FightCade2.app"
-              onChange={(event) => update("fightcadeDir")(event.target.value)}
-            />
-          </div>
-          {form.provider === "retroarch" && (
-            <RetroArchSettings
-              path={form.retroarchPath}
-              core={form.retroarchCore}
-              port={form.retroarchPort}
-              commandPort={form.retroarchCommandPort}
-              nickname={form.retroarchNickname}
-              handle={form.handle}
-              maxPingMs={form.retroarchMaxPingMs}
-              muteSpectators={form.retroarchMuteSpectators}
-              isolatedConfig={form.retroarchIsolatedConfig}
-              input={form.retroarchInput}
-              inputEnabled={form.retroarchInputEnabled}
-              socd={form.retroarchSocd}
-              onChange={setField}
-              onToggle={setToggle}
-              onInputChange={setInput}
-              onInputReplace={(input) =>
-                setForm((prev) => ({ ...prev, retroarchInput: input }))
-              }
-              onCoreDownloaded={handleCoreDownloaded}
-            />
-          )}
+          <RetroArchSettings
+            path={form.retroarchPath}
+            core={form.retroarchCore}
+            port={form.retroarchPort}
+            commandPort={form.retroarchCommandPort}
+            nickname={form.retroarchNickname}
+            handle={form.handle}
+            maxPingMs={form.retroarchMaxPingMs}
+            muteSpectators={form.retroarchMuteSpectators}
+            isolatedConfig={form.retroarchIsolatedConfig}
+            input={form.retroarchInput}
+            inputEnabled={form.retroarchInputEnabled}
+            socd={form.retroarchSocd}
+            onChange={setField}
+            onToggle={setToggle}
+            onInputChange={setInput}
+            onInputReplace={(input) =>
+              setForm((prev) => ({ ...prev, retroarchInput: input }))
+            }
+            onCoreDownloaded={handleCoreDownloaded}
+          />
           <div className="grid gap-2">
             <Label htmlFor="tailscalePath">Tailscale binary</Label>
             <Input

@@ -66,7 +66,6 @@ pub(super) fn request<'a>(role: Role, rom: &'a Path, peer: &'a str) -> MatchRequ
     MatchRequest {
         role,
         player_slot: None,
-        rom: "sfiii3nr1",
         rom_path: rom,
         peer_ip: peer,
         start_as_spectator: false,

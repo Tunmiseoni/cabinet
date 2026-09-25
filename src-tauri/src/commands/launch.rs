@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::constants;
 use crate::contracts::InstallInfo;
 use crate::probe;
-use crate::providers::{self, Capabilities, MatchRequest, Provider, ProviderKind, Role};
+use crate::providers::{self, Capabilities, MatchRequest, Provider, Role};
 use crate::roms;
 use crate::session::{self, MatchState, Plan};
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,6 @@ fn optional_rom_file(
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderInfo {
-    pub kind: ProviderKind,
     pub install: InstallInfo,
     pub capabilities: Capabilities,
 }
@@ -46,7 +45,6 @@ pub struct ProviderInfo {
 pub fn launcher_info(app: AppHandle) -> crate::error::CommandResult<ProviderInfo> {
     let provider = provider_for(&app, false)?;
     Ok(ProviderInfo {
-        kind: provider.kind(),
         install: provider.detect()?,
         capabilities: provider.capabilities(),
     })
@@ -112,7 +110,6 @@ fn plan_for(
     let request = MatchRequest {
         role,
         player_slot,
-        rom,
         rom_path: &rom_path,
         peer_ip,
         start_as_spectator,
@@ -134,9 +131,6 @@ fn preflight(
     peer_ip: &str,
     force: bool,
 ) -> crate::error::Result<()> {
-    if provider.kind() != ProviderKind::Retroarch {
-        return Ok(());
-    }
     let Some(port) = provider.port(role) else {
         return Ok(());
     };
@@ -197,8 +191,7 @@ pub(crate) fn launch_match_inner(
 ) -> crate::error::Result<MatchState> {
     let (cfg, provider) = config_and_provider(app, request.dev)?;
     log::info!(
-        "launch request: provider={:?} role={} seat={:?} rom={} peer={:?} dev={} force={}",
-        provider.kind(),
+        "launch request: role={} seat={:?} rom={} peer={:?} dev={} force={}",
         request.role.label(),
         request.player_slot,
         request.rom,
@@ -231,9 +224,8 @@ pub(crate) fn launch_match_inner(
         &peer_ip,
         request.host_spectating,
     )?;
-    let wait_for_host = provider.kind() == ProviderKind::Retroarch
-        && matches!(request.role, Role::P2 | Role::Spectator)
-        && (request.dev || request.force);
+    let wait_for_host =
+        matches!(request.role, Role::P2 | Role::Spectator) && (request.dev || request.force);
     session::launch(
         app,
         &plan,
@@ -241,7 +233,7 @@ pub(crate) fn launch_match_inner(
             dev: request.dev,
             wait_for_host,
             peer_display: peer_ip,
-            capture_netplay: provider.kind() == ProviderKind::Retroarch,
+            capture_netplay: true,
         },
     )
 }
@@ -302,7 +294,7 @@ pub fn match_status(app: AppHandle) -> MatchState {
 #[tauri::command(async)]
 pub fn launch_dev_pair(app: AppHandle, rom: String) -> crate::error::CommandResult<MatchState> {
     let (cfg, provider) = config_and_provider(&app, true)?;
-    log::info!("launch dev pair: provider={:?} rom={rom}", provider.kind());
+    log::info!("launch dev pair: rom={rom}");
     let install = provider.detect()?;
     if !install.installed {
         return Err(format!("emulator not found — {}", install.detail).into());
@@ -335,9 +327,9 @@ pub fn launch_dev_pair(app: AppHandle, rom: String) -> crate::error::CommandResu
         &plans,
         session::LaunchOptions {
             dev: true,
-            wait_for_host: provider.kind() == ProviderKind::Retroarch,
+            wait_for_host: true,
             peer_display: "127.0.0.1 (P1↔P2)".to_string(),
-            capture_netplay: provider.kind() == ProviderKind::Retroarch,
+            capture_netplay: true,
         },
     )
     .map_err(Into::into)
@@ -351,20 +343,5 @@ mod tests {
     fn dev_launch_defaults_an_empty_peer_to_loopback() {
         assert_eq!(effective_peer(true, ""), "127.0.0.1");
         assert_eq!(effective_peer(true, "   "), "127.0.0.1");
-    }
-
-    #[test]
-    fn non_dev_launch_keeps_the_peer_and_still_requires_one() {
-        assert_eq!(effective_peer(false, "100.64.0.2"), "100.64.0.2");
-        assert!(
-            crate::launcher::MatchConfig::new("rom".into(), effective_peer(false, ""), 0).is_err()
-        );
-    }
-
-    #[test]
-    fn dev_launch_makes_an_empty_peer_config_valid() {
-        let config =
-            crate::launcher::MatchConfig::new("rom".into(), effective_peer(true, ""), 0).unwrap();
-        assert_eq!(config.peer_ip, "127.0.0.1");
     }
 }

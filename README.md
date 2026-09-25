@@ -1,21 +1,21 @@
 # The Cabinet
 
-A cross-platform desktop launcher for playing **FightCade 2 FBNeo** games with friends over a **Tailscale** tailnet. It drives the emulator's built-in `quark:direct` mode, so matches connect peer-to-peer and bypass ISP CGNAT entirely — no FightCade matchmaking, no port forwarding, no paid VPN.
+A cross-platform desktop app for playing games with friends over a **Tailscale** tailnet. It coordinates a shared session — discovering peers, showing connection health, and launching/connecting the emulator — so players connect peer-to-peer and bypass ISP CGNAT entirely, with no port forwarding and no paid VPN.
 
-The network problem this solves, and the full design, are documented in [`docs/04-design.md`](docs/04-design.md) (the historical troubleshooting record is `docs/01`–`03`).
+The design is documented in [`docs/design-general-emulation.md`](docs/design-general-emulation.md) (the agreed re-scope to a general multi-game session coordinator) and [`docs/04-design.md`](docs/04-design.md) (the earlier FightCade-era spec, whose scope is superseded). The historical troubleshooting record is `docs/01`–`03`.
 
-**FightCade must be installed, but it is never launched.** The app bypasses the FightCade client entirely (no `fcade`, no matchmaking) and uses the installation only as the provider of the `quark:direct` emulator binary, Wine (macOS), the ROM directory, and `fcadefbneo.ini`. Uninstalling FightCade breaks the launchers. See [`docs/06-redesign.md`](docs/06-redesign.md) §2.
+**FightCade is no longer used.** The app drives RetroArch netplay directly — host, client, and spectator — with the frozen FBNeo core downloaded in-app. ROMs come from the directory set in Settings.
 
 ## Status
 
 **Phase 1 (macOS + Linux + Windows launchers, connection health), the RetroArch spectator provider, Cabinet mode, and the GitHub Releases distribution pipeline are implemented.** Current app:
 
 - Peer registry and per-peer **connection health** — RTT, `direct` vs `DERP (relay)`, with a pre-match warning when a peer is relayed or above the latency threshold.
-- ROM index from the configured emulator's ROM directory.
+- ROM index from the configured ROM directory.
 - **Lobby (preferred path)** — host a RetroArch room (ROM + first-to-N fixed for its lifetime) or discover/join one on the tailnet, playing or watching as capacity allows. Manual `host-ip` join is the fallback when discovery is blocked. A **Stop match** control is always available while a session runs, including for joiners.
-- **Launcher** for macOS FightCade (bundled Wine), **Linux FightCade** (Flatpak `com.fightcade.Fightcade`, or a native/Wine install), and **Windows FightCade** (native `fcadefbneo.exe`) with spawn/stop and process-exit detection — direct `quark:direct` launching is a **developer-mode** diagnostic only (the Launch match card is hidden unless Developer mode is on).
+- **RetroArch launcher** — host/client/spectator netplay with spawn/stop and process-exit detection. Direct `Launch match` is a **developer-mode** diagnostic only (the card is hidden unless Developer mode is on).
 - **Dev pair** button (developer mode) that starts both sides on `127.0.0.1` for single-machine testing.
-- **RetroArch provider (Phase 0, opt-in)** — a selectable match provider beside FightCade that drives RetroArch netplay for host/client/**spectator**, with a parity gate on the frozen FBNeo core + ROM. Verified live across macOS/Linux/Windows (2026-09-20) at ~55–83 ms; this is the spectator path. Settings adds a netplay **max-ping cap**, **spectator mute** (on), an opt-in **isolated session config**, and an editable **keyboard preset** (on) that binds a 6-button fighting-game layout to FBNeo's Classic RetroPad for Cabinet launches and disables the RetroArch hotkeys that collide with it; a **Download frozen core** button fetches and sha256-verifies the frozen core for your OS. See [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md).
+- **RetroArch provider** — drives RetroArch netplay for host/client/**spectator**, with a parity gate on the frozen FBNeo core + ROM. Verified live across macOS/Linux/Windows (2026-09-20) at ~55–83 ms. Settings adds a netplay **max-ping cap**, **spectator mute** (on), an opt-in **isolated session config**, and an editable **keyboard preset** (on) that binds a 6-button fighting-game layout to FBNeo's Classic RetroPad for Cabinet launches and disables the RetroArch hotkeys that collide with it; a **Download frozen core** button fetches and sha256-verifies the frozen core for your OS. See [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md).
 - **Cabinet mode (off by default, macOS)** — with the setting enabled, launching a match opens a full-screen cabinet bezel and hosts the emulator window inside it via the macOS Accessibility API. Needs a one-time Accessibility grant; without it the game stays a separate window. See [`docs/06-redesign.md`](docs/06-redesign.md).
 
 
@@ -28,11 +28,13 @@ The builds are **not notarized**:
 - **macOS** — the app is ad-hoc signed (valid bundle signature), but Apple has not notarized it. A freshly downloaded copy is quarantined and shows **"unidentified developer"**: right-click the app and choose **Open**, or go to System Settings → Privacy & Security → **Open Anyway**. If you see "damaged and can't be opened" instead, the signature was stripped — run `xattr -cr "/Applications/The Cabinet.app"` and re-open.
 - **Windows** — SmartScreen may warn; choose **More info → Run anyway**.
 
-On Windows, run `scripts/fcade-lan-windows-firewall.bat` once (elevated) to allow inbound UDP for the emulator.
+On Windows, allow inbound TCP on the RetroArch netplay port (default `55435`) so peers can connect.
 
 ## Priorities
 
-Spectating has cleared its Phase 0 gate — the RetroArch netplay/spectator spike passed live on the tailnet (2026-09-20: a macOS host + Linux client + Windows spectator stayed synced ~11 min at ~55–83 ms, feel rated acceptable), so RetroArch is the primary spectator path and the `ggponet.dll` shim is skipped. Phase 3 integration follows; the two-concurrent-spectator tailnet run is deferred. Recently landed: a netplay max-ping cap, default-on spectator mute (both live-verified on loopback), an opt-in isolated session config (loopback-retested; default stays off), an in-app frozen-core download backed by the published `retroarch-cores-v1` release, and an editable SF3 keyboard preset that neutralizes colliding RetroArch hotkeys for the session. See `docs/04-design.md` §7 and [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md) for the open items.
+The app is being re-scoped into a general multi-game session coordinator with three transport drivers (`native_online`, `netplay`, `stream`) and declarative per-game profiles. The agreed design is in [`docs/design-general-emulation.md`](docs/design-general-emulation.md); the first step — a full FightCade rip-out — is planned in [`docs/12-fightcade-ripout.md`](docs/12-fightcade-ripout.md).
+
+RetroArch netplay/spectator is implemented and verified live on the tailnet (2026-09-20: a macOS host + Linux client + Windows spectator stayed synced ~11 min at ~55–83 ms, feel rated acceptable). The two-concurrent-spectator tailnet run is deferred. Recently landed: a netplay max-ping cap, default-on spectator mute, an opt-in isolated session config, an in-app frozen-core download backed by the published `retroarch-cores-v1` release, and an editable SF3 keyboard preset that neutralizes colliding RetroArch hotkeys for the session. See [`docs/07-retroarch-spike.md`](docs/07-retroarch-spike.md) for the open items.
 
 A UX redesign is also proposed — **Cabinet mode**, hosting the emulator inside the app so a match is one window, plus a single-window information architecture. It is gated on a `/grill-me` session; the proposal, per-OS feasibility, and the required grill agenda are in [`docs/06-redesign.md`](docs/06-redesign.md).
 
@@ -58,7 +60,7 @@ Run and build with the helper scripts (each sources the Rust env and installs de
 | `scripts/uninstall-linux.sh` | Reverse a Linux source build: remove the repo dir, the deps it installed, and the Rust toolchain it added (dry-run by default; `--apply` to act) |
 | `scripts/diagnose-linux.sh` | One-shot blank-window diagnosis for Linux: inspects the graphics stack and AppImage, tests the known launch workarounds (including the AppImage EGL fix), and writes `the-cabinet-report.txt` to the current directory (read-only; no sudo) |
 | `scripts/test.sh` | Frontend typecheck/build, `cargo fmt --check`, `cargo test`, `cargo clippy -D warnings` |
-| `scripts/clean.sh` | Remove build artifacts (`--deps` also removes `node_modules`; `--wine` stops stray Wine/emulator processes) |
+| `scripts/clean.sh` | Remove build artifacts (`--deps` also removes `node_modules`) |
 
 Opt-in tests that touch real hardware (Tailscale, ROM dir, emulator launch) are ignored by default:
 
@@ -78,17 +80,13 @@ git clone https://github.com/Tunmiseoni/the-cabinet.git && cd the-cabinet   # or
 ./scripts/setup-linux.sh --dev           # deps + run in dev mode
 ```
 
-The bundle is written under `src-tauri/target/release/bundle/`. The app detects
-the FightCade Flatpak (`com.fightcade.Fightcade`) automatically and launches
-FBNeo inside its sandbox; a native/Wine install is used as a fallback, and the
-ROM directory is auto-detected. If detection fails, set the FightCade directory
-in Settings. Ensure Tailscale is running and the emulator's inbound netplay
-traffic is allowed through the local firewall.
+The bundle is written under `src-tauri/target/release/bundle/`. Set the ROM
+directory in Settings (it defaults to `~/ROMs`). Ensure Tailscale is running and
+the RetroArch netplay port (default `55435`) is allowed through the local
+firewall.
 
-On Linux the app prefers the FightCade Flatpak (`com.fightcade.Fightcade`), falls
-back to a native/Wine install (including `~/Games/*`), and can derive the install
-from an already-detected ROM directory. Host tools are spawned with the AppImage's
-bundled `LD_LIBRARY_PATH` stripped, so `flatpak`/`wine` load the system libraries.
+Host tools are spawned with the AppImage's bundled `LD_LIBRARY_PATH` stripped, so
+they load the system libraries rather than the bundle's copies.
 
 Bundling applies a Linux-only post-build step: `scripts/patch-appimage.sh`
 strips over-bundled Wayland/X11 libraries that break EGL on Mesa 25+ hosts
@@ -129,7 +127,7 @@ appears, and no `WEBKIT_*` flag helps. The script tests the fix for this too
 Once released installers are available, the source build's toolchain is no
 longer needed. `scripts/uninstall-linux.sh` removes only what the build
 installed (it reconstructs that from `/var/log/pacman.log`, and leaves Rust
-alone if it predates the run). It never touches the FightCade Flatpak.
+alone if it predates the run).
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/Tunmiseoni/the-cabinet/main/scripts/uninstall-linux.sh
@@ -154,12 +152,10 @@ FUSE2 is missing, install `fuse2` or run the AppImage with
 the-cabinet/
 ├─ frontend/     Vite + React + TypeScript + Tailwind v4 + shadcn/ui (alias @/* -> frontend/src/*)
 ├─ src-tauri/    Rust backend (Tauri v2)
-│  └─ src/       config, contracts, tailscale, roms, launcher, providers, session, windowing, commands
-├─ scripts/      helper scripts + the original per-OS FightCade launchers
-└─ docs/         investigation record (01–03) and current spec (04)
+│  └─ src/       config, contracts, tailscale, roms, providers, lobby, session, windowing, commands
+├─ scripts/      helper scripts
+└─ docs/         investigation record (01–03), the FightCade-era spec (04), the re-scope design, and plans
 ```
-
-The shell launchers in `scripts/` (`fcade-lan-macos.sh`, `fcade-lan-linux.sh`, `fcade-lan-windows.bat`) are the reference implementation the app reproduces.
 
 ## Notes
 

@@ -67,98 +67,6 @@ fn live_reports_permission() {
 }
 
 #[test]
-#[ignore = "launches the FightCade emulator and moves its window (opens Wine windows)"]
-fn live_places_emulator_window() {
-    use crate::launcher::macos::{MacosLauncher, DEFAULT_APP_DIR};
-    use crate::launcher::{Launcher, MatchConfig};
-    use std::path::PathBuf;
-    use std::time::Duration;
-
-    let launcher = MacosLauncher::new(PathBuf::from(DEFAULT_APP_DIR)).loopback();
-    let install = launcher.detect().unwrap();
-    if !install.installed {
-        eprintln!("windowing: skipping — {}", install.detail);
-        return;
-    }
-    let config = MatchConfig::new("sfiii3nr1".into(), "127.0.0.1".into(), 0).unwrap();
-    let spec = launcher.spec(&config).unwrap();
-    let mut child = crate::process::command(&spec.program)
-        .args(&spec.args)
-        .current_dir(&spec.cwd)
-        .envs(spec.envs.iter().cloned())
-        .spawn()
-        .expect("spawn emulator");
-
-    std::thread::sleep(Duration::from_secs(8));
-
-    let descendants = descendant_pids(&[child.id() as i32]);
-    eprintln!(
-        "windowing: spawned pid={} descendants={descendants:?}",
-        child.id()
-    );
-
-    let mut target: Option<WindowInfo> = None;
-    for _ in 0..15 {
-        let windows = enumerate_windows();
-        if let Some(found) = windows
-            .iter()
-            .find(|window| descendants.contains(&window.owner_pid))
-            .or_else(|| {
-                windows.iter().find(|window| {
-                    let owner = window.owner_name.to_ascii_lowercase();
-                    owner.contains("wine") || owner.contains("fcade") || owner.contains("fbneo")
-                })
-            })
-            .cloned()
-        {
-            target = Some(found);
-            break;
-        }
-        std::thread::sleep(Duration::from_secs(1));
-    }
-
-    let Some(target) = target else {
-        for window in enumerate_windows() {
-            eprintln!(
-                "windowing: candidate id={} pid={} owner={:?} bounds={:?}",
-                window.id, window.owner_pid, window.owner_name, window.bounds
-            );
-        }
-        let _ = child.kill();
-        let _ = child.wait();
-        eprintln!("windowing: no emulator window found");
-        return;
-    };
-
-    eprintln!(
-        "windowing: placing id={} owner={:?} from {:?}",
-        target.id, target.owner_name, target.bounds
-    );
-    let host = MacosWindowHost::default();
-    let result = host.place(target.id, Rect::new(120.0, 120.0, 720.0, 480.0));
-    eprintln!("windowing: place result = {result:?}");
-
-    std::thread::sleep(Duration::from_secs(1));
-    let after = enumerate_windows()
-        .into_iter()
-        .find(|window| window.id == target.id);
-    eprintln!("windowing: after = {:?}", after.as_ref().map(|w| w.bounds));
-
-    let _ = child.kill();
-    let _ = child.wait();
-
-    let moved = after
-        .map(|window| {
-            (window.bounds.x - 120.0).abs() < 40.0 && (window.bounds.width - 720.0).abs() < 40.0
-        })
-        .unwrap_or(false);
-    assert!(
-        moved,
-        "expected the emulator window to be moved and resized"
-    );
-}
-
-#[test]
 #[ignore = "launches native RetroArch and moves its window"]
 fn live_places_retroarch_window() {
     use crate::config::Config;
@@ -169,9 +77,10 @@ fn live_places_retroarch_window() {
     let home = std::env::var("HOME").unwrap_or_default();
     let core = PathBuf::from(&home)
         .join("Library/Application Support/RetroArch/cores/fbneo_libretro.dylib");
-    let rom = PathBuf::from(
-        "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs/sfiii3nr1.zip",
-    );
+    let Some(rom) = std::env::var_os("CABINET_TEST_ROM").map(PathBuf::from) else {
+        eprintln!("windowing: skipping — set CABINET_TEST_ROM to a local ROM zip");
+        return;
+    };
     if !core.is_file() || !rom.is_file() {
         eprintln!("windowing: skipping — RetroArch core or ROM not present");
         return;
@@ -188,7 +97,6 @@ fn live_places_retroarch_window() {
         .spec(&MatchRequest {
             role: Role::P1,
             player_slot: None,
-            rom: "sfiii3nr1",
             rom_path: &rom,
             peer_ip: "127.0.0.1",
             start_as_spectator: false,

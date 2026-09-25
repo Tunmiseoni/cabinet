@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "reads the app-managed frozen core and FightCade ROM on this machine"]
+    #[ignore = "reads the app-managed frozen core and a local ROM on this machine"]
     fn live_managed_core_matches_the_frozen_set() {
         let Some(rom_dir) = crate::roms::resolve_rom_dir(&Config::default()) else {
             eprintln!("skipping: no ROM directory found");

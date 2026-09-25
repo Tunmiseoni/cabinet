@@ -21,28 +21,11 @@ pub struct RomIndex {
 
 pub fn default_rom_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
-
-    if cfg!(target_os = "macos") {
-        dirs.push(PathBuf::from(
-            "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs",
-        ));
+    if let Some(home) = crate::env::home_dir() {
+        dirs.push(home.join("ROMs"));
+        dirs.push(home.join("roms"));
+        dirs.push(home.join("Games").join("ROMs"));
     }
-
-    if cfg!(target_os = "linux") || cfg!(target_os = "macos") {
-        if let Some(home) = std::env::var_os("HOME") {
-            let home = PathBuf::from(home);
-            dirs.push(home.join(".var/app/com.fightcade.Fightcade/data/ROMs/fbneo"));
-            dirs.push(home.join("fightcade/emulator/fbneo/ROMs"));
-            dirs.push(home.join("Fightcade/emulator/fbneo/ROMs"));
-        }
-    }
-
-    if cfg!(target_os = "windows") {
-        if let Some(appdata) = std::env::var_os("APPDATA") {
-            dirs.push(PathBuf::from(appdata).join("Fightcade/emulator/fbneo/ROMs"));
-        }
-    }
-
     dirs
 }
 
@@ -140,7 +123,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a local FightCade ROM directory"]
+    #[ignore = "requires a local ROM directory"]
     fn live_index_smoke() {
         let result = index(&Config::default());
         println!("dir={:?} roms={}", result.dir, result.roms.len());

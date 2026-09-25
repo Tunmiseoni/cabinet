@@ -77,9 +77,9 @@ export function LaunchCard({
   const [warnings, setWarnings] = useState<string[] | null>(null);
 
   const parityQuery = useInvoke<ParityStatus | null>(
-    `parity:${rom}:${provider?.kind ?? ""}`,
+    `parity:${rom}`,
     () => parityStatus(rom),
-    { enabled: rom !== "" && provider?.kind === "retroarch" },
+    { enabled: rom !== "" },
   );
   const parity = parityQuery.data;
 
@@ -133,7 +133,6 @@ export function LaunchCard({
   async function beginLaunch() {
     const found = collectWarnings();
     if (
-      provider?.kind === "retroarch" &&
       !dev &&
       (role === "p2" || role === "spectator") &&
       peerIp !== ""
@@ -161,7 +160,7 @@ export function LaunchCard({
   }
 
   const parityBlocked = parity !== null && !parity.ok;
-  const hostNeedsNoPeer = provider?.kind === "retroarch" && role === "p1";
+  const hostNeedsNoPeer = role === "p1";
   const canLaunch =
     rom !== "" &&
     (dev || hostNeedsNoPeer || peerIp !== "") &&
@@ -347,10 +346,7 @@ export function LaunchCard({
 
       <LaunchWarningDialog
         warnings={warnings}
-        waitsForHost={
-          provider?.kind === "retroarch" &&
-          (role === "p2" || role === "spectator")
-        }
+        waitsForHost={role === "p2" || role === "spectator"}
         onCancel={() => setWarnings(null)}
         onConfirm={() => void confirmLaunch()}
       />

@@ -46,7 +46,6 @@ pub(crate) fn diagnostics_text(app: &AppHandle) -> String {
     let _ = writeln!(out, "\n--- provider ---");
     match providers::resolve_provider(app, &cfg, false) {
         Ok(provider) => {
-            let _ = writeln!(out, "kind: {:?}", provider.kind());
             match provider.detect() {
                 Ok(install) => {
                     let _ = writeln!(

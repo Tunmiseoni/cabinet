@@ -11,7 +11,7 @@ pub(crate) use core::{download_managed_core, frozen_core_sha256};
 pub use hotkeys::Binding;
 pub use parity::ParityStatus;
 
-use super::{Capabilities, MatchRequest, Provider, ProviderKind, Role};
+use super::{Capabilities, MatchRequest, Provider, Role};
 use crate::config::{Config, RetroArchInput};
 use crate::constants;
 use crate::contracts::{InstallInfo, LaunchSpec, PeerOverride};
@@ -182,10 +182,6 @@ impl RetroArchProvider {
 }
 
 impl Provider for RetroArchProvider {
-    fn kind(&self) -> ProviderKind {
-        ProviderKind::Retroarch
-    }
-
     fn detect(&self) -> crate::error::Result<InstallInfo> {
         let program_ok = self.program.is_file() || core::is_on_path(&self.program);
         let core_ok = self.core.is_file();
@@ -380,9 +376,10 @@ mod tests {
 
         let core = PathBuf::from(std::env::var("HOME").unwrap_or_default())
             .join("Library/Application Support/RetroArch/cores/fbneo_libretro.dylib");
-        let rom = PathBuf::from(
-            "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs/sfiii3nr1.zip",
-        );
+        let Some(rom) = std::env::var_os("CABINET_TEST_ROM").map(PathBuf::from) else {
+            eprintln!("skipping: set CABINET_TEST_ROM to a local ROM zip");
+            return;
+        };
         if !core.is_file() || !rom.is_file() {
             eprintln!("skipping: RetroArch core or ROM not present");
             return;
@@ -429,9 +426,10 @@ mod tests {
 
         let core = PathBuf::from(std::env::var("HOME").unwrap_or_default())
             .join("Library/Application Support/RetroArch/cores/fbneo_libretro.dylib");
-        let rom = PathBuf::from(
-            "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs/sfiii3nr1.zip",
-        );
+        let Some(rom) = std::env::var_os("CABINET_TEST_ROM").map(PathBuf::from) else {
+            eprintln!("skipping: set CABINET_TEST_ROM to a local ROM zip");
+            return;
+        };
         if !core.is_file() || !rom.is_file() {
             eprintln!("skipping: RetroArch core or ROM not present");
             return;
@@ -505,9 +503,10 @@ mod tests {
 
         let core = PathBuf::from(std::env::var("HOME").unwrap_or_default())
             .join("Library/Application Support/RetroArch/cores/fbneo_libretro.dylib");
-        let rom = PathBuf::from(
-            "/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs/sfiii3nr1.zip",
-        );
+        let Some(rom) = std::env::var_os("CABINET_TEST_ROM").map(PathBuf::from) else {
+            eprintln!("skipping: set CABINET_TEST_ROM to a local ROM zip");
+            return;
+        };
         if !core.is_file() || !rom.is_file() {
             eprintln!("skipping: RetroArch core or ROM not present");
             return;

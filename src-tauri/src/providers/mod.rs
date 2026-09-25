@@ -1,4 +1,3 @@
-mod fightcade;
 mod retroarch;
 
 pub(crate) use retroarch::command;
@@ -12,14 +11,6 @@ use crate::contracts::{InstallInfo, LaunchSpec};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tauri::{AppHandle, Manager};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum ProviderKind {
-    #[default]
-    Fightcade,
-    Retroarch,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,7 +69,6 @@ pub struct MatchRequest<'a> {
     /// device, i.e. `input_player1_*` — it selects which device the host requests and is recorded
     /// for the room. Separates *which player you control* from *how you connect*.
     pub player_slot: Option<u8>,
-    pub rom: &'a str,
     pub rom_path: &'a Path,
     pub peer_ip: &'a str,
     pub start_as_spectator: bool,
@@ -96,7 +86,6 @@ impl MatchRequest<'_> {
 }
 
 pub trait Provider: Send + Sync {
-    fn kind(&self) -> ProviderKind;
     fn detect(&self) -> crate::error::Result<InstallInfo>;
     fn capabilities(&self) -> Capabilities;
     fn port(&self, role: Role) -> Option<u16>;
@@ -129,27 +118,20 @@ pub(crate) fn resolve_provider(
     cfg: &Config,
     dev: bool,
 ) -> crate::error::Result<Box<dyn Provider>> {
-    match cfg.provider {
-        ProviderKind::Fightcade => Ok(Box::new(fightcade::FightCadeProvider::new(
-            fightcade::resolve_launcher(cfg, dev)?,
-        ))),
-        ProviderKind::Retroarch => {
-            let config_dir = app
-                .path()
-                .app_config_dir()
-                .map_err(|err| format!("cannot resolve config dir: {err}"))?;
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .map_err(|err| format!("cannot resolve data dir: {err}"))?;
-            Ok(Box::new(RetroArchProvider::new(
-                cfg,
-                &config_dir,
-                &data_dir,
-                dev,
-            )))
-        }
-    }
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|err| format!("cannot resolve config dir: {err}"))?;
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("cannot resolve data dir: {err}"))?;
+    Ok(Box::new(RetroArchProvider::new(
+        cfg,
+        &config_dir,
+        &data_dir,
+        dev,
+    )))
 }
 
 #[cfg(test)]
@@ -177,7 +159,6 @@ mod tests {
         let mut request = MatchRequest {
             role: Role::P2,
             player_slot: Some(1),
-            rom: "sfiii3nr1",
             rom_path: rom,
             peer_ip: "100.64.0.2",
             start_as_spectator: false,

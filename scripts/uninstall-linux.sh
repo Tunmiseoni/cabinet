@@ -45,7 +45,7 @@ Reverses a source build of The Cabinet (scripts/setup-linux.sh) on Arch/CachyOS.
   --install-appimage  download the latest Linux AppImage to ~/.local/bin
   -h, --help          show this help
 
-flatpak and com.fightcade.Fightcade are never touched.
+flatpak is never touched.
 EOF
 }
 
@@ -252,7 +252,7 @@ else
     declare -a CANDIDATES=()
     for pkg in "${PACMAN_PKGS[@]}"; do
       if [ "$pkg" = "flatpak" ]; then
-        echo "    preserving flatpak — FightCade runs from it"
+        echo "    preserving flatpak — it may host other apps"
         continue
       fi
       if in_list "$pkg" "${KEEP_EXTRA[@]:-}"; then
@@ -394,7 +394,7 @@ install_appimage() {
 [Desktop Entry]
 Type=Application
 Name=The Cabinet
-Comment=FightCade direct-connect launcher over Tailscale
+Comment=Multi-game session coordinator over Tailscale
 Exec=$dest %U
 Terminal=false
 Categories=Game;Network;
@@ -414,11 +414,6 @@ echo
 echo "==> summary"
 echo "    mode: $MODE"
 [ "$APPLY" = 1 ] || echo "    nothing was changed — re-run with --apply to remove"
-if command -v flatpak >/dev/null 2>&1; then
-  if flatpak info com.fightcade.Fightcade >/dev/null 2>&1; then
-    echo "    flatpak FightCade: still installed"
-  fi
-fi
 for tool in cargo rustup node npm; do
   if command -v "$tool" >/dev/null 2>&1; then
     echo "    still on PATH: $tool ($(command -v "$tool"))"

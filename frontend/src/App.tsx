@@ -168,7 +168,7 @@ function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">The Cabinet</h1>
             <p className="text-sm text-muted-foreground">
-              Tailnet FightCade launcher
+              Play games with friends over the tailnet
               {peersQuery.data?.selfPeer?.ip
                 ? ` · ${peersQuery.data.selfPeer.ip}`
                 : ""}
@@ -219,7 +219,6 @@ function App() {
         <LobbyCard
           config={config}
           romIndex={romsQuery.data}
-          provider={launcherQuery.data}
           match={match}
           onMatch={(state) => matchQuery.mutate(state)}
           onError={setAppError}

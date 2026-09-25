@@ -1,7 +1,10 @@
 # Docs — The Cabinet
 
-The Cabinet is a cross-platform launcher for playing FightCade 2 FBNeo over Tailscale. `04-design.md`
-is the current spec; `01`–`03` are the original investigation into
+The Cabinet is being re-scoped from a FightCade FBNeo launcher into a general multi-game session
+coordinator. `04-design.md` is the spec for the FightCade-launcher era (its *scope* is superseded);
+[`design-general-emulation.md`](design-general-emulation.md) is the agreed re-scope, and
+[`12-fightcade-ripout.md`](12-fightcade-ripout.md) is the first implementation step. `01`–`03` are
+the original investigation into
 **"Test game, tutorial, and spectating work, but challenging (or being challenged by) another player leaves me stuck in the chat interface."**
 
 > Working assumption: "Fight Kid" = **FightCade 2** (v2.1.45) on macOS, installed at `/Applications/FightCade2.app`.
@@ -31,6 +34,8 @@ is the current spec; `01`–`03` are the original investigation into
 | [`09-lobby.md`](09-lobby.md) | Design for the replacement lobby (rooms, sets, winner-stays rotation, automatic RAM result detection, local scores/history) — agreed in a `/grill-me` session 2026-09-21, not implemented |
 | [`10-lobby-spike.md`](10-lobby-spike.md) | Hardware spike that gates the lobby: host-as-spectator, live role switching, RAM result detection, tailnet stability, beacon reachability |
 | [`11-training-mode.md`](11-training-mode.md) | Research (no code): two training paths — Fightcade's bundled peon2 script / `3rd_training_lua` and the FBNeo `--lua` hook (Path A, licensing-gated), and a Cabinet-driven RetroArch FBNeo practice mode using `WRITE_CORE_RAM`/replay over the command socket (Path B, added 2026-09-22). Includes the `sfiii3nr1` address mapping and the gating spikes |
+| [`12-fightcade-ripout.md`](12-fightcade-ripout.md) | **Plan (not executed):** the first step of the re-scope — full FightCade rip-out (provider, `launcher/` tree, config, ROM defaults, UI, scripts, docs) with a file-by-file inventory and phased checklist |
+| [`design-general-emulation.md`](design-general-emulation.md) | **Agreed re-scope (2026-09-25 `/grill-me`):** The Cabinet as a general multi-game session coordinator — three transport drivers (`native_online`/`netplay`/`stream`), declarative per-game profiles, Sunshine+Moonlight streaming, invariant core vs per-game variables, and the open branches |
 
 ## Environment (as observed)
 

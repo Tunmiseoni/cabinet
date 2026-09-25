@@ -14,7 +14,7 @@
 # writable it falls back to the AppImage's folder, then to $HOME. The exact path
 # is printed at the start and at the end.
 #
-# It never touches FightCade or its Flatpak.
+# It never touches your emulators or their installs.
 set -uo pipefail
 
 REPO_SLUG="Tunmiseoni/the-cabinet"
@@ -368,8 +368,8 @@ run_attempts() {
 
 say "==> The Cabinet Linux blank-window diagnosis (v2)"
 say "    This only reads your system and writes one report file. Nothing is"
-say "    installed or changed outside a temporary folder. FightCade is never"
-say "    touched."
+say "    installed or changed outside a temporary folder. Your emulators are"
+say "    never touched."
 
 if find_appimage; then
   say "    found: $APPIMAGE"

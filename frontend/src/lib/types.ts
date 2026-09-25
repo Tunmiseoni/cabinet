@@ -1,17 +1,13 @@
-export type ProviderKind = "fightcade" | "retroarch";
-
 export type MatchRole = "p1" | "p2" | "spectator";
 
 export interface Config {
   handle: string | null;
-  fightcadeDir: string | null;
   romDir: string | null;
   tailscalePath: string | null;
   defaultPeerIp: string | null;
   rttWarnMs: number;
   pollIntervalSecs: number;
   cabinetMode: boolean;
-  provider: ProviderKind;
   retroarchPath: string | null;
   retroarchCore: string | null;
   retroarchPort: number;
@@ -114,7 +110,6 @@ export interface ProviderCapabilities {
 }
 
 export interface ProviderInfo {
-  kind: ProviderKind;
   install: InstallInfo;
   capabilities: ProviderCapabilities;
 }

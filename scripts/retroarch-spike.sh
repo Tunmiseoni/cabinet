@@ -45,7 +45,7 @@ case "$(uname -s)" in
     RA_CFG_DEFAULT="$HOME/Library/Application Support/RetroArch/config/retroarch.cfg"
     CORE_DIR_DEFAULT="$HOME/Library/Application Support/RetroArch/cores"
     CORE_NAME="fbneo_libretro.dylib"
-    ROM_DEFAULT="/Applications/FightCade2.app/Contents/MacOS/emulator/fbneo/ROMs/sfiii3nr1.zip"
+    ROM_DEFAULT="$HOME/ROMs/sfiii3nr1.zip"
     ;;
   Linux)
     OS_TAG="Linux $(uname -m)"
@@ -53,7 +53,7 @@ case "$(uname -s)" in
     RA_CFG_DEFAULT="${XDG_CONFIG_HOME:-$HOME/.config}/retroarch/retroarch.cfg"
     CORE_DIR_DEFAULT="$HOME/.config/retroarch/cores"
     CORE_NAME="fbneo_libretro.so"
-    ROM_DEFAULT="$HOME/.var/app/com.fightcade.Fightcade/data/ROMs/fbneo/sfiii3nr1.zip"
+    ROM_DEFAULT="$HOME/ROMs/sfiii3nr1.zip"
     ;;
   *)
     echo "unsupported OS $(uname -s) — use the documented commands on Windows" >&2
